@@ -1,6 +1,7 @@
 import { useState } from "react";
 import React from "react";
 import WelcomeScreen from "./screens/WelcomeScreen";
+import InterviewScreen from "./screens/InterviewScreen";
 
 
 export default function App() {
@@ -11,7 +12,7 @@ export default function App() {
       {screen === "welcome" && (
         <WelcomeScreen onStart={() => setScreen("interview")} />
       )}
-      
+      {screen === "interview" && <InterviewScreen />}
     </>
   );
 }
