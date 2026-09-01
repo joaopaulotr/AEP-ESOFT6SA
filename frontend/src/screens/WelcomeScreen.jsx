@@ -2,12 +2,14 @@ import { useState } from "react";
 import React from "react";
 import Avatar from "../components/Avatar";
 import Layout from "../components/Layout";
+import { useNavigate } from "react-router-dom";
 
 import { Mic, Clock, MessageCircle, Check, ArrowRight } from "lucide-react";
 
 const INTERVIEWER = "interviewer";
 
-export default function WelcomeScreen({ onStart }) {
+export default function WelcomeScreen() {   
+    const navigate = useNavigate();
     const [micStatus, setMicStatus] = useState("idle");
 
     async function askMicPermission() {
@@ -69,7 +71,7 @@ export default function WelcomeScreen({ onStart }) {
                 </button>
 
                 <button
-                    onClick={onStart}
+                    onClick={() => navigate("/entrevista")}
                     disabled={micStatus !== "ok"}
                     style={{
                         ...style.startBtn,
