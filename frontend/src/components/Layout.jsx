@@ -1,9 +1,11 @@
 import { useState } from "react";
 import React from "react";
+import NavBar from "./NavBar";
 
 export default function Layout({ children }) {
         return (
         <div style={root}>
+            
             <style>{FONTS}</style>
             {children}
         </div>
@@ -20,6 +22,6 @@ const root ={
         display: "grid",
         placeItems: "center",
         padding: 24,
-        backgroundColor: "#e4f3f0",
-    
+        backgroundColor: "#f1faf8",
+        
 };
