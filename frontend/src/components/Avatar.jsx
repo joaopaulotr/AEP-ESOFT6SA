@@ -11,14 +11,11 @@ export default function Avatar({ size = 64, style: extraStyle }) {
                         opacity: 0.6;
                     }
                     100% {
-                        transform: translate(-50%, -50%) scale(2);
+                        transform: translate(-50%, -50%) scale(1.4);
                         opacity: 0;
                     }
                 }
-                    @keyframes pulsar {
-                    0%, 100% { transform: scale(1); }
-                    50%      { transform: scale(1.1); }
-                }
+                   
                     
             `}</style>
             <div
@@ -36,7 +33,7 @@ export default function Avatar({ size = 64, style: extraStyle }) {
                
                 <div style={ondaStyle(size, "0s")} />
                 <div style={ondaStyle(size, "1s")} />
-                <div style={ondaStyle(size, "3s")} />
+                
 
              
                 <div
@@ -44,7 +41,7 @@ export default function Avatar({ size = 64, style: extraStyle }) {
                         position: "relative",
                         width: size,
                         height: size,
-                        animation: "pulsar 4s ease-in-out infinite",
+                        
                         borderRadius: "50%",
                         boxShadow: "0px 12px 24px rgba(127, 168, 159, 0.25)", 
                         background: `
@@ -71,7 +68,7 @@ function ondaStyle(size, delay) {
         height: size,
         borderRadius: "50%",
         border: "1px solid #98d3c67e",
-        animation: "onda 7s ease-out infinite",
+        animation: "onda 3s ease-out infinite",
         animationDelay: delay,
     };
 }
