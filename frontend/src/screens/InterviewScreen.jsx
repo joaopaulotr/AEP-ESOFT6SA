@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import React from "react";
-import Layout from "../components/Layout";
+import SideBar from "../components/SideBar";
 import Avatar from "../components/Avatar";
 import Pointer from "../components/Pointer";
 import NavBar from "../components/NavBar";
@@ -76,7 +76,7 @@ export default function InterviewScreen() {
     }
 
     return (
-        <Layout>
+        <SideBar>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 20, width: "100%", maxWidth: 900, alignSelf: "flex-start", marginTop: 80, }}>
 
                 <div style={style.etapa}>
@@ -123,7 +123,7 @@ export default function InterviewScreen() {
                 </div>
             </div>
 
-        </Layout>
+        </SideBar>
     );
 }
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import React from "react";
 import Avatar from "../components/Avatar";
 import Layout from "../components/Layout";
+import SideBar from "../components/SideBar";
 import { useNavigate } from "react-router-dom";
 
 import { Mic, Clock, MessageCircle, Check, ArrowRight } from "lucide-react";
@@ -9,6 +10,7 @@ import { Mic, Clock, MessageCircle, Check, ArrowRight } from "lucide-react";
 const INTERVIEWER = "interviewer";
 
 export default function WelcomeScreen() {   
+   
     const navigate = useNavigate();
     const [micStatus, setMicStatus] = useState("idle");
 
@@ -21,9 +23,11 @@ export default function WelcomeScreen() {
             setMicStatus("denied");
         }
     }
+    
 
     return (
-        <Layout>
+        
+            <SideBar>
             <style>{FONTS}</style>
             <div style={style.card}>
                 <Avatar />
@@ -82,7 +86,8 @@ export default function WelcomeScreen() {
                     Começar entrevista <ArrowRight size={18} />
                 </button>
             </div>
-        </Layout>
+           </SideBar>
+       
     );
 }
 
@@ -91,16 +96,23 @@ const FONTS = `
 
 const style = {
 
-    card: {
-        width: 400,
-        height: 600,
-        textAlign: "center",
-        backgroundColor: "white",
-        placeItems: "center",
-        borderRadius: 18,
-        padding: 24,
-        boxShadow: "0 12px 40px #2A262212, 0 2px 6px #2A26220A",
-    },
+  card: {
+     width: "100%",       
+    maxWidth: 500,  
+    height: "100%",
+    maxHeight: 700,
+    textAlign: "center",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    borderRadius: 18,
+    padding: 24,
+    backgroundColor: "#fff",
+    border: "1px solid #dcebe6",
+    boxShadow: "0 18px 40px -24px rgba(31,45,41,.35)",
+    boxSizing: "border-box",   
+},
+  
     greeting: {
         fontFamily: "dm sans",
         marginTop: 20,
@@ -114,7 +126,7 @@ const style = {
     },
     subtitle: {
         fontFamily: "dm sans",
-        marginTop: 20,
+        marginTop: 30,
         fontSize: 15,
         fontWeight: 400,
         color: "#5c5c5c",
@@ -125,6 +137,7 @@ const style = {
         display: "flex",
         flexDirection: "column",
         gap: 10,
+        marginTop: 20,
         width: "100%",
         textAlign: "left",
     },
