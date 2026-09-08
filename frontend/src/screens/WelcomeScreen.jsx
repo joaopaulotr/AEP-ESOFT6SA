@@ -3,11 +3,12 @@ import React from "react";
 import Avatar from "../components/Avatar";
 import Layout from "../components/Layout";
 import SideBar from "../components/SideBar";
+import Pointer from "../components/Pointer";
 import { useNavigate } from "react-router-dom";
 
 import { Mic, Clock, MessageCircle, Check, ArrowRight } from "lucide-react";
 
-const INTERVIEWER = "interviewer";
+const INTERVIEWER = "du";
 
 export default function WelcomeScreen() {   
    
@@ -165,7 +166,7 @@ const style = {
     micButton: {
         width: 400,
         height: 40,
-        marginTop: 30,
+        marginTop: 40,
         backgroundColor: "#ffffff",
         borderRadius: 20,
         border: "1px solid #7fa89f",

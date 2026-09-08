@@ -35,7 +35,7 @@ export default function Sidebar({ children }) {
             <aside style={{ ...style.rail, ...(isMobile ? style.railMobile : {}) }}>
                 <div style={style.brand}>
                     <div style={style.brandMark}><Sparkles size={18} /></div>
-                    {!isMobile && <span style={style.brandName}>Prosa</span>}
+                    {!isMobile && <span style={style.brandName}>du</span>}
                 </div>
 
                <nav style={{
