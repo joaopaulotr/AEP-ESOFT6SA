@@ -3,3 +3,6 @@ uvicorn[standard]
 motor
 pydantic-settings
 python-dotenv
+openai
+langgraph
+python-multipart
