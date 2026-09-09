@@ -26,5 +26,5 @@ class SynthesisService:
         )
         synthesis = self._llm.complete_text(prompt)
         interview_state.synthesis = synthesis
-        await self._sessions.update(session_id, interview_state)
+        await self._sessions.save(interview_state)
         return synthesis
