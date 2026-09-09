@@ -108,7 +108,7 @@ export default function InterviewScreen() {
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={style.timer}><Clock size={15} /> {mmss(segundos)}</span>
                         <button style={style.concluirBtn} onClick={() => navigate("/feedback")}>
-                            <XCircle size={17} /> Concluir 
+                            <XCircle size={17} /> Concluir
                         </button>
                     </div>
                 </header>
@@ -119,7 +119,7 @@ export default function InterviewScreen() {
                     <div style={style.colLeft}>
                         <div style={style.aiPanel}>
                             <div style={style.panelHead}>
-                               <span style={style.perguntaNum}>Pergunta ({idx + 1}/{PERGUNTAS.length})</span>
+                                <span style={style.perguntaNum}>Pergunta ({idx + 1}/{PERGUNTAS.length})</span>
                                 <span style={style.voiceChip}><Volume2 size={14} /> Voz: Ativada</span>
                             </div>
 
@@ -139,8 +139,8 @@ export default function InterviewScreen() {
 
                             <div style={style.questionCard}>
                                 <div style={style.qHead}>
-                                   
-                                    <span style={style.pergunta}>{atual.pergunta}</span>
+
+                                    <span style={style.tipo}>{atual.tipo}</span>
                                 </div>
                                 <p style={style.textoIA}>"{atual.texto}"</p>
                             </div>
@@ -164,8 +164,8 @@ export default function InterviewScreen() {
 
 
                     <div style={style.colRight}>
-                        <div style={style.transHead}>
-                            <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, color: "#e7eaf3", fontSize: 15 }}>
+                        <div style={style.transcricao}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, color: "#26443F", fontSize: 15 }}>
                                 Transcrição ao Vivo
                             </span>
                             <span style={style.pill}>Tempo Real</span>
@@ -175,14 +175,15 @@ export default function InterviewScreen() {
                             {transcricao.map((m, i) => (
                                 <div key={i} style={{ alignSelf: m.quem === "ia" ? "flex-start" : "flex-end", maxWidth: "88%" }}>
                                     <div style={style.msgMeta}>
-                                        {m.quem === "ia" ? `${INTERVIEWER} (IA)` : "Você"} · {m.hora}
+                                        {m.quem === "ia" ? `${INTERVIEWER} ` : "Você"} · {m.hora}
                                     </div>
                                     <div style={{ ...style.bubble, ...(m.quem === "voce" ? style.bubbleMe : {}) }}>{m.texto}</div>
                                 </div>
                             ))}
                         </div>
 
-                        <div style={style.compose}>
+                        <div style={style.tecladoCard}>
+                             <div style={style.linhaTopo} />
                             <textarea
                                 style={style.textarea}
                                 placeholder="Digite sua resposta ou use o botão de microfone…"
@@ -192,7 +193,7 @@ export default function InterviewScreen() {
                             />
                             <div style={style.composeFoot}>
                                 <span style={{ fontSize: 12, color: "#6a7391" }}>Shift + Enter para nova linha</span>
-                                <button style={style.responderBtn} onClick={() => responder()}>Responder <Send size={15} /></button>
+                                <button style={style.responderBtn} onClick={() => responder()}><Send size={15} /></button>
                             </div>
                         </div>
                     </div>
@@ -208,7 +209,7 @@ const CSS = `
 .online-dot{width:8px;height:8px;border-radius:50%;background:#38d39f}
 @keyframes pulseRed{0%{box-shadow:0 0 0 0 rgba(240,82,107,.6)}70%{box-shadow:0 0 0 8px rgba(240,82,107,0)}100%{box-shadow:0 0 0 0 rgba(240,82,107,0)}}
 .bar{width:4px;height:8px;border-radius:99px;background:#39415f}
-.bar.on{background:linear-gradient(#8b7bff,#5aa8ff);animation:wave .9s ease-in-out infinite}
+.bar.on{background:linear-gradient(#a0c9ca,#F87060);animation:wave .9s ease-in-out infinite}
 @keyframes wave{0%,100%{height:8px}50%{height:24px}}
 textarea:focus{outline:none;border-color:#6d5efc !important}
 `;
@@ -235,7 +236,7 @@ const style = {
         display: "inline-flex",
         alignItems: "center",
         gap: 8,
-        color: "#f52500",
+        color: "#26443F",
         fontWeight: 700,
         fontSize: 12.5,
         letterSpacing: .3,
@@ -282,7 +283,7 @@ const style = {
     },
     colLeft: {
         flex: "1 1 420px",
-        minWidth: 320,
+        minWidth: 380,
         display: "flex",
         flexDirection: "column",
         gap: 16,
@@ -302,6 +303,7 @@ const style = {
         borderRadius: 18,
         padding: 22,
         display: "flex",
+        minHeight: 560,
         flexDirection: "column",
         alignItems: "center",
         gap: 14,
@@ -324,9 +326,11 @@ const style = {
         letterSpacing: .3,
     },
     voiceChip: {
-          background: "#F4F8F7",
-         display: "inline-flex",
+        background: "#F4F8F7",
+        display: "inline-flex",
         alignItems: "center",
+        justifyContent: "center",
+        width: 110,
         height: 30,
         color: "#26443F",
         border: "1px solid #CDE1DC",
@@ -334,13 +338,13 @@ const style = {
         fontWeight: 700,
         fontSize: 12,
         letterSpacing: .3,
-         gap: 6,
+        gap: 6,
     },
     avatarWrap: {
-        marginTop: 8,
+        marginTop: 18,
     },
     status: {
-        margin: 0,
+        marginTop: 20,
         color: "#b2b4b9",
         fontWeight: 700,
         fontSize: 13,
@@ -358,7 +362,7 @@ const style = {
         border: "1px solid #CDE1DC",
         borderRadius: 14,
         padding: "16px 18px",
-        marginTop: 6,
+        marginTop: 20,
         boxSizing: "border-box",
     },
     qHead: {
@@ -369,8 +373,9 @@ const style = {
     },
     perguntaNum: {
         background: "#F4F8F7",
-        width: 100,
-         display: "inline-flex",
+        width: 110,
+        display: "inline-flex",
+        justifyContent: "center",
         alignItems: "center",
         height: 24,
         color: "#26443F",
@@ -379,30 +384,29 @@ const style = {
         fontWeight: 700,
         fontSize: 12,
         letterSpacing: .3,
-         gap: 6,
+        gap: 6,
     },
-    pergunta: {
+    tipo: {
         fontSize: 12,
         fontWeight: 700,
-       color: "#26443F",
-        background: "#F4F8F7",
+        color: "#26443F",
+
         border: "1px solid #CDE1DC",
         border: "none",
-        borderRadius: 8,
+        borderRadius: 1,
         padding: "3px 9px",
     },
     textoIA: {
         margin: 0,
-       color: "#26443F",
-        
+        color: "#26443F",
         fontSize: 16,
         lineHeight: 1.5,
         fontWeight: 600,
     },
     bottomBar: {
         background: "#ffffff",
-        border: "none",
-        borderRadius: 18,
+        border: "1px solid #CDE1DC",
+        borderRadius: 20,
         padding: 14,
         display: "flex",
         alignItems: "center",
@@ -415,15 +419,16 @@ const style = {
         gap: 9,
         color: "#fff",
         border: "none",
-        borderRadius: 12,
+        borderRadius: 18,
         padding: "12px 18px",
         fontWeight: 700,
         fontSize: 14,
         background: "#7fa89f",
         flexShrink: 0,
     },
-    transHead: {
+    transcricao: {
         display: "flex",
+        color: "#26443F",
         justifyContent: "space-between",
         alignItems: "center",
         padding: "16px 18px",
@@ -445,7 +450,7 @@ const style = {
         marginBottom: 5,
     },
     bubble: {
-       color: "#26443F",
+        color: "#26443F",
         background: "#F4F8F7",
         border: "1px solid #CDE1DC",
         borderRadius: 14,
@@ -459,9 +464,17 @@ const style = {
         border: "1px solid #4a3f86",
         color: "#efeaff",
     },
-    compose: {
-        border: "1px solid #d1e9e4",
+    tecladoCard: {
+        border: "none",
         padding: 14,
+
+    },
+    linhaTopo: {
+        height: 1,
+        background: "#CDE1DC",
+        marginLeft: 10,
+        marginRight: 10,
+        marginBottom: 14,
     },
     textarea: {
         width: "100%",
@@ -469,7 +482,7 @@ const style = {
         resize: "none",
         background: "#ffffff",
         border: "1px solid #d1e9e4",
-        borderRadius: 12,
+        borderRadius: 15,
         padding: "12px 14px",
         color: "#e7eaf3",
         fontSize: 14.5,
@@ -489,7 +502,7 @@ const style = {
         background: "#7fa89f",
         color: "#fff",
         border: "none",
-        borderRadius: 10,
+        borderRadius: 15,
         padding: "9px 16px",
         fontWeight: 700,
         fontSize: 14,
