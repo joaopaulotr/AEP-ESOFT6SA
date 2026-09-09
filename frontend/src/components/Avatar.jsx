@@ -45,9 +45,9 @@ export default function Avatar({ size = 64, style: extraStyle }) {
                         borderRadius: "50%",
                         boxShadow: "0px 12px 24px rgba(127, 168, 159, 0.25)", 
                         background: `
-                            radial-gradient(circle at left center, #bcddf3, transparent 50%),
+                            radial-gradient(circle at left center, #e69113cb, transparent 50%),
                             radial-gradient(circle at center, #ffffff, transparent 50%),
-                            
+                            radial-gradient(circle at center top, #F87060, transparent 70%),
                             radial-gradient(circle at center bottom, #a0c9ca, transparent 55%),
                             #f1faff
                         `,

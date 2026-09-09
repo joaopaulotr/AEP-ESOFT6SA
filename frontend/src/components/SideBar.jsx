@@ -92,7 +92,7 @@ const style = {
     root: {
         minHeight: "100vh",
         display: "flex",
-        backgroundColor: "#eef6f3",
+        backgroundColor: "#F8FAF9",
     },
     rail: {
         position: "sticky",

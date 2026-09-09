@@ -26,10 +26,10 @@ export default function LoginScreen() {
                 <Avatar size={92} />
 
                 <div style={style.badge}>
-                    <Sparkles size={13} /> Prosa
+                    <Sparkles size={12} /> Du
                 </div>
 
-                <h1 style={style.title}>Bem-vindo de volta</h1>
+                <h1 style={style.title}>Bem vindo de volta!</h1>
                 <p style={style.subtitle}>Entre para fazer entrevistas com a Interviewer.</p>
 
                 <label style={style.label}>E-mail</label>
@@ -124,14 +124,14 @@ const style = {
     title: {
         fontFamily: "Momo Trust Sans",
         fontWeight: 800,
-        fontSize: 26,
+        fontSize: 24,
         marginTop: 14,
         marginBottom: 0,
         color: "#1f2d29",
     },
     subtitle: {
         fontFamily: "dm sans",
-        fontSize: 15,
+        fontSize: 14,
         color: "#6a7d77",
         marginTop: 6,
         marginBottom: 22,
@@ -142,20 +142,20 @@ const style = {
         fontFamily: "dm sans",
         fontSize: 13,
         fontWeight: 600,
-        color: "#41524d",
+        color: "#6a7d77",
         marginBottom: 6,
         marginTop: 4,
     },
     field: {
         width: "100%",
-        height: 50,
+        height: 45,
         marginBottom: 12,
         padding: "0 14px",
         display: "flex",
         alignItems: "center",
         gap: 10,
         border: "1px solid #d1e9e4",
-        borderRadius: 13,
+        borderRadius: 18,
         backgroundColor: "#fbfdfc",
         boxSizing: "border-box",
     },
@@ -192,10 +192,10 @@ const style = {
     },
     entrarBtn: {
         width: "100%",
-        height: 50,
+        height: 40,
         marginTop: 6,
         backgroundColor: "#4f776e",
-        borderRadius: 14,
+        borderRadius: 18,
         border: "none",
         color: "white",
         fontFamily: "dm sans",
@@ -220,9 +220,9 @@ const style = {
     },
     googleBtn: {
         width: "100%",
-        height: 48,
+        height: 45,
         backgroundColor: "#ffffff",
-        borderRadius: 14,
+        borderRadius: 18,
         border: "1px solid #d1e9e4",
         color: "#4f776e",
         fontFamily: "dm sans",
