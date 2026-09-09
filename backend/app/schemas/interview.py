@@ -18,5 +18,6 @@ class InterviewState(BaseModel):
     conversation: list[Turn] = Field(default_factory=list)
     profile: dict[str, str] = Field(default_factory=dict)
     finished: bool = False
+    synthesis: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -19,9 +19,12 @@ class SynthesisService:
             raise ValueError("Sessão não encontrada.")
         if not interview_state.finished:
             raise ValueError("Não é possível gerar a síntese antes de encerrar a entrevista.")
-
+        
         prompt = SYNTESIS_PROMPT.format(
             conversation=format_full_conversation(interview_state.conversation),
             profile=interview_state.profile,
         )
-        return self._llm.complete_text(prompt)
+        synthesis = self._llm.complete_text(prompt)
+        interview_state.synthesis = synthesis
+        await self._sessions.update(session_id, interview_state)
+        return synthesis
