@@ -1,12 +1,15 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from app.schemas.interview import InterviewState, Turn
-from app.services.interview_service import get_opening_question
-from app.services.session_service import create_session
+from app.api.deps import get_interview_service, get_session_repository
+from app.repositories.session_repository import SessionRepository
+from app.services.interview_service import InterviewService
 
 router = APIRouter()
 
 
 @router.post("/session")
-async def create_new_session():
+async def create_new_session(
+    interview: InterviewService = Depends(get_interview_service),
+    sessions: SessionRepository = Depends(get_session_repository),
+):
     ...
