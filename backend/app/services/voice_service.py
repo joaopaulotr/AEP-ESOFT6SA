@@ -18,7 +18,7 @@ class VoiceService:
         self._speech_model = speech_model
         self._voice = voice
 
-    def transcrever(self, audio: bytes, filename: str = "audio.webm") -> str:
+    def transcribe(self, audio: bytes, filename: str = "audio.webm") -> str:
         buffer = io.BytesIO(audio)
         buffer.name = filename
         transcription = self._client.audio.transcriptions.create(
@@ -27,10 +27,10 @@ class VoiceService:
         )
         return transcription.text
 
-    def sintetizar_fala(self, texto: str) -> bytes:
+    def synthesize_speech(self, text: str) -> bytes:
         with self._client.audio.speech.with_streaming_response.create(
             model=self._speech_model,
             voice=self._voice,
-            input=texto,
+            input=text,
         ) as response:
             return response.read()
