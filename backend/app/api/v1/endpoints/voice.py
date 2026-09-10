@@ -1,39 +1,26 @@
-import io
-
 from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import Response
-from pydantic import BaseModel
-from openai import OpenAI
 
-from app.core.config import settings
+from app.api.deps import get_voice_service
+from app.schemas.voice import FalaRequest, TranscricaoResponse
+from app.services.voice_service import VoiceService
 
 router = APIRouter()
 
-client = OpenAI(api_key=settings.openai_api_key or None)
 
-
-class FalaRequest(BaseModel):
-    texto: str
-
-
-@router.post("/voice/transcricao")
-async def transcrever(file: UploadFile = File(...)):
+@router.post("/voice/transcricao", response_model=TranscricaoResponse)
+async def transcrever(
+    file: UploadFile = File(...),
+    voice: VoiceService = Depends(get_voice_service),
+):
     audio = await file.read()
-    buffer = io.BytesIO(audio)
-    buffer.name = file.filename or "audio.webm"
-    transcription = client.audio.transcriptions.create(
-        model="whisper-1",
-        file=buffer,
-    )
-    return {"texto": transcription.text}
+    return TranscricaoResponse(texto=voice.transcrever(audio, file.filename or "audio.webm"))
 
 
 @router.post("/voice/fala")
-async def falar(payload: FalaRequest):
-    with client.audio.speech.with_streaming_response.create(
-        model="gpt-4o-mini-tts",
-        voice="alloy",
-        input=payload.texto,
-    ) as response:
-        audio = response.read()
+async def gerar_fala(
+    payload: FalaRequest,
+    voice: VoiceService = Depends(get_voice_service),
+):
+    audio = voice.sintetizar_fala(payload.texto)
     return Response(content=audio, media_type="audio/mpeg")
