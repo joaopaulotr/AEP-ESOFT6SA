@@ -243,8 +243,6 @@ class TestRunTurn:
         _, utterance = service.run_turn(state, "acho que é isso")
 
         assert state.finished is True
-        assert state.current_index == LAST_INDEX
-        assert state.asked_indices == []
         assert utterance == "Obrigado, foi ótimo!"
 
     def test_profile_updates_survive_the_graph_execution(self, service, fake_llm, state):

@@ -36,6 +36,20 @@ async def get_session(
     return session
 
 
+@router.post("/session/{session_id}/finish", response_model=InterviewState)
+async def finish_session(
+    session_id: str,
+    interview: InterviewService = Depends(get_interview_service),
+    sessions: SessionRepository = Depends(get_session_repository),
+):
+    session = await sessions.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada.")
+    interview.finish(session)
+    await sessions.save(session)
+    return session
+
+
 @router.post("/session/{session_id}/synthesis")
 async def synthesize_session(
     session_id: str,

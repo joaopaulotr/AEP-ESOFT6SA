@@ -1,20 +1,36 @@
+import io
+
 from openai import OpenAI
 
-client = OpenAI()
+from app.core.config import settings
 
-def transcribe_audio(file_path: str) -> str:
-    with open(file_path, "rb") as audio_file:
-        transcription = client.audio.transcriptions.create(
-            model="whisper-1", 
-            file=audio_file
+
+class VoiceService:
+    def __init__(
+        self,
+        client: OpenAI | None = None,
+        transcription_model: str = "whisper-1",
+        speech_model: str = "gpt-4o-mini-tts",
+        voice: str = "alloy",
+    ) -> None:
+        self._client = client or OpenAI(api_key=settings.openai_api_key or None)
+        self._transcription_model = transcription_model
+        self._speech_model = speech_model
+        self._voice = voice
+
+    def transcribe(self, audio: bytes, filename: str = "audio.webm") -> str:
+        buffer = io.BytesIO(audio)
+        buffer.name = filename
+        transcription = self._client.audio.transcriptions.create(
+            model=self._transcription_model,
+            file=buffer,
         )
-    return transcription.text
+        return transcription.text
 
-def text_to_speech(text: str, output_file_path: str) -> None:
-    response = client.audio.speech.create(
-        model="gpt-4o-mini-tts",
-        voice="alloy",
-        input=text
-    )
-    with open(output_file_path, "wb") as audio_file:
-        audio_file.write(response.audio)
+    def synthesize_speech(self, text: str) -> bytes:
+        with self._client.audio.speech.with_streaming_response.create(
+            model=self._speech_model,
+            voice=self._voice,
+            input=text,
+        ) as response:
+            return response.read()
