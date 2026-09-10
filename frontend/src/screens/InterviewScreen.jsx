@@ -27,7 +27,13 @@ export default function InterviewScreen() {
     const mediaRecorderRef = useRef(null);
     const chunksRef = useRef([]);
     const audioRef = useRef(null);
-    const iniciadoRef = useRef(false); 
+    const iniciadoRef = useRef(false);
+    const msgsRef = useRef(null);
+
+    useEffect(() => {
+        const el = msgsRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+    }, [transcricao]);
  
    
     useEffect(() => {
@@ -201,7 +207,7 @@ export default function InterviewScreen() {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={style.timer}><Clock size={15} /> {mmss(segundos)}</span>
-                        <button style={style.concluirBtn} onClick={() => navigate("/feedback")}>
+                        <button style={style.concluirBtn} onClick={() => navigate("/feedback", { state: { sessionId } })}>
                             <XCircle size={17} /> Concluir
                         </button>
                     </div>
@@ -260,7 +266,7 @@ export default function InterviewScreen() {
                             <span style={style.pill}>Tempo Real</span>
                         </div>
  
-                        <div style={style.msgs}>
+                        <div style={style.msgs} ref={msgsRef}>
                             {transcricao.map((m, i) => (
                                 <div key={i} style={{ alignSelf: m.quem === "ia" ? "flex-start" : "flex-end", maxWidth: "88%" }}>
                                     <div style={style.msgMeta}>
@@ -573,7 +579,7 @@ const style = {
         border: "1px solid #d1e9e4",
         borderRadius: 15,
         padding: "12px 14px",
-        color: "#e7eaf3",
+        color: "#26443F",
         fontSize: 14.5,
         fontFamily: "inherit",
         boxSizing: "border-box",
