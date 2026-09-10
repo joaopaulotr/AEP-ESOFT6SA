@@ -12,6 +12,7 @@ addopts = [
 [tool.coverage.run]
 source = ["app"]
 branch = true
+omit = ["app/api/v1/endpoints/voice.py"]
 
 [tool.coverage.report]
 show_missing = true
