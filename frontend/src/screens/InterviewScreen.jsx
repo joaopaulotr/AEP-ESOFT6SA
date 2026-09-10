@@ -6,42 +6,43 @@ import Avatar from "../components/Avatar";
 import { Mic, Square, Send, Volume2, XCircle, Clock } from "lucide-react";
 
 const INTERVIEWER = "du";
-
-
-const PERGUNTAS = [
-    { tipo: "Técnica", texto: "Em um projeto TypeScript com React, como você utiliza Generics e Utility Types para garantir que seus componentes sejam flexíveis, porém mantendo uma tipagem rigorosa e segura?" },
-    { tipo: "Técnica", texto: "Como você gerencia estado global em uma aplicação React de médio porte? Compare as abordagens que já usou." },
-    { tipo: "Comportamental", texto: "Conte sobre uma vez em que você teve um desacordo técnico com o time e como chegaram a uma decisão." },
-    { tipo: "Técnica", texto: "Que estratégias você aplica para otimizar performance e evitar re-renderizações desnecessárias?" },
-    { tipo: "Comportamental", texto: "Por que essa vaga faz sentido pra você e o que espera dos próximos anos?" },
-];
-
+ 
+const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+console.log("API =", API);
+ 
 export default function InterviewScreen() {
     const navigate = useNavigate();
-    const [gravando, setGravando] = useState(false);
+ 
+    const [sessionId, setSessionId] = useState(null);
+    const [perguntaAtual, setPerguntaAtual] = useState("");
+    const [indiceAtual, setIndiceAtual] = useState(0);
     const [turno, setTurno] = useState("interviewer");
-    const [idx, setIdx] = useState(0);
+    const [gravando, setGravando] = useState(false);
+    const [processando, setProcessando] = useState(false); 
+    const [finalizada, setFinalizada] = useState(false);
     const [segundos, setSegundos] = useState(0);
     const [transcricao, setTranscricao] = useState([]);
     const [texto, setTexto] = useState("");
-
+ 
     const mediaRecorderRef = useRef(null);
     const chunksRef = useRef([]);
-
-    const atual = PERGUNTAS[idx];
-
+    const audioRef = useRef(null);
+    const iniciadoRef = useRef(false); 
+ 
+   
     useEffect(() => {
         const t = setInterval(() => setSegundos((s) => s + 1), 1000);
         return () => clearInterval(t);
     }, []);
-
+ 
+   
     useEffect(() => {
-        setTurno("interviewer");
-        setTranscricao((prev) => [...prev, { quem: "ia", texto: atual.texto, hora: agora() }]);
-        const t = setTimeout(() => setTurno("voce"), 2600);
-        return () => clearTimeout(t);
-    }, [idx]);
-
+        if (iniciadoRef.current) return;
+        iniciadoRef.current = true;
+        iniciarSessao();
+        return () => audioRef.current?.pause();
+    }, []);
+ 
     function agora() {
         return new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     }
@@ -50,17 +51,98 @@ export default function InterviewScreen() {
         const seg = String(s % 60).padStart(2, "0");
         return `${m}:${seg}`;
     }
+ 
+    
+    async function iniciarSessao() {
+        try {
+            const res = await fetch(`${API}/session`, { method: "POST" });
+            if (!res.ok) throw new Error();
+            const data = await res.json(); 
+            setSessionId(data.session_id);
+            await apresentarFala(data.pergunta, 0, false);
+        } catch {
+            alert("Não consegui iniciar a entrevista. O backend está no ar?");
+        }
+    }
+ 
+    
+    async function falar(fala) {
+        try {
+            const res = await fetch(`${API}/voice/fala`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ texto: fala }),
+            });
+            if (!res.ok) throw new Error();
+            const blob = await res.blob();
+            const audio = new Audio(URL.createObjectURL(blob));
+            audioRef.current = audio;
+            await new Promise((resolve) => {
+                audio.onended = resolve;
+                audio.onerror = resolve;
+               
+                audio.play().catch(resolve);
+            });
+        } catch {
+         
+        }
+    }
+ 
 
+    async function apresentarFala(fala, indice, terminou) {
+        setPerguntaAtual(fala);
+        if (typeof indice === "number") setIndiceAtual(indice);
+        setTranscricao((prev) => [...prev, { quem: "ia", texto: fala, hora: agora() }]);
+        setTurno("interviewer");
+        await falar(fala);
+        if (terminou) {
+            setFinalizada(true);
+            setTimeout(() => navigate("/feedback"), 1200);
+        } else {
+            setTurno("voce");
+        }
+    }
+ 
+  
+    async function enviarResposta(conteudo) {
+        const msg = (conteudo ?? "").trim();
+        if (!msg || !sessionId || processando) return;
+ 
+        setTranscricao((prev) => [...prev, { quem: "voce", texto: msg, hora: agora() }]);
+        setTexto("");
+        setProcessando(true);
+        setTurno("interviewer"); 
+ 
+        try {
+            const res = await fetch(`${API}/turn/${sessionId}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ texto: msg }),
+            });
+            if (!res.ok) throw new Error();
+            const data = await res.json(); 
+            await apresentarFala(data.fala, data.indice_atual, data.finalizada);
+        } catch {
+            alert("Erro ao enviar a resposta.");
+            setTurno("voce");
+        } finally {
+            setProcessando(false);
+        }
+    }
+ 
+    
+ 
     async function comecarGravacao() {
+        if (turno !== "voce" || processando) return;
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const recorder = new MediaRecorder(stream);
             chunksRef.current = [];
             recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-            recorder.onstop = () => {
+            recorder.onstop = async () => {
                 stream.getTracks().forEach((t) => t.stop());
-
-                responder(" Resposta enviada por voz");
+                const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+                await responderPorVoz(blob);
             };
             recorder.start();
             mediaRecorderRef.current = recorder;
@@ -69,41 +151,53 @@ export default function InterviewScreen() {
             alert("Não consegui acessar o microfone.");
         }
     }
-
+ 
     function pararGravacao() {
         mediaRecorderRef.current?.stop();
         setGravando(false);
     }
-
-    function responder(msg) {
-        const conteudo = (msg ?? texto).trim();
-        if (!conteudo || turno !== "voce") return;
-        setTranscricao((prev) => [...prev, { quem: "voce", texto: conteudo, hora: agora() }]);
-        setTexto("");
-        avancar();
-    }
-
-    function avancar() {
-        if (idx < PERGUNTAS.length - 1) {
-            setIdx((i) => i + 1);
-        } else {
-            navigate("/feedback");
+ 
+   
+    async function responderPorVoz(blob) {
+        setProcessando(true);
+        try {
+            const form = new FormData();
+            form.append("file", blob, "audio.webm");
+            const res = await fetch(`${API}/voice/transcricao`, { method: "POST", body: form });
+            if (!res.ok) throw new Error();
+            const data = await res.json(); 
+            setProcessando(false);
+            await enviarResposta(data.texto);
+        } catch {
+            setProcessando(false);
+            alert("Falha ao transcrever o áudio.");
         }
     }
-
+ 
+   
+ 
+    const podeResponder = turno === "voce" && !processando && !finalizada;
     const ouvindo = turno === "voce" && gravando;
-    const iaFalando = turno === "interviewer";
-
+    const iaFalando = turno === "interviewer" && !processando;
+ 
+    const statusTexto = processando
+        ? "PROCESSANDO…"
+        : ouvindo
+        ? "OUVINDO SUA RESPOSTA…"
+        : iaFalando
+        ? `${INTERVIEWER.toUpperCase()} ESTÁ FALANDO…`
+        : finalizada
+        ? "ENTREVISTA ENCERRADA"
+        : "SUA VEZ DE RESPONDER";
+ 
     return (
         <SideBar>
             <div style={style.root}>
                 <style>{CSS}</style>
-
-
+ 
                 <header style={style.topbar}>
                     <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                         <span style={style.recTag}><span className="rec-dot" /> ENTREVISTA EM ANDAMENTO</span>
-
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={style.timer}><Clock size={15} /> {mmss(segundos)}</span>
@@ -112,48 +206,44 @@ export default function InterviewScreen() {
                         </button>
                     </div>
                 </header>
-
-
+ 
                 <div style={style.row}>
-
                     <div style={style.colLeft}>
                         <div style={style.aiPanel}>
                             <div style={style.panelHead}>
-                                <span style={style.perguntaNum}>Pergunta ({idx + 1}/{PERGUNTAS.length})</span>
+                                <span style={style.perguntaNum}>Pergunta {indiceAtual + 1}</span>
                                 <span style={style.voiceChip}><Volume2 size={14} /> Voz: Ativada</span>
                             </div>
-
+ 
                             <div style={style.avatarWrap}>
                                 <Avatar size={128} />
                             </div>
-
-                            <p style={style.status}>
-                                {ouvindo ? "OUVINDO SUA RESPOSTA…" : iaFalando ? `${INTERVIEWER.toUpperCase()} ESTÁ FALANDO…` : "SUA VEZ DE RESPONDER"}
-                            </p>
-
+ 
+                            <p style={style.status}>{statusTexto}</p>
+ 
                             <div style={style.wave}>
                                 {[0, 1, 2, 3, 4, 5, 6].map((i) => (
                                     <span key={i} className={ouvindo || iaFalando ? "bar on" : "bar"} style={{ animationDelay: `${i * 0.09}s` }} />
                                 ))}
                             </div>
-
+ 
                             <div style={style.questionCard}>
-                                <div style={style.qHead}>
-
-                                    <span style={style.tipo}>{atual.tipo}</span>
-                                </div>
-                                <p style={style.textoIA}>"{atual.texto}"</p>
+                                <p style={style.textoIA}>
+                                    {perguntaAtual ? `"${perguntaAtual}"` : "Conectando à entrevista…"}
+                                </p>
                             </div>
                         </div>
-
+ 
                         <div style={style.bottomBar}>
                             <div style={{ flex: 1 }}>
                                 <p style={{ margin: 0, fontSize: 12.5, color: "#8a93ab" }}>Status</p>
-                                <p style={{ margin: "2px 0 0", fontSize: 14, fontWeight: 700, color: "#a7d4cb" }}>Pronta para ouvir</p>
+                                <p style={{ margin: "2px 0 0", fontSize: 14, fontWeight: 700, color: "#a7d4cb" }}>
+                                    {processando ? "Processando…" : podeResponder ? "Pronta para ouvir" : "Aguarde…"}
+                                </p>
                             </div>
                             <button
-                                style={{ ...style.micBtn, opacity: turno === "voce" ? 1 : 0.5, cursor: turno === "voce" ? "pointer" : "default" }}
-                                disabled={turno !== "voce"}
+                                style={{ ...style.micBtn, opacity: podeResponder ? 1 : 0.5, cursor: podeResponder ? "pointer" : "default" }}
+                                disabled={!podeResponder}
                                 onClick={gravando ? pararGravacao : comecarGravacao}
                             >
                                 {gravando ? <Square size={18} fill="#fff" /> : <Mic size={18} />}
@@ -161,8 +251,7 @@ export default function InterviewScreen() {
                             </button>
                         </div>
                     </div>
-
-
+ 
                     <div style={style.colRight}>
                         <div style={style.transcricao}>
                             <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, color: "#26443F", fontSize: 15 }}>
@@ -170,7 +259,7 @@ export default function InterviewScreen() {
                             </span>
                             <span style={style.pill}>Tempo Real</span>
                         </div>
-
+ 
                         <div style={style.msgs}>
                             {transcricao.map((m, i) => (
                                 <div key={i} style={{ alignSelf: m.quem === "ia" ? "flex-start" : "flex-end", maxWidth: "88%" }}>
@@ -181,19 +270,22 @@ export default function InterviewScreen() {
                                 </div>
                             ))}
                         </div>
-
+ 
                         <div style={style.tecladoCard}>
-                             <div style={style.linhaTopo} />
+                            <div style={style.linhaTopo} />
                             <textarea
                                 style={style.textarea}
                                 placeholder="Digite sua resposta ou use o botão de microfone…"
                                 value={texto}
+                                disabled={!podeResponder}
                                 onChange={(e) => setTexto(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); responder(); } }}
+                                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviarResposta(texto); } }}
                             />
                             <div style={style.composeFoot}>
                                 <span style={{ fontSize: 12, color: "#6a7391" }}>Shift + Enter para nova linha</span>
-                                <button style={style.responderBtn} onClick={() => responder()}><Send size={15} /></button>
+                                <button style={style.responderBtn} disabled={!podeResponder} onClick={() => enviarResposta(texto)}>
+                                    <Send size={15} />
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -202,7 +294,7 @@ export default function InterviewScreen() {
         </SideBar>
     );
 }
-
+ 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&display=swap');
 .rec-dot{width:9px;height:9px;border-radius:50%;background:#f0526b;animation:pulseRed 1.4s infinite}
@@ -213,7 +305,7 @@ const CSS = `
 @keyframes wave{0%,100%{height:8px}50%{height:24px}}
 textarea:focus{outline:none;border-color:#6d5efc !important}
 `;
-
+ 
 const style = {
     root: {
         width: "100%",
@@ -390,8 +482,6 @@ const style = {
         fontSize: 12,
         fontWeight: 700,
         color: "#26443F",
-
-        border: "1px solid #CDE1DC",
         border: "none",
         borderRadius: 1,
         padding: "3px 9px",
@@ -467,7 +557,6 @@ const style = {
     tecladoCard: {
         border: "none",
         padding: 14,
-
     },
     linhaTopo: {
         height: 1,
