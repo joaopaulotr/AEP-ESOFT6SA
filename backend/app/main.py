@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1.endpoints import session, turns
+from app.api.v1.endpoints import session, turns, voice
 
 app = FastAPI(title="API - ESOFT6SA")
 
@@ -15,6 +15,7 @@ app.add_middleware(
 
 app.include_router(session.router)
 app.include_router(turns.router)
+app.include_router(voice.router)
 
 
 @app.exception_handler(ValueError)
