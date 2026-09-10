@@ -7,10 +7,10 @@ from app.schemas.interview import InterviewState, Turn
 from app.services.llm_client import LLMClient
 
 CORE_QUESTIONS = [
-    "Me conta um pouco sobre como é o seu dia a dia de trabalho.",
-    "Qual foi a última vez que você usou um produto ou serviço parecido com este? Como foi?",
-    "O que mais te frustra nesse tipo de tarefa hoje?",
-    "Se você pudesse mudar uma coisa nesse processo, o que seria?",
+    "Para começar, me conta um pouco sobre você e sobre o seu dia a dia.",
+    "Como o tema desta conversa aparece na sua rotina? Me conta como foi a última vez.",
+    "O que mais te incomoda ou te atrapalha nesse contexto hoje?",
+    "Se você pudesse mudar uma coisa, o que seria — e por quê?",
 ]
 
 DEFAULT_CLOSING = "Obrigado pela sua participação, encerramos por aqui."
