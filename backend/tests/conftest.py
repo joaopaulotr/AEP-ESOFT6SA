@@ -1,5 +1,6 @@
 import json
 import os
+from types import SimpleNamespace
 
 # LLMClient() constrói o cliente OpenAI real quando nenhum é injetado, e o SDK
 # recusa a construção sem credencial. Precisa existir antes de qualquer import de app.
@@ -35,7 +36,7 @@ class FakeLLM:
     """Dublê do LLMClient: enfileira respostas e grava os prompts recebidos."""
 
     def __init__(self) -> None:
-        self.responses: list[dict | str] = []
+        self.responses: list = []
         self.prompts: list[str] = []
 
     def queue(
@@ -45,15 +46,17 @@ class FakeLLM:
         profile_updates: dict | None = None,
         closing_statement: str = "",
     ) -> "FakeLLM":
-        return self.queue_payload({
-            "action": action,
-            "next_utterance": next_utterance,
-            "profile_updates": profile_updates or {},
-            "closing_statement": closing_statement,
-        })
+        return self.queue_payload(
+            {
+                "action": action,
+                "next_utterance": next_utterance,
+                "profile_updates": profile_updates or {},
+                "closing_statement": closing_statement,
+            }
+        )
 
-    def queue_payload(self, payload: dict | str) -> "FakeLLM":
-        """Enfileira uma resposta crua, para exercitar payloads com chaves faltando."""
+    def queue_payload(self, payload) -> "FakeLLM":
+        """Enfileira uma resposta crua (dict ou str), para exercitar payloads parciais."""
         self.responses.append(payload)
         return self
 
@@ -77,9 +80,7 @@ class FakeLLM:
         return self.prompts[-1]
 
 
-class FakeLLMClient:
-    """Dublê do LLMClient: enfileira respostas e grava os prompts recebidos."""
-
+class _FakeCompletions:
     def __init__(self) -> None:
         self.responses: list[str] = []
         self.calls: list[dict] = []
