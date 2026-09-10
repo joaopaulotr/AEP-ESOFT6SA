@@ -97,7 +97,7 @@ export default function InterviewScreen() {
         await falar(fala);
         if (terminou) {
             setFinalizada(true);
-            setTimeout(() => navigate("/feedback"), 1200);
+            setTimeout(() => navigate("/feedback", { state: { sessionId } }), 1200);
         } else {
             setTurno("voce");
         }
