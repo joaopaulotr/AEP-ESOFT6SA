@@ -207,7 +207,12 @@ export default function InterviewScreen() {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={style.timer}><Clock size={15} /> {mmss(segundos)}</span>
-                        <button style={style.concluirBtn} onClick={() => navigate("/feedback", { state: { sessionId } })}>
+                        <button style={style.concluirBtn} onClick={async () => {
+                            if (sessionId) {
+                                try { await fetch(`${API}/session/${sessionId}/finish`, { method: "POST" }); } catch {}
+                            }
+                            navigate("/feedback", { state: { sessionId } });
+                        }}>
                             <XCircle size={17} /> Concluir
                         </button>
                     </div>

@@ -43,6 +43,12 @@ class InterviewService:
     def opening_question() -> str:
         return CORE_QUESTIONS[0]
 
+    def finish(self, interview_state: InterviewState) -> InterviewState:
+        if not interview_state.finished:
+            interview_state.finished = True
+            interview_state.conversation.append(Turn(role="interviewer", text=DEFAULT_CLOSING))
+        return interview_state
+
     def _build_graph(self):
         graph = StateGraph(GraphState)
         graph.add_node("decide", self._decide_node)

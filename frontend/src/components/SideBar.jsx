@@ -23,9 +23,10 @@ export default function Sidebar({ children }) {
     const isMobile = useIsMobile();    
 
     const itens = [
-        { rota: "/bem-vindo",  label: "Início",         icon: <Home size={19} /> },
+        { rota: "/welcome",    label: "Início",         icon: <Home size={19} /> },
         { rota: "/entrevista", label: "Nova entrevista", icon: <Mic size={19} /> },
-        { rota: "/historico",  label: "Histórico",       icon: <HistoryIcon size={19} /> },
+        // Histórico: sem rota/tela ainda — reabilitar quando existir /historico
+        // { rota: "/historico",  label: "Histórico",       icon: <HistoryIcon size={19} /> },
     ];
 
     return (
