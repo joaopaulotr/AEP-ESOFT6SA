@@ -151,6 +151,19 @@ sequenceDiagram
     A-->>F: síntese da entrevista
 ```
 
+### Grafo de decisão (LangGraph)
+
+`InterviewService._build_graph` compila o grafo executado a cada turno. Um único nó — a
+política de condução mora inteira no `decide_node`; o que fazer com o resultado (`deepen`,
+`advance`, `finish`) é tratado fora do grafo, em `run_turn`, para manter o LangGraph só como o
+ponto de decisão via LLM:
+
+```mermaid
+flowchart LR
+    START((START)) --> decide["decide\nlê a última resposta, chama o LLM,\ndevolve deepen / advance / finish"]
+    decide --> END((END))
+```
+
 ### Decisões de projeto
 
 - **A API não guarda estado em memória.** Todo o progresso da entrevista vive no documento do
