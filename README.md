@@ -72,17 +72,17 @@ MongoDB guarda o estado da entrevista.
 ```mermaid
 flowchart LR
     subgraph Navegador
-        UI["React SPA<br/>screens · MediaRecorder · Audio"]
+        UI[React SPA: screens, MediaRecorder, Audio]
     end
-    subgraph API["API — FastAPI"]
-        EP["Endpoints<br/>session · turns · voice"]
-        SV["Services<br/>InterviewService · SynthesisService<br/>VoiceService · LLMClient"]
-        RP["SessionRepository"]
+    subgraph API_FastAPI[API - FastAPI]
+        EP[Endpoints: session, turns, voice]
+        SV[Services: InterviewService, SynthesisService, VoiceService, LLMClient]
+        RP[SessionRepository]
     end
-    DB[("MongoDB<br/>interview_sessions")]
-    AI["OpenAI<br/>whisper-1 · gpt-4o-mini-tts · gpt-4o-mini"]
+    DB[(MongoDB - interview_sessions)]
+    AI[OpenAI: whisper-1, gpt-4o-mini-tts, gpt-4o-mini]
 
-    UI -->|"HTTP/JSON e áudio"| EP
+    UI -- HTTP/JSON e audio --> EP
     EP --> SV
     SV --> RP
     RP --> DB
