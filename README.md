@@ -153,16 +153,37 @@ sequenceDiagram
 
 ### Grafo de decisão (LangGraph)
 
-`InterviewService._build_graph` compila o grafo executado a cada turno. Um único nó — a
-política de condução mora inteira no `decide_node`; o que fazer com o resultado (`deepen`,
-`advance`, `finish`) é tratado fora do grafo, em `run_turn`, para manter o LangGraph só como o
-ponto de decisão via LLM:
+`InterviewService._build_graph` compila o grafo executado a cada turno. Estruturalmente é um
+único nó — a política de condução mora inteira no `decide_node`, que lê a última resposta, chama
+o LLM e devolve `deepen`, `advance` ou `finish`:
 
 ```mermaid
 flowchart LR
-    START((START)) --> decide["decide\nlê a última resposta, chama o LLM,\ndevolve deepen / advance / finish"]
+    START((START)) --> decide["decide_node\nchama o LLM"]
     decide --> END((END))
 ```
+
+O que interessa de verdade não é a forma do grafo (um nó só), e sim **o que o resultado desse nó
+dirige** em `run_turn`: o avanço pelas perguntas centrais de `CORE_QUESTIONS`. É esse loop —
+fora do LangGraph, em código comum e testável — que decide se a entrevista aprofunda, avança ou
+encerra:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pergunta1
+    Pergunta1 --> Pergunta1: deepen
+    Pergunta1 --> Pergunta2: advance
+    Pergunta2 --> Pergunta2: deepen
+    Pergunta2 --> Pergunta3: advance
+    Pergunta3 --> Pergunta3: deepen
+    Pergunta3 --> Pergunta4: advance
+    Pergunta4 --> Pergunta4: deepen
+    Pergunta4 --> Encerrada: advance / finish
+    Encerrada --> [*]
+```
+
+Cada transição é decidida pelo LLM dentro do `decide_node`; o `run_turn` só aplica o efeito
+(`current_index += 1`, marca `finished`, anexa o turno) e persiste o estado.
 
 ### Decisões de projeto
 
