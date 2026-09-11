@@ -24,6 +24,9 @@ class VoiceService:
         transcription = self._client.audio.transcriptions.create(
             model=self._transcription_model,
             file=buffer,
+            language="pt",
+            temperature=0,
+            prompt="Entrevista qualitativa em português sobre o dia a dia de trabalho.",
         )
         return transcription.text
 
