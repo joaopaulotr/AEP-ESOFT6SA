@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -106,13 +106,23 @@ class TestSave:
         assert stored.current_index == 3
         assert stored.finished is True
 
-    async def test_refreshes_the_updated_at_timestamp(self, repository):
+    async def test_refreshes_the_updated_at_timestamp(self, repository, monkeypatch):
         state = InterviewState()
         await repository.create(state)
         before = state.updated_at
+        after = before + timedelta(seconds=1)
 
+        class FixedDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return after
+
+        monkeypatch.setattr(
+            "app.repositories.session_repository.datetime", FixedDatetime
+        )
         await repository.save(state)
 
+        assert state.updated_at == after
         assert state.updated_at > before
         assert state.updated_at.tzinfo is timezone.utc
 

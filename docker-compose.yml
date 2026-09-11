@@ -6,7 +6,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - mongo_uri=mongodb://mongo:27017
+      - MONGO_URI=mongodb://mongo:27017
     depends_on:
       mongo:
         condition: service_healthy
