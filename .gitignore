@@ -3,7 +3,6 @@ __pycache__/
 .env
 .pytest_cache/
 .coverage
-htmlcov/
 node_modules/
 dist/
 .venv/
