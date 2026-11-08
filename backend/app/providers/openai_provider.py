@@ -7,9 +7,21 @@ from app.core.config import settings
 from app.providers.base import LLMProvider, ProviderError, SpeechProvider
 
 
+def _build_client() -> AsyncOpenAI:
+    # max_retries=0: o retry fica no InterviewService, com o timeout total sob controle.
+    try:
+        return AsyncOpenAI(
+            api_key=settings.openai_api_key or None,
+            timeout=settings.llm_timeout_seconds,
+            max_retries=0,
+        )
+    except OpenAIError as exc:
+        raise ProviderError("Provedor de IA não configurado.") from exc
+
+
 class OpenAILLMProvider(LLMProvider):
     def __init__(self, client: AsyncOpenAI | None = None, model: str = "gpt-4o-mini") -> None:
-        self._client = client or AsyncOpenAI(api_key=settings.openai_api_key or None)
+        self._client = client or _build_client()
         self._model = model
 
     @property
@@ -58,7 +70,7 @@ class OpenAISpeechProvider(SpeechProvider):
         speech_model: str = "gpt-4o-mini-tts",
         voice: str = "alloy",
     ) -> None:
-        self._client = client or AsyncOpenAI(api_key=settings.openai_api_key or None)
+        self._client = client or _build_client()
         self._transcription_model = transcription_model
         self._speech_model = speech_model
         self._voice = voice

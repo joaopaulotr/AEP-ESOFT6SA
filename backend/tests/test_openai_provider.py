@@ -153,3 +153,36 @@ def test_factory_builds_openai_providers_with_configured_model(monkeypatch, fake
     provider = build_llm_provider(s)
     assert isinstance(provider, OpenAILLMProvider) and provider.model == "gpt-4o"
     assert isinstance(build_speech_provider(s), OpenAISpeechProvider)
+
+
+class TestClientConstruction:
+    @pytest.mark.parametrize("cls", [OpenAILLMProvider, OpenAISpeechProvider])
+    def test_builds_the_client_with_timeout_and_no_sdk_retries(self, monkeypatch, cls, fake_async_openai):
+        captured: dict = {}
+
+        def _build(**kwargs):
+            captured.update(kwargs)
+            return fake_async_openai
+
+        monkeypatch.setattr(openai_provider, "AsyncOpenAI", _build)
+        monkeypatch.setattr(openai_provider.settings, "openai_api_key", "sk-x")
+
+        cls()
+
+        assert captured == {
+            "api_key": "sk-x",
+            "timeout": openai_provider.settings.llm_timeout_seconds,
+            "max_retries": 0,
+        }
+        assert openai_provider.settings.llm_timeout_seconds == 20.0
+
+    @pytest.mark.parametrize("cls", [OpenAILLMProvider, OpenAISpeechProvider])
+    def test_client_construction_failure_becomes_provider_error(self, monkeypatch, cls):
+        def _boom(**kwargs):
+            raise openai.OpenAIError("sem chave")
+
+        monkeypatch.setattr(openai_provider, "AsyncOpenAI", _boom)
+
+        with pytest.raises(ProviderError, match="não configurado") as info:
+            cls()
+        assert isinstance(info.value.__cause__, openai.OpenAIError)
