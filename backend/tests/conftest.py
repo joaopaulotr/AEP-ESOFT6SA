@@ -2,8 +2,8 @@ import json
 import os
 from types import SimpleNamespace
 
-# LLMClient() constrói o cliente OpenAI real quando nenhum é injetado, e o SDK
-# recusa a construção sem credencial. Precisa existir antes de qualquer import de app.
+# Defesa: se algum código construir um cliente OpenAI sem injeção, o SDK recusa
+# a construção sem credencial. Precisa existir antes de qualquer import de app.
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
 import pytest
@@ -87,42 +87,6 @@ class FakeLLM(LLMProvider):
     @property
     def last_prompt(self) -> str:
         return self.prompts[-1]
-
-
-class _FakeCompletions:
-    def __init__(self) -> None:
-        self.responses: list[str] = []
-        self.calls: list[dict] = []
-
-    def create(self, **kwargs) -> SimpleNamespace:
-        self.calls.append(kwargs)
-        if not self.responses:
-            raise _UnexpectedCall("Chamada inesperada à OpenAI: nenhuma resposta enfileirada.")
-        content = self.responses.pop(0)
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
-
-
-class FakeOpenAI:
-    """Dublê do SDK da OpenAI, para exercitar o LLMClient de verdade."""
-
-    def __init__(self) -> None:
-        self.completions = _FakeCompletions()
-        self.chat = SimpleNamespace(completions=self.completions)
-
-    def queue_raw(self, content: str) -> "FakeOpenAI":
-        self.completions.responses.append(content)
-        return self
-
-    def queue_json(self, payload: dict) -> "FakeOpenAI":
-        return self.queue_raw(json.dumps(payload))
-
-    @property
-    def calls(self) -> list[dict]:
-        return self.completions.calls
-
-    @property
-    def last_call(self) -> dict:
-        return self.calls[-1]
 
 
 class _AsyncFakeCompletions:
@@ -246,11 +210,6 @@ def service(fake_llm) -> InterviewService:
 @pytest.fixture
 def fake_async_openai() -> FakeAsyncOpenAI:
     return FakeAsyncOpenAI()
-
-
-@pytest.fixture
-def fake_openai() -> FakeOpenAI:
-    return FakeOpenAI()
 
 
 # --------------------------------------------------------------------------
