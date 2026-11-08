@@ -23,9 +23,18 @@ class OpenAILLMProvider(LLMProvider):
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
             )
-            return json.loads(response.choices[0].message.content)
-        except (OpenAIError, json.JSONDecodeError) as exc:
+            content = response.choices[0].message.content
+        except OpenAIError as exc:
             raise ProviderError(f"Falha no provedor de LLM: {exc}") from exc
+        if content is None:
+            raise ProviderError("O provedor de LLM devolveu uma resposta vazia.")
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ProviderError(f"Falha no provedor de LLM: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise ProviderError("O provedor de LLM não devolveu um objeto JSON.")
+        return payload
 
     async def complete_text(self, prompt: str) -> str:
         try:
@@ -33,9 +42,12 @@ class OpenAILLMProvider(LLMProvider):
                 model=self._model,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
         except OpenAIError as exc:
             raise ProviderError(f"Falha no provedor de LLM: {exc}") from exc
+        if content is None:
+            raise ProviderError("O provedor de LLM devolveu uma resposta vazia.")
+        return content
 
 
 class OpenAISpeechProvider(SpeechProvider):

@@ -42,6 +42,18 @@ class TestCompleteJson:
             await OpenAILLMProvider(client=fake_async_openai).complete_json("p")
         assert isinstance(info.value.__cause__, json.JSONDecodeError)
 
+    async def test_none_content_raises_provider_error(self, fake_async_openai):
+        fake_async_openai.queue_raw(None)
+
+        with pytest.raises(ProviderError, match="vazi"):
+            await OpenAILLMProvider(client=fake_async_openai).complete_json("p")
+
+    async def test_non_object_json_raises_provider_error(self, fake_async_openai):
+        fake_async_openai.queue_raw("[1, 2]")
+
+        with pytest.raises(ProviderError, match="objeto"):
+            await OpenAILLMProvider(client=fake_async_openai).complete_json("p")
+
     async def test_api_failure_raises_provider_error(self, fake_async_openai):
         fake_async_openai.fail_next(_conn_error())
 
@@ -56,6 +68,12 @@ class TestCompleteJson:
 
 
 class TestCompleteText:
+    async def test_none_content_raises_provider_error(self, fake_async_openai):
+        fake_async_openai.queue_raw(None)
+
+        with pytest.raises(ProviderError, match="vazi"):
+            await OpenAILLMProvider(client=fake_async_openai).complete_text("p")
+
     async def test_returns_the_raw_content(self, fake_async_openai):
         fake_async_openai.queue_raw("uma síntese qualquer")
 
