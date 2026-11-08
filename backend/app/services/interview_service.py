@@ -3,8 +3,8 @@ from typing import Literal, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from app.prompts.interview_prompts import DECISION_PROMPT
+from app.providers.base import LLMProvider
 from app.schemas.interview import InterviewState, Turn
-from app.services.llm_client import LLMClient
 
 CORE_QUESTIONS = [
     "Para começar, me conta um pouco sobre você e sobre o seu dia a dia.",
@@ -35,8 +35,8 @@ class GraphState(TypedDict):
 
 
 class InterviewService:
-    def __init__(self, llm_client: LLMClient | None = None) -> None:
-        self._llm = llm_client or LLMClient()
+    def __init__(self, llm: LLMProvider) -> None:
+        self._llm = llm
         self._graph = self._build_graph()
 
     @staticmethod
@@ -56,7 +56,7 @@ class InterviewService:
         graph.add_edge("decide", END)
         return graph.compile()
 
-    def _decide_node(self, state: GraphState) -> GraphState:
+    async def _decide_node(self, state: GraphState) -> GraphState:
         interview_state = state["interview_state"]
         current_question = CORE_QUESTIONS[interview_state.current_index]
         remaining = CORE_QUESTIONS[interview_state.current_index + 1 :]
@@ -67,7 +67,7 @@ class InterviewService:
             history=format_recent_history(interview_state.conversation),
             last_answer=state["last_answer"],
         )
-        result = self._llm.complete_json(prompt)
+        result = await self._llm.complete_json(prompt)
 
         interview_state.profile.update(result.get("profile_updates", {}))
 
@@ -81,12 +81,12 @@ class InterviewService:
 
         return {**state, "action": action, "next_utterance": next_utterance}
 
-    def run_turn(
+    async def run_turn(
         self, interview_state: InterviewState, participant_text: str
     ) -> tuple[InterviewState, str]:
         interview_state.conversation.append(Turn(role="participant", text=participant_text))
 
-        result = self._graph.invoke(
+        result = await self._graph.ainvoke(
             {
                 "interview_state": interview_state,
                 "last_answer": participant_text,

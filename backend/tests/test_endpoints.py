@@ -7,6 +7,7 @@ from app.api.deps import (
     get_synthesis_service,
 )
 from app.main import app
+from app.providers.base import ProviderError
 from app.repositories.session_repository import SessionRepository
 from app.services.interview_service import InterviewService
 from app.services.synthesis_service import SynthesisService
@@ -23,9 +24,9 @@ def client(fake_llm):
     repository = SessionRepository(database=FakeDB())
 
     app.dependency_overrides[get_session_repository] = lambda: repository
-    app.dependency_overrides[get_interview_service] = lambda: InterviewService(llm_client=fake_llm)
+    app.dependency_overrides[get_interview_service] = lambda: InterviewService(llm=fake_llm)
     app.dependency_overrides[get_synthesis_service] = lambda: SynthesisService(
-        session_repository=repository, llm_client=fake_llm
+        session_repository=repository, llm=fake_llm
     )
 
     with TestClient(app) as test_client:
@@ -115,3 +116,14 @@ def test_synthesis_after_finish_returns_the_report(client, fake_llm):
 
     assert response.status_code == 200
     assert response.json() == {"sintese": "relatório de síntese"}
+
+
+def test_synthesis_when_provider_fails_returns_502(client, fake_llm):
+    session_id = _abrir_sessao(client)
+    client.post(f"/session/{session_id}/finish")
+    fake_llm.queue_error(ProviderError("timeout"))
+
+    response = client.post(f"/session/{session_id}/synthesis")
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Falha ao se comunicar com o provedor de IA."}

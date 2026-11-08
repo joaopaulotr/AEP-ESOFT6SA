@@ -9,8 +9,8 @@ os.environ.setdefault("OPENAI_API_KEY", "test-key")
 import pytest
 
 from app.providers import openai_provider
+from app.providers.base import LLMProvider
 from app.schemas.interview import InterviewState, Turn
-from app.services import llm_client as llm_client_module
 from app.services.interview_service import InterviewService
 
 
@@ -33,12 +33,17 @@ def anyio_backend() -> str:
 # --------------------------------------------------------------------------
 
 
-class FakeLLM:
-    """Dublê do LLMClient: enfileira respostas e grava os prompts recebidos."""
+class FakeLLM(LLMProvider):
+    """Dublê do LLMProvider: enfileira respostas e grava os prompts recebidos."""
 
     def __init__(self) -> None:
         self.responses: list = []
         self.prompts: list[str] = []
+
+    def queue_error(self, exc: Exception) -> "FakeLLM":
+        """A próxima chamada (json ou texto) levanta exc."""
+        self.responses.append(exc)
+        return self
 
     def queue(
         self,
@@ -68,12 +73,15 @@ class FakeLLM:
                 "Chamada inesperada ao LLM: nenhuma resposta enfileirada. "
                 "Use fake_llm.queue(...) antes de exercitar o serviço."
             )
-        return self.responses.pop(0)
+        item = self.responses.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
 
-    def complete_json(self, prompt: str) -> dict:
+    async def complete_json(self, prompt: str) -> dict:
         return self._next(prompt)
 
-    def complete_text(self, prompt: str) -> str:
+    async def complete_text(self, prompt: str) -> str:
         return self._next(prompt)
 
     @property
@@ -222,7 +230,6 @@ def _no_real_openai(monkeypatch):
             "Tentativa de construir o cliente OpenAI real. Injete um dublê no teste."
         )
 
-    monkeypatch.setattr(llm_client_module, "OpenAI", _explode)
     monkeypatch.setattr(openai_provider, "AsyncOpenAI", _explode)
 
 
@@ -233,7 +240,7 @@ def fake_llm() -> FakeLLM:
 
 @pytest.fixture
 def service(fake_llm) -> InterviewService:
-    return InterviewService(llm_client=fake_llm)
+    return InterviewService(llm=fake_llm)
 
 
 @pytest.fixture

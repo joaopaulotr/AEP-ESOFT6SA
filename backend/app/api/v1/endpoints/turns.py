@@ -21,7 +21,7 @@ async def handle_turn(
     if session.finished:
         raise HTTPException(status_code=409, detail="A entrevista já foi encerrada.")
 
-    session, fala = interview.run_turn(session, payload.texto)
+    session, fala = await interview.run_turn(session, payload.texto)
     await sessions.save(session)
 
     return TurnResponse(
