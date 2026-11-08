@@ -69,11 +69,19 @@ class InterviewService:
             try:
                 return DecisionResult.model_validate(await self._llm.complete_json(prompt))
             except (ProviderError, ValidationError) as exc:
+                # Nunca logar str(exc) nem o payload: ValidationError inclui a entrada
+                # bruta do LLM, que pode conter dados pessoais do participante.
+                details = (
+                    [(e["loc"], e["type"]) for e in exc.errors(include_input=False)]
+                    if isinstance(exc, ValidationError)
+                    else None
+                )
                 logger.warning(
-                    "Decisão do LLM inválida (tentativa %d/%d): %s",
+                    "Decisão do LLM inválida (tentativa %d/%d): %s %s",
                     attempt,
                     MAX_DECISION_ATTEMPTS,
-                    exc,
+                    type(exc).__name__,
+                    details or "",
                 )
         logger.warning("Tentativas esgotadas; usando decisão de fallback (advance).")
         return FALLBACK_DECISION

@@ -308,6 +308,16 @@ class TestDecisionValidation:
         assert state.current_index == 1 and fala == CORE_QUESTIONS[1]
         assert len(fake_llm.prompts) == MAX_DECISION_ATTEMPTS
 
+    async def test_validation_failure_log_does_not_leak_llm_payload(
+        self, service, fake_llm, state, caplog
+    ):
+        payload = {"action": "Maria Silva", "next_utterance": "Maria Silva mora em SP"}
+        fake_llm.queue_payload(payload).queue_payload(payload)
+        with caplog.at_level("WARNING"):
+            await service.run_turn(state, "resposta")
+        assert "Maria Silva" not in caplog.text
+        assert "tentativa 1/" in caplog.text and "ValidationError" in caplog.text
+
     async def test_provider_error_falls_back_to_advance(self, service, fake_llm, state):
         fake_llm.queue_error(ProviderError("timeout")).queue_error(ProviderError("timeout"))
         _, fala = await service.run_turn(state, "resposta")
