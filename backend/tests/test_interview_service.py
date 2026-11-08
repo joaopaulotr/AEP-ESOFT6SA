@@ -1,9 +1,12 @@
 import pytest
 
+from app.providers.base import ProviderError
+from app.repositories.session_repository import SessionRepository
 from app.schemas.interview import InterviewState, Turn
 from app.services.interview_service import (
     CORE_QUESTIONS,
     DEFAULT_CLOSING,
+    MAX_DECISION_ATTEMPTS,
     InterviewService,
     format_full_conversation,
     format_recent_history,
@@ -288,6 +291,55 @@ class TestRunTurn:
         assert state.current_index == len(CORE_QUESTIONS)
         assert state.finished is True
         assert len(state.conversation) == 2 * len(CORE_QUESTIONS)
+
+
+class TestDecisionValidation:
+    async def test_invalid_payload_is_retried_once(self, service, fake_llm, state):
+        fake_llm.queue_payload({"next_utterance": "sem action"})
+        fake_llm.queue(action="deepen", next_utterance="Me conta mais?")
+        _, fala = await service.run_turn(state, "resposta")
+        assert fala == "Me conta mais?" and len(fake_llm.prompts) == 2
+
+    async def test_unknown_action_falls_back_to_advance_after_retries(
+        self, service, fake_llm, state
+    ):
+        fake_llm.queue_payload({"action": "skip"}).queue_payload({"action": "skip"})
+        _, fala = await service.run_turn(state, "resposta")
+        assert state.current_index == 1 and fala == CORE_QUESTIONS[1]
+        assert len(fake_llm.prompts) == MAX_DECISION_ATTEMPTS
+
+    async def test_provider_error_falls_back_to_advance(self, service, fake_llm, state):
+        fake_llm.queue_error(ProviderError("timeout")).queue_error(ProviderError("timeout"))
+        _, fala = await service.run_turn(state, "resposta")
+        assert fala == CORE_QUESTIONS[1] and not state.finished
+
+    async def test_provider_error_then_success_uses_the_success(self, service, fake_llm, state):
+        fake_llm.queue_error(ProviderError("timeout")).queue(
+            action="deepen", next_utterance="E aí?"
+        )
+        _, fala = await service.run_turn(state, "resposta")
+        assert fala == "E aí?" and state.current_index == 0
+
+    async def test_fallback_on_the_last_question_finishes(self, service, fake_llm, state):
+        state.current_index = LAST_INDEX
+        fake_llm.queue_payload({}).queue_payload({})
+        _, fala = await service.run_turn(state, "resposta")
+        assert state.finished and fala == DEFAULT_CLOSING
+
+    async def test_non_string_profile_values_survive_a_repository_round_trip(
+        self, service, fake_llm, state, fake_db
+    ):
+        repo = SessionRepository(database=fake_db)
+        await repo.create(state)
+        fake_llm.queue(
+            action="deepen",
+            next_utterance="?",
+            profile_updates={"idade": 42, "turnos": ["manhã"], "x": None},
+        )
+        await service.run_turn(state, "resposta")
+        await repo.save(state)
+        reloaded = await repo.get(state.session_id)
+        assert reloaded.profile == {"idade": "42", "turnos": "manhã"}
 
 
 class TestNoRealApiCalls:
