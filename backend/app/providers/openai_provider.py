@@ -1,0 +1,78 @@
+import io
+import json
+
+from openai import AsyncOpenAI, OpenAIError
+
+from app.core.config import settings
+from app.providers.base import LLMProvider, ProviderError, SpeechProvider
+
+
+class OpenAILLMProvider(LLMProvider):
+    def __init__(self, client: AsyncOpenAI | None = None, model: str = "gpt-4o-mini") -> None:
+        self._client = client or AsyncOpenAI(api_key=settings.openai_api_key or None)
+        self._model = model
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    async def complete_json(self, prompt: str) -> dict:
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+            return json.loads(response.choices[0].message.content)
+        except (OpenAIError, json.JSONDecodeError) as exc:
+            raise ProviderError(f"Falha no provedor de LLM: {exc}") from exc
+
+    async def complete_text(self, prompt: str) -> str:
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.choices[0].message.content
+        except OpenAIError as exc:
+            raise ProviderError(f"Falha no provedor de LLM: {exc}") from exc
+
+
+class OpenAISpeechProvider(SpeechProvider):
+    def __init__(
+        self,
+        client: AsyncOpenAI | None = None,
+        transcription_model: str = "whisper-1",
+        speech_model: str = "gpt-4o-mini-tts",
+        voice: str = "alloy",
+    ) -> None:
+        self._client = client or AsyncOpenAI(api_key=settings.openai_api_key or None)
+        self._transcription_model = transcription_model
+        self._speech_model = speech_model
+        self._voice = voice
+
+    async def transcribe(self, audio: bytes, filename: str = "audio.webm") -> str:
+        buffer = io.BytesIO(audio)
+        buffer.name = filename
+        try:
+            transcription = await self._client.audio.transcriptions.create(
+                model=self._transcription_model,
+                file=buffer,
+                language="pt",
+                temperature=0,
+                prompt="Entrevista qualitativa em português sobre o dia a dia de trabalho.",
+            )
+            return transcription.text
+        except OpenAIError as exc:
+            raise ProviderError(f"Falha na transcrição de áudio: {exc}") from exc
+
+    async def synthesize(self, text: str) -> bytes:
+        try:
+            response = await self._client.audio.speech.create(
+                model=self._speech_model,
+                voice=self._voice,
+                input=text,
+            )
+            return response.content
+        except OpenAIError as exc:
+            raise ProviderError(f"Falha na síntese de voz: {exc}") from exc

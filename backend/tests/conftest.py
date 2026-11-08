@@ -8,6 +8,7 @@ os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
 import pytest
 
+from app.providers import openai_provider
 from app.schemas.interview import InterviewState, Turn
 from app.services import llm_client as llm_client_module
 from app.services.interview_service import InterviewService
@@ -116,6 +117,102 @@ class FakeOpenAI:
         return self.calls[-1]
 
 
+class _AsyncFakeCompletions:
+    def __init__(self, owner: "FakeAsyncOpenAI") -> None:
+        self._owner = owner
+        self.responses: list[str] = []
+        self.calls: list[dict] = []
+
+    async def create(self, **kwargs) -> SimpleNamespace:
+        self.calls.append(kwargs)
+        self._owner._raise_if_failing()
+        if not self.responses:
+            raise _UnexpectedCall("Chamada inesperada à OpenAI: nenhuma resposta enfileirada.")
+        content = self.responses.pop(0)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
+class _AsyncFakeTranscriptions:
+    def __init__(self, owner: "FakeAsyncOpenAI") -> None:
+        self._owner = owner
+        self.responses: list[str] = []
+        self.calls: list[dict] = []
+
+    async def create(self, **kwargs) -> SimpleNamespace:
+        self.calls.append(kwargs)
+        self._owner._raise_if_failing()
+        if not self.responses:
+            raise _UnexpectedCall("Chamada inesperada à transcrição: nada enfileirado.")
+        return SimpleNamespace(text=self.responses.pop(0))
+
+
+class _AsyncFakeSpeech:
+    def __init__(self, owner: "FakeAsyncOpenAI") -> None:
+        self._owner = owner
+        self.responses: list[bytes] = []
+        self.calls: list[dict] = []
+
+    async def create(self, **kwargs) -> SimpleNamespace:
+        self.calls.append(kwargs)
+        self._owner._raise_if_failing()
+        if not self.responses:
+            raise _UnexpectedCall("Chamada inesperada à síntese de fala: nada enfileirado.")
+        return SimpleNamespace(content=self.responses.pop(0))
+
+
+class FakeAsyncOpenAI:
+    """Dublê async do SDK da OpenAI (AsyncOpenAI), para exercitar os providers."""
+
+    def __init__(self) -> None:
+        self._failure: Exception | None = None
+        self.completions = _AsyncFakeCompletions(self)
+        self.transcriptions = _AsyncFakeTranscriptions(self)
+        self.speech = _AsyncFakeSpeech(self)
+        self.chat = SimpleNamespace(completions=self.completions)
+        self.audio = SimpleNamespace(transcriptions=self.transcriptions, speech=self.speech)
+
+    def _raise_if_failing(self) -> None:
+        if self._failure is not None:
+            failure, self._failure = self._failure, None
+            raise failure
+
+    def fail_next(self, exc: Exception) -> "FakeAsyncOpenAI":
+        """A próxima chamada, de qualquer endpoint, levanta exc."""
+        self._failure = exc
+        return self
+
+    def queue_raw(self, content: str) -> "FakeAsyncOpenAI":
+        self.completions.responses.append(content)
+        return self
+
+    def queue_json(self, payload: dict) -> "FakeAsyncOpenAI":
+        return self.queue_raw(json.dumps(payload))
+
+    def queue_transcription(self, text: str) -> "FakeAsyncOpenAI":
+        self.transcriptions.responses.append(text)
+        return self
+
+    def queue_speech(self, content: bytes) -> "FakeAsyncOpenAI":
+        self.speech.responses.append(content)
+        return self
+
+    @property
+    def calls(self) -> list[dict]:
+        return self.completions.calls
+
+    @property
+    def last_call(self) -> dict:
+        return self.calls[-1]
+
+    @property
+    def last_transcription_call(self) -> dict:
+        return self.transcriptions.calls[-1]
+
+    @property
+    def last_speech_call(self) -> dict:
+        return self.speech.calls[-1]
+
+
 @pytest.fixture(autouse=True)
 def _no_real_openai(monkeypatch):
     """Rede fechada: qualquer tentativa de construir o cliente real falha alto."""
@@ -126,6 +223,7 @@ def _no_real_openai(monkeypatch):
         )
 
     monkeypatch.setattr(llm_client_module, "OpenAI", _explode)
+    monkeypatch.setattr(openai_provider, "AsyncOpenAI", _explode)
 
 
 @pytest.fixture
@@ -136,6 +234,11 @@ def fake_llm() -> FakeLLM:
 @pytest.fixture
 def service(fake_llm) -> InterviewService:
     return InterviewService(llm_client=fake_llm)
+
+
+@pytest.fixture
+def fake_async_openai() -> FakeAsyncOpenAI:
+    return FakeAsyncOpenAI()
 
 
 @pytest.fixture
