@@ -76,12 +76,15 @@ class InterviewService:
                     if isinstance(exc, ValidationError)
                     else None
                 )
+                # Só o tipo da causa (ex.: AuthenticationError), nunca a mensagem.
+                cause = type(exc.__cause__).__name__ if exc.__cause__ else ""
                 logger.warning(
-                    "Decisão do LLM inválida (tentativa %d/%d): %s %s",
+                    "Decisão do LLM inválida (tentativa %d/%d): %s %s %s",
                     attempt,
                     MAX_DECISION_ATTEMPTS,
                     type(exc).__name__,
                     details or "",
+                    f"causa={cause}" if cause else "",
                 )
         logger.warning("Tentativas esgotadas; usando decisão de fallback (advance).")
         return FALLBACK_DECISION

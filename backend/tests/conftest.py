@@ -48,10 +48,12 @@ class FakeLLM(LLMProvider):
     def queue(
         self,
         action: str = "deepen",
-        next_utterance: str = "",
+        next_utterance: str | None = None,
         profile_updates: dict | None = None,
         closing_statement: str = "",
     ) -> "FakeLLM":
+        if next_utterance is None:  # deepen exige fala; os demais não
+            next_utterance = "Me conta mais." if action == "deepen" else ""
         return self.queue_payload(
             {
                 "action": action,

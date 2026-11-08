@@ -53,3 +53,26 @@ def test_profile_updates_null_becomes_empty():
 
 def test_extra_keys_are_ignored():
     assert DecisionResult.model_validate({"action": "advance", "foo": 1}).action == "advance"
+
+
+@pytest.mark.parametrize("utterance", [None, "", "   "])
+def test_deepen_requires_a_non_blank_utterance(utterance):
+    with pytest.raises(ValidationError):
+        DecisionResult.model_validate({"action": "deepen", "next_utterance": utterance})
+
+
+def test_advance_and_finish_do_not_require_an_utterance():
+    assert DecisionResult.model_validate({"action": "advance"}).action == "advance"
+    assert DecisionResult.model_validate({"action": "finish"}).action == "finish"
+
+
+def test_blank_profile_values_are_dropped():
+    d = DecisionResult.model_validate(
+        {"action": "advance", "profile_updates": {"cargo": "", "setor": "  ", "lista": [" "], "nome": "Ana"}}
+    )
+    assert d.profile_updates == {"nome": "Ana"}
+
+
+def test_list_profile_values_are_joined():
+    d = DecisionResult.model_validate({"action": "advance", "profile_updates": {"tags": ["a", 2]}})
+    assert d.profile_updates == {"tags": "a, 2"}

@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def _scalar_to_str(value: Any) -> str | None:
@@ -27,6 +27,12 @@ class DecisionResult(BaseModel):
     def _none_to_empty(cls, value: Any) -> Any:
         return "" if value is None else value
 
+    @model_validator(mode="after")
+    def _deepen_needs_an_utterance(self) -> "DecisionResult":
+        if self.action == "deepen" and not self.next_utterance.strip():
+            raise ValueError("deepen exige next_utterance não vazio")
+        return self
+
     @field_validator("profile_updates", mode="before")
     @classmethod
     def _coerce_profile(cls, value: Any) -> Any:
@@ -38,10 +44,11 @@ class DecisionResult(BaseModel):
         for key, item in value.items():
             if isinstance(item, list):
                 parts = [s for s in (_scalar_to_str(i) for i in item) if s is not None]
-                if parts:
-                    result[key] = ", ".join(parts)
+                joined = ", ".join(parts)
+                if joined.strip():
+                    result[key] = joined
                 continue
             text = _scalar_to_str(item)
-            if text is not None:
+            if text is not None and text.strip():
                 result[key] = text
         return result

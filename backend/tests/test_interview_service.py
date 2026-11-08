@@ -111,8 +111,19 @@ class TestDecideNode:
 
         assert state.profile == {"cargo": "gerente", "contexto": "varejo"}
 
-    async def test_tolerates_response_without_optional_keys(self, service, fake_llm, state):
-        fake_llm.queue_payload({"action": "deepen"})
+    async def test_deepen_without_utterance_is_retried_then_falls_back_to_advance(
+        self, service, fake_llm, state
+    ):
+        fake_llm.queue_payload({"action": "deepen"}).queue_payload({"action": "deepen"})
+
+        result = await service._decide_node(graph_state(state))
+
+        assert result["action"] == "advance"
+        assert len(fake_llm.prompts) == MAX_DECISION_ATTEMPTS
+        assert state.profile == {}
+
+    async def test_tolerates_advance_without_optional_keys(self, service, fake_llm, state):
+        fake_llm.queue_payload({"action": "advance"})
 
         result = await service._decide_node(graph_state(state))
 
@@ -317,6 +328,21 @@ class TestDecisionValidation:
             await service.run_turn(state, "resposta")
         assert "Maria Silva" not in caplog.text
         assert "tentativa 1/" in caplog.text and "ValidationError" in caplog.text
+
+    async def test_provider_error_log_has_cause_type_but_not_message(
+        self, service, fake_llm, state, caplog
+    ):
+        try:
+            try:
+                raise PermissionError("chave sk-secreta invalida")
+            except PermissionError as cause:
+                raise ProviderError("Falha: chave sk-secreta invalida") from cause
+        except ProviderError as err:
+            fake_llm.queue_error(err).queue_error(err)
+        with caplog.at_level("WARNING"):
+            await service.run_turn(state, "resposta")
+        assert "PermissionError" in caplog.text and "ProviderError" in caplog.text
+        assert "sk-secreta" not in caplog.text
 
     async def test_provider_error_falls_back_to_advance(self, service, fake_llm, state):
         fake_llm.queue_error(ProviderError("timeout")).queue_error(ProviderError("timeout"))
