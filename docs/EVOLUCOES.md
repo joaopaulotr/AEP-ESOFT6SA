@@ -308,6 +308,7 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
   `SpeechProvider` com `transcribe`, `synthesize`.
 - Implementações: `OpenAIProvider` e `FakeProvider` (determinística, usada em testes/E2E/demo offline — RK-06).
 - Escolha por configuração. Demonstra polimorfismo para Paradigmas de Linguagem.
+- `stream_text` fica para o EV-60 (streaming), quando houver consumidor.
 
 ### EV-60 — Streaming da fala (SSE) `TODO`
 
@@ -386,7 +387,7 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 | ID | Problema | Correção |
 |---|---|---|
 | EV-10 | Chamadas OpenAI **síncronas** em endpoints `async` bloqueiam o event loop | `AsyncOpenAI`; services `async` (dentro do `OpenAIProvider`, EV-41) ✅ DONE |
-| EV-11 | Saída do LLM não validada: `result["action"]` → KeyError; ação inválida vira `deepen` silencioso; `profile_updates` não-string corrompe a sessão | Modelo Pydantic `DecisionResult` + retry + fallback determinístico ✅ DONE |
+| EV-11 | Saída do LLM não validada: `result["action"]` → KeyError; ação inválida vira `deepen` silencioso; `profile_updates` não-string corrompe a sessão | Modelo Pydantic `DecisionResult` + retry + fallback determinístico ✅ DONE. Decisão: fallback no último turno encerra; a resposta fica na transcrição e entra na síntese (evita prender a pessoa em loop com provedor fora do ar). |
 | EV-12 | `deps.py` recria service, cliente OpenAI e recompila o grafo a cada request | Singletons via `lru_cache` / `lifespan` ✅ DONE |
 | EV-13 | `/synthesis` regenera (e paga) a cada chamada | Retornar existente; `?refresh=true` para regerar |
 | EV-15 | Rotas sem prefixo apesar da pasta `api/v1` | `include_router(prefix="/api/v1")` |
