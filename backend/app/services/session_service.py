@@ -57,14 +57,20 @@ class SessionService:
             raise ConflictError("A entrevista já foi encerrada.")
         script = await self._scripts.get(session.script_id)
         if script is None:
-            raise NotFoundError("O roteiro desta entrevista não existe mais.")
-
-        session, fala = await self._interview.run_turn(session, script, text)
-        await self._sessions.save(session)
+            # Roteiro apagado com a sessão em andamento: guarda a resposta e encerra.
+            session, fala = self._interview.close_with_answer(session, text)
+        else:
+            session, fala = await self._interview.run_turn(session, script, text)
+        await self._persist(session)
         return session, fala
 
     async def finish(self, session_id: str) -> InterviewState:
         session = await self._sessions.get_or_raise(session_id)
         self._interview.finish(session)
-        await self._sessions.save(session)
+        await self._persist(session)
         return session
+
+    async def _persist(self, session: InterviewState) -> None:
+        """Grava a sessão; versão velha vira ConflictError no repositório."""
+        if not await self._sessions.save(session):
+            raise NotFoundError(SessionRepository.not_found_message)  # apagada no meio

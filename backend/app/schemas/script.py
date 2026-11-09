@@ -61,6 +61,7 @@ class InterviewScript(BaseModel):
     persona: Persona = Field(default_factory=Persona)
     slug_convite: str = ""
     ativo: bool = True
+    versao: int = Field(default=0, ge=0)  # controle otimista de concorrência
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
 

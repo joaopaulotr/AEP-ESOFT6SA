@@ -11,4 +11,8 @@ class NotFoundError(DomainError):
 
 
 class ConflictError(DomainError):
-    """A operação conflita com o estado atual (duplicado, encerrado, inativo)."""
+    """A operação conflita com o estado atual (duplicado, encerrado, inativo, versão velha)."""
+
+
+class CorruptDocumentError(Exception):
+    """Documento gravado no banco não corresponde ao modelo (erro do servidor)."""

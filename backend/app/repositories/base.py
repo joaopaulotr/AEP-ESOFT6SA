@@ -2,11 +2,11 @@ from abc import ABC
 from datetime import datetime, timezone
 from typing import Any, ClassVar, Generic, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from pymongo import ASCENDING, DESCENDING, IndexModel
 from pymongo.errors import DuplicateKeyError
 
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, CorruptDocumentError, NotFoundError
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -23,6 +23,7 @@ class BaseRepository(ABC, Generic[ModelT]):
     id_field: ClassVar[str]
     not_found_message: ClassVar[str] = "Registro não encontrado."
     duplicate_message: ClassVar[str] = "Registro já existe."
+    stale_message: ClassVar[str] = "O registro foi alterado por outra ação. Tente de novo."
     extra_indexes: ClassVar[tuple[IndexModel, ...]] = ()
     default_sort: ClassVar[tuple[str, int]] = ("created_at", DESCENDING)
 
@@ -43,7 +44,14 @@ class BaseRepository(ABC, Generic[ModelT]):
     def _to_model(self, document: dict) -> ModelT:
         document = dict(document)
         document.pop("_id", None)
-        return self.model.model_validate(document)  # type: ignore[return-value]
+        try:
+            return self.model.model_validate(document)  # type: ignore[return-value]
+        except ValidationError as exc:
+            # Documento do banco fora do modelo é falha do servidor, não da requisição.
+            # A mensagem não leva o conteúdo do documento (pode ter fala do participante).
+            raise CorruptDocumentError(
+                f"Documento inválido em {self.collection_name}."
+            ) from exc
 
     def _identity(self, entity: ModelT) -> str:
         return getattr(entity, self.id_field)
@@ -82,17 +90,39 @@ class BaseRepository(ABC, Generic[ModelT]):
         return await self._collection.count_documents({self.id_field: entity_id}, limit=1) > 0
 
     async def save(self, entity: ModelT) -> bool:
-        """Atualiza o documento existente. Devolve False se ele não existir."""
-        if hasattr(entity, "updated_at"):
-            entity.updated_at = datetime.now(timezone.utc)
+        """Atualiza o documento existente. Devolve False se ele não existir.
+
+        Modelos com campo `versao` têm controle otimista de concorrência: só grava
+        se o documento ainda estiver na versão lida; senão levanta ConflictError
+        (evita que uma cópia velha sobrescreva uma alteração mais nova).
+        """
+        identity = self._identity(entity)
+        query: dict = {self.id_field: identity}
+        versioned = hasattr(entity, "versao")
+        if versioned:
+            expected = entity.versao
+            # Documentos anteriores ao versionamento não têm o campo.
+            query["versao"] = {"$in": [0, None]} if expected == 0 else expected
+
         document = self._to_document(entity)
+        if hasattr(entity, "updated_at"):
+            document["updated_at"] = datetime.now(timezone.utc)
+        if versioned:
+            document["versao"] = expected + 1
         try:
-            result = await self._collection.update_one(
-                {self.id_field: self._identity(entity)}, {"$set": document}
-            )
+            result = await self._collection.update_one(query, {"$set": document})
         except DuplicateKeyError as exc:
             raise ConflictError(self.duplicate_message) from exc
-        return result.matched_count > 0
+
+        if result.matched_count == 0:
+            if versioned and await self.exists(identity):
+                raise ConflictError(self.stale_message)
+            return False
+        if hasattr(entity, "updated_at"):
+            entity.updated_at = document["updated_at"]
+        if versioned:
+            entity.versao = document["versao"]
+        return True
 
     async def delete(self, entity_id: str) -> bool:
         result = await self._collection.delete_one({self.id_field: entity_id})

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.api.deps import get_session_service, get_synthesis_service
-from app.schemas.interview import InterviewState, SessionResponse
+from app.schemas.interview import InterviewState, SessionResponse, SynthesisResponse
 from app.services.session_service import SessionService
 from app.services.synthesis_service import SynthesisService
 
@@ -24,9 +24,9 @@ async def finish_session(session_id: str, sessions: SessionService = Depends(get
     return await sessions.finish(session_id)
 
 
-@router.post("/session/{session_id}/synthesis")
+@router.post("/session/{session_id}/synthesis", response_model=SynthesisResponse)
 async def synthesize_session(
     session_id: str,
     synthesis: SynthesisService = Depends(get_synthesis_service),
 ):
-    return {"sintese": await synthesis.synthesize(session_id)}
+    return SynthesisResponse(sintese=await synthesis.synthesize(session_id))

@@ -1,12 +1,15 @@
 from pymongo import ASCENDING, IndexModel
 
+from app.db import collections
 from app.repositories.base import BaseRepository
+from app.schemas.interview import InterviewState
+from app.schemas.script import DEFAULT_SCRIPT_ID
 from app.schemas.synthesis import Synthesis
 
 
 class SynthesisRepository(BaseRepository[Synthesis]):
     model = Synthesis
-    collection_name = "syntheses"
+    collection_name = collections.SYNTHESES
     id_field = "synthesis_id"
     not_found_message = "Síntese não encontrada."
     duplicate_message = "Síntese já existe."
@@ -27,6 +30,23 @@ class SynthesisRepository(BaseRepository[Synthesis]):
         """Id fixo da síntese de uma sessão: o índice único de synthesis_id
         garante uma síntese por sessão mesmo com pedidos simultâneos."""
         return f"sessao:{session_id}"
+
+    async def import_legacy(self, session: InterviewState, resumo: str) -> None:
+        """Guarda a síntese que a v0.1.0 deixava dentro da sessão (sem sobrescrever)."""
+        synthesis_id = self.session_synthesis_id(session.session_id)
+        legacy = Synthesis(
+            synthesis_id=synthesis_id,
+            escopo="sessao",
+            session_id=session.session_id,
+            script_id=DEFAULT_SCRIPT_ID,
+            resumo=resumo,
+            modelo="v0.1.0",
+        )
+        await self._collection.update_one(
+            {self.id_field: synthesis_id},
+            {"$setOnInsert": self._to_document(legacy)},
+            upsert=True,
+        )
 
     async def save_for_session(self, synthesis: Synthesis) -> Synthesis:
         """Upsert atômico: cria na primeira vez; regerar substitui o conteúdo

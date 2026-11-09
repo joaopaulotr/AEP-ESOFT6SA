@@ -57,13 +57,9 @@ class InterviewService:
         self._graph = self._build_graph()
 
     @staticmethod
-    def opening_question(script: InterviewScript) -> str:
-        return script.perguntas[0].texto
-
-    def start(self, interview_state: InterviewState, script: InterviewScript) -> str:
-        """Registra a pergunta de abertura do roteiro na conversa."""
+    def start(interview_state: InterviewState, script: InterviewScript) -> str:
+        """Registra a pergunta de abertura do roteiro na conversa e a devolve."""
         pergunta = script.perguntas[0]
-        interview_state.script_id = script.script_id
         interview_state.conversation.append(
             Turn(role="interviewer", text=pergunta.texto, pergunta_ordem=pergunta.ordem)
         )
@@ -74,6 +70,15 @@ class InterviewService:
             interview_state.finished = True
             interview_state.conversation.append(Turn(role="interviewer", text=DEFAULT_CLOSING))
         return interview_state
+
+    def close_with_answer(
+        self, interview_state: InterviewState, participant_text: str
+    ) -> tuple[InterviewState, str]:
+        """Registra a última resposta e encerra, quando o roteiro não permite seguir
+        (pergunta atual removida ou roteiro apagado). Nada do que a pessoa disse se perde."""
+        interview_state.conversation.append(Turn(role="participant", text=participant_text))
+        self.finish(interview_state)
+        return interview_state, DEFAULT_CLOSING
 
     def _build_graph(self):
         graph = StateGraph(GraphState)
@@ -144,11 +149,8 @@ class InterviewService:
     ) -> tuple[InterviewState, str]:
         perguntas = script.perguntas
         if interview_state.current_index >= len(perguntas):
-            # O roteiro foi encurtado depois que a sessão começou: encerra com a
-            # resposta registrada em vez de quebrar a entrevista.
-            interview_state.conversation.append(Turn(role="participant", text=participant_text))
-            self.finish(interview_state)
-            return interview_state, DEFAULT_CLOSING
+            # O roteiro foi encurtado depois que a sessão começou.
+            return self.close_with_answer(interview_state, participant_text)
 
         ordem_atual = perguntas[interview_state.current_index].ordem
         interview_state.conversation.append(
@@ -183,7 +185,10 @@ class InterviewService:
                 next_utterance = next_utterance or proxima.texto
                 pergunta_ordem = proxima.ordem
         elif action == "finish":
+            # Mesmo formato do encerramento por "advance" na última pergunta.
+            interview_state.asked_indices.append(interview_state.current_index)
             interview_state.finished = True
+            pergunta_ordem = None
 
         interview_state.conversation.append(
             Turn(

@@ -1,8 +1,9 @@
+from collections.abc import Awaitable, Callable
+
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
+from app.db import collections
 from app.repositories.base import BaseRepository
-from app.repositories.participant_repository import ParticipantRepository
-from app.repositories.script_repository import ScriptRepository
 from app.schemas.interview import (
     ActionCount,
     InterviewState,
@@ -11,15 +12,18 @@ from app.schemas.interview import (
     SessionDetails,
 )
 from app.schemas.participant import Participant
-from app.schemas.script import InterviewScript
+from app.schemas.script import DEFAULT_SCRIPT_ID, InterviewScript
+
+LegacySynthesisHandler = Callable[[InterviewState, str], Awaitable[None]]
 
 
 class SessionRepository(BaseRepository[InterviewState]):
     model = InterviewState
-    collection_name = "interview_sessions"
+    collection_name = collections.SESSIONS
     id_field = "session_id"
     not_found_message = "Sessão não encontrada."
     duplicate_message = "Sessão já existe."
+    stale_message = "A sessão foi alterada por outra ação. Tente de novo."
     extra_indexes = (
         IndexModel([("script_id", ASCENDING), ("created_at", DESCENDING)], name="script_id_data"),
         IndexModel([("participant_id", ASCENDING)], name="participant_id"),
@@ -33,6 +37,35 @@ class SessionRepository(BaseRepository[InterviewState]):
     ) -> list[InterviewState]:
         return await self.list({"participant_id": participant_id}, limit=limit)
 
+    # -- migração da v0.1.0 -------------------------------------------------
+
+    async def backfill_legacy(self, on_synthesis: LegacySynthesisHandler) -> int:
+        """Completa no banco as sessões gravadas pela v0.1.0 (idempotente).
+
+        Elas não têm script_id/status/versao, então ficariam fora do $lookup e das
+        agregações. A síntese antiga (campo `synthesis`) é entregue a `on_synthesis`
+        antes de ser removida do documento. Devolve quantas sessões foram migradas.
+        """
+        legacy = await self._collection.find({"script_id": {"$exists": False}}).to_list(length=None)
+        for document in legacy:
+            state = self._to_model(document)
+            old_synthesis = document.get("synthesis")
+            if isinstance(old_synthesis, str) and old_synthesis.strip():
+                await on_synthesis(state, old_synthesis)
+            await self._collection.update_one(
+                {"session_id": state.session_id, "script_id": {"$exists": False}},
+                {
+                    "$set": {
+                        "script_id": DEFAULT_SCRIPT_ID,
+                        "participant_id": None,
+                        "status": state.status,
+                        "versao": 0,
+                    },
+                    "$unset": {"synthesis": ""},
+                },
+            )
+        return len(legacy)
+
     # -- consultas relacionais ($lookup) ----------------------------------
 
     async def get_details(self, session_id: str) -> SessionDetails | None:
@@ -41,7 +74,7 @@ class SessionRepository(BaseRepository[InterviewState]):
             {"$match": {"session_id": session_id}},
             {
                 "$lookup": {
-                    "from": ScriptRepository.collection_name,
+                    "from": collections.SCRIPTS,
                     "localField": "script_id",
                     "foreignField": "script_id",
                     "as": "script",
@@ -49,7 +82,7 @@ class SessionRepository(BaseRepository[InterviewState]):
             },
             {
                 "$lookup": {
-                    "from": ParticipantRepository.collection_name,
+                    "from": collections.PARTICIPANTS,
                     "localField": "participant_id",
                     "foreignField": "participant_id",
                     "as": "participant",
