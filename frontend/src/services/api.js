@@ -1,6 +1,6 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-const API_PREFIX = "";
+const API_PREFIX = "/api/v1";
 
 export class ApiError extends Error {
 
@@ -38,9 +38,48 @@ function postJson(body) {
 
 export const api = {
     
-    async createSession() {
-        const res = await request("/session", { method: "POST" });
+    async createSession({ scriptId, participantId } = {}) {
+        const body = {};
+        if (scriptId) body.script_id = scriptId;
+        if (participantId) body.participant_id = participantId;
+        const res = await request("/session", postJson(body));
         return res.json();
+    },
+
+    async listScripts() {
+        const res = await request("/scripts");
+        return res.json();
+    },
+
+    async getScript(scriptId) {
+        const res = await request(`/scripts/${encodeURIComponent(scriptId)}`);
+        return res.json();
+    },
+
+    async listScriptSessions(scriptId, { status } = {}) {
+        const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+        const res = await request(`/scripts/${encodeURIComponent(scriptId)}/sessions${qs}`);
+        return res.json();
+    },
+
+    async getSessionDetails(sessionId) {
+        const res = await request(`/session/${sessionId}/detalhes`);
+        return res.json();
+    },
+
+    /** Síntese salva da sessão; devolve null se ainda não foi gerada (404). */
+    async getSynthesis(sessionId) {
+        try {
+            const res = await request(`/session/${sessionId}/synthesis`);
+            return await res.json();
+        } catch (e) {
+            if (e instanceof ApiError && e.status === 404) return null;
+            throw e;
+        }
+    },
+
+    async deleteSession(sessionId) {
+        await request(`/session/${sessionId}`, { method: "DELETE" });
     },
 
     async sendTurn(sessionId, texto) {
@@ -65,8 +104,9 @@ export const api = {
         return res.json();
     },
 
-    async generateSynthesis(sessionId) {
-        const res = await request(`/session/${sessionId}/synthesis`, { method: "POST" });
+    async generateSynthesis(sessionId, { refresh = false } = {}) {
+        const qs = refresh ? "?refresh=true" : "";
+        const res = await request(`/session/${sessionId}/synthesis${qs}`, { method: "POST" });
         return res.json();
     },
 };
