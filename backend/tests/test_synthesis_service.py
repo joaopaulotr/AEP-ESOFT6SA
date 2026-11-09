@@ -121,16 +121,26 @@ class TestSynthesize:
 
         assert result == "texto"
 
-    async def test_handles_an_interview_without_conversation(
-        self, synthesis, repository, fake_llm
+    async def test_refuses_an_interview_without_participant_answers(
+        self, synthesis, repository, synthesis_repository, fake_llm
     ):
+        state = InterviewState(
+            finished=True, conversation=[Turn(role="interviewer", text="Como é seu dia a dia?")]
+        )
+        await repository.create(state)
+
+        with pytest.raises(ValueError, match="A entrevista não tem respostas para resumir."):
+            await synthesis.synthesize(state.session_id)
+
+        assert fake_llm.prompts == []
+        assert await synthesis_repository.count() == 0
+
+    async def test_refuses_a_finished_interview_with_no_conversation(self, synthesis, repository):
         state = InterviewState(finished=True)
         await repository.create(state)
-        fake_llm.queue_payload("texto")
 
-        await synthesis.synthesize(state.session_id)
-
-        assert "(sem histórico ainda)" in fake_llm.last_prompt
+        with pytest.raises(ValueError, match="não tem respostas"):
+            await synthesis.synthesize(state.session_id)
 
 
 class TestProviderFailure:
@@ -237,3 +247,24 @@ class TestGet:
     async def test_unknown_session_is_not_found(self, synthesis):
         with pytest.raises(NotFoundError, match="Sessão não encontrada."):
             await synthesis.get("nao-existe")
+
+
+class TestSessionDeletedWhileGenerating:
+    async def test_orphan_synthesis_is_removed_and_the_request_is_404(
+        self, synthesis, repository, synthesis_repository, fake_llm, finished_state
+    ):
+        await repository.create(finished_state)
+        original = fake_llm.complete_text
+
+        async def slow_text(prompt):
+            await repository.delete(finished_state.session_id)  # apagada durante a geração
+            return await original(prompt)
+
+        fake_llm.complete_text = slow_text
+        fake_llm.queue_payload("texto")
+
+        with pytest.raises(NotFoundError, match="Sessão não encontrada."):
+            await synthesis.synthesize(finished_state.session_id)
+
+        assert await synthesis_repository.get_for_session(finished_state.session_id) is None
+        assert await synthesis_repository.count() == 0

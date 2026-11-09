@@ -162,6 +162,17 @@ def test_synthesis_before_finish_returns_400(client):
     assert "encerrar a entrevista" in response.json()["detail"]
 
 
+def test_synthesis_without_participant_answers_returns_400(client, fake_llm):
+    session_id = _abrir_sessao(client)
+    client.post(f"/api/v1/session/{session_id}/finish")
+
+    response = client.post(f"/api/v1/session/{session_id}/synthesis")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "A entrevista não tem respostas para resumir."}
+    assert fake_llm.prompts == []
+
+
 def test_synthesis_after_finish_returns_the_report(client, fake_llm):
     session_id = _abrir_sessao(client)
     for _ in range(4):
@@ -177,6 +188,8 @@ def test_synthesis_after_finish_returns_the_report(client, fake_llm):
 
 def test_synthesis_when_provider_fails_returns_502(client, fake_llm):
     session_id = _abrir_sessao(client)
+    fake_llm.queue(action="advance", next_utterance="")
+    client.post(f"/api/v1/turn/{session_id}", json={"texto": "respondi"})
     client.post(f"/api/v1/session/{session_id}/finish")
     fake_llm.queue_error(ProviderError("timeout"))
 

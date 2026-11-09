@@ -6,6 +6,8 @@ from app.repositories.synthesis_repository import SynthesisRepository
 from app.schemas.synthesis import Synthesis
 from app.services.interview_service import format_full_conversation
 
+NO_ANSWERS_MESSAGE = "A entrevista não tem respostas para resumir."
+
 
 class SynthesisService:
     def __init__(
@@ -36,6 +38,9 @@ class SynthesisService:
             if saved is not None:
                 return saved.resumo
 
+        if not any(turn.role == "participant" for turn in interview_state.conversation):
+            raise ValueError(NO_ANSWERS_MESSAGE)  # nada do participante para resumir
+
         prompt = SYNTHESIS_PROMPT.format(
             conversation=format_full_conversation(interview_state.conversation),
             profile=interview_state.profile,
@@ -50,4 +55,8 @@ class SynthesisService:
                 modelo=self._llm.model_name,
             )
         )
+        if not await self._sessions.exists(session_id):
+            # Apagada enquanto o LLM gerava: a síntese derivaria de uma fala já removida (RK-11).
+            await self._syntheses.delete_for_session(session_id)
+            raise NotFoundError(SessionRepository.not_found_message)
         return resumo
