@@ -1,3 +1,4 @@
+from app.core.errors import NotFoundError
 from app.prompts.synthesis_prompts import SYNTESIS_PROMPT
 from app.providers.base import LLMProvider
 from app.repositories.session_repository import SessionRepository
@@ -17,10 +18,23 @@ class SynthesisService:
         self._syntheses = synthesis_repository
         self._llm = llm
 
-    async def synthesize(self, session_id: str) -> str:
+    async def get(self, session_id: str) -> Synthesis:
+        """Síntese já salva da sessão (404 se a sessão não existe ou ainda não há síntese)."""
+        await self._sessions.get_or_raise(session_id)
+        saved = await self._syntheses.get_for_session(session_id)
+        if saved is None:
+            raise NotFoundError("Síntese ainda não gerada.")
+        return saved
+
+    async def synthesize(self, session_id: str, *, refresh: bool = False) -> str:
+        """Devolve a síntese salva sem chamar o LLM (EV-13); `refresh` gera de novo."""
         interview_state = await self._sessions.get_or_raise(session_id)
         if not interview_state.finished:
             raise ValueError("Não é possível gerar a síntese antes de encerrar a entrevista.")
+        if not refresh:
+            saved = await self._syntheses.get_for_session(session_id)
+            if saved is not None:
+                return saved.resumo
 
         prompt = SYNTESIS_PROMPT.format(
             conversation=format_full_conversation(interview_state.conversation),

@@ -237,3 +237,58 @@ class TestDeleteSession:
         client.delete(f"{API}/session/{state.session_id}")
 
         assert client.delete(f"{API}/participants/{person['participant_id']}").status_code == 204
+
+
+class TestSynthesisRoutes:
+    def _sessao_concluida(self, client) -> str:
+        return _gravar(
+            client,
+            finished=True,
+            conversation=[Turn(role="interviewer", text="Oi?"), Turn(role="participant", text="Oi")],
+        ).session_id
+
+    def test_get_before_generating_is_404(self, client):
+        session_id = self._sessao_concluida(client)
+
+        response = client.get(f"{API}/session/{session_id}/synthesis")
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Síntese ainda não gerada."}
+
+    def test_get_unknown_session_is_404(self, client):
+        response = client.get(f"{API}/session/nao-existe/synthesis")
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Sessão não encontrada."}
+
+    def test_post_then_get_returns_the_saved_synthesis(self, client):
+        session_id = self._sessao_concluida(client)
+
+        generated = client.post(f"{API}/session/{session_id}/synthesis").json()
+        saved = client.get(f"{API}/session/{session_id}/synthesis").json()
+
+        assert saved["resumo"] == generated["sintese"]
+        assert saved["escopo"] == "sessao" and saved["session_id"] == session_id
+        assert "_id" not in saved
+
+    def test_second_post_does_not_call_the_llm_again_and_refresh_does(self, client, fake_llm):
+        from app.services.synthesis_service import SynthesisService
+
+        app.dependency_overrides[deps.get_synthesis_service] = lambda: SynthesisService(
+            deps.get_session_repository(), deps.get_synthesis_repository(), fake_llm
+        )
+        try:
+            session_id = self._sessao_concluida(client)
+            fake_llm.queue_payload("v1").queue_payload("v2")
+
+            first = client.post(f"{API}/session/{session_id}/synthesis").json()
+            second = client.post(f"{API}/session/{session_id}/synthesis").json()
+            assert (first, second) == ({"sintese": "v1"}, {"sintese": "v1"})
+            assert len(fake_llm.prompts) == 1
+
+            refreshed = client.post(f"{API}/session/{session_id}/synthesis", params={"refresh": "true"})
+            assert refreshed.json() == {"sintese": "v2"}
+            assert client.get(f"{API}/session/{session_id}/synthesis").json()["resumo"] == "v2"
+            assert len(fake_llm.prompts) == 2
+        finally:
+            app.dependency_overrides.clear()

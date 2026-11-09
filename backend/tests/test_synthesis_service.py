@@ -164,7 +164,7 @@ class TestStorage:
         fake_llm.queue_payload("v1").queue_payload("v2")
 
         await synthesis.synthesize(finished_state.session_id)
-        await synthesis.synthesize(finished_state.session_id)
+        await synthesis.synthesize(finished_state.session_id, refresh=True)
 
         found = await synthesis_repository.list_for_script("transporte")
         assert [s.resumo for s in found] == ["v2"]
@@ -189,3 +189,51 @@ class TestStorage:
         with pytest.raises(ProviderError):
             await synthesis.synthesize(finished_state.session_id)
         assert await synthesis_repository.count() == 0
+
+
+class TestSavedSynthesisIsReused:
+    async def test_second_request_returns_the_saved_report_without_calling_the_model(
+        self, synthesis, repository, fake_llm, finished_state
+    ):
+        await repository.create(finished_state)
+        fake_llm.queue_payload("v1")
+        await synthesis.synthesize(finished_state.session_id)
+        calls = len(fake_llm.prompts)
+
+        result = await synthesis.synthesize(finished_state.session_id)
+
+        assert result == "v1"
+        assert len(fake_llm.prompts) == calls
+
+    async def test_refresh_calls_the_model_again(
+        self, synthesis, repository, fake_llm, finished_state
+    ):
+        await repository.create(finished_state)
+        fake_llm.queue_payload("v1").queue_payload("v2")
+        await synthesis.synthesize(finished_state.session_id)
+
+        result = await synthesis.synthesize(finished_state.session_id, refresh=True)
+
+        assert result == "v2"
+        assert len(fake_llm.prompts) == 2
+
+
+class TestGet:
+    async def test_returns_the_saved_synthesis(self, synthesis, repository, fake_llm, finished_state):
+        await repository.create(finished_state)
+        fake_llm.queue_payload("v1")
+        await synthesis.synthesize(finished_state.session_id)
+
+        saved = await synthesis.get(finished_state.session_id)
+
+        assert saved.resumo == "v1" and saved.session_id == finished_state.session_id
+
+    async def test_not_generated_yet_is_not_found(self, synthesis, repository, finished_state):
+        await repository.create(finished_state)
+
+        with pytest.raises(NotFoundError, match="Síntese ainda não gerada."):
+            await synthesis.get(finished_state.session_id)
+
+    async def test_unknown_session_is_not_found(self, synthesis):
+        with pytest.raises(NotFoundError, match="Sessão não encontrada."):
+            await synthesis.get("nao-existe")

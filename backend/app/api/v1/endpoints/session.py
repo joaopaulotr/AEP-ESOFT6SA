@@ -8,6 +8,7 @@ from app.schemas.interview import (
     SessionResponse,
     SynthesisResponse,
 )
+from app.schemas.synthesis import Synthesis
 from app.services.session_service import SessionService
 from app.services.synthesis_service import SynthesisService
 
@@ -50,6 +51,15 @@ async def finish_session(session_id: str, sessions: SessionService = Depends(get
 @router.post("/session/{session_id}/synthesis", response_model=SynthesisResponse)
 async def synthesize_session(
     session_id: str,
+    refresh: bool = False,
     synthesis: SynthesisService = Depends(get_synthesis_service),
 ):
-    return SynthesisResponse(sintese=await synthesis.synthesize(session_id))
+    """Devolve a síntese salva; `?refresh=true` gera de novo (e paga o LLM)."""
+    return SynthesisResponse(sintese=await synthesis.synthesize(session_id, refresh=refresh))
+
+
+@router.get("/session/{session_id}/synthesis", response_model=Synthesis)
+async def get_session_synthesis(
+    session_id: str, synthesis: SynthesisService = Depends(get_synthesis_service)
+):
+    return await synthesis.get(session_id)
