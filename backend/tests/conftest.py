@@ -7,10 +7,19 @@ from types import SimpleNamespace
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
 import pytest
+from mongomock_motor import AsyncMongoMockClient
 
+from app.api import deps
+from app.db import mongodb
+from app.db.seed import generalist_script
 from app.providers import openai_provider
 from app.providers.base import LLMProvider
+from app.repositories.participant_repository import ParticipantRepository
+from app.repositories.script_repository import ScriptRepository
+from app.repositories.session_repository import SessionRepository
+from app.repositories.synthesis_repository import SynthesisRepository
 from app.schemas.interview import InterviewState, Turn
+from app.schemas.script import InterviewScript
 from app.services.interview_service import InterviewService
 
 
@@ -215,89 +224,64 @@ def fake_async_openai() -> FakeAsyncOpenAI:
 
 
 # --------------------------------------------------------------------------
-# Dublês do Mongo
+# Banco em memória (mongomock-motor): executa filtros, índices e aggregate
 # --------------------------------------------------------------------------
 
 
-class _FakeCursor:
-    def __init__(self, documents: list[dict]) -> None:
-        self._documents = documents
-
-    async def to_list(self, length=None) -> list[dict]:
-        return self._documents if length is None else self._documents[:length]
-
-
-class _FakeDeleteResult:
-    def __init__(self, deleted_count: int) -> None:
-        self.deleted_count = deleted_count
-
-
-class FakeCollection:
-    """Coleção Mongo em memória, com a mesma superfície assíncrona do motor."""
-
-    def __init__(self) -> None:
-        self.documents: list[dict] = []
-        self.updates: list[tuple[dict, dict]] = []
-
-    def seed(self, *documents: dict) -> "FakeCollection":
-        """Insere documentos crus, incluindo o _id que o Mongo devolveria."""
-        for index, document in enumerate(documents):
-            self.documents.append({"_id": f"oid-{index}", **document})
-        return self
-
-    async def insert_one(self, document: dict):
-        self.documents.append(dict(document))
-        return SimpleNamespace(inserted_id=f"oid-{len(self.documents)}")
-
-    async def find_one(self, query: dict) -> dict | None:
-        for document in self.documents:
-            if all(document.get(key) == value for key, value in query.items()):
-                return dict(document)
-        return None
-
-    async def update_one(self, query: dict, update: dict):
-        self.updates.append((query, update))
-        for document in self.documents:
-            if all(document.get(key) == value for key, value in query.items()):
-                document.update(update.get("$set", {}))
-                return SimpleNamespace(matched_count=1, modified_count=1)
-        return SimpleNamespace(matched_count=0, modified_count=0)
-
-    async def delete_one(self, query: dict) -> _FakeDeleteResult:
-        for index, document in enumerate(self.documents):
-            if all(document.get(key) == value for key, value in query.items()):
-                self.documents.pop(index)
-                return _FakeDeleteResult(1)
-        return _FakeDeleteResult(0)
-
-    def find(self) -> _FakeCursor:
-        return _FakeCursor([dict(document) for document in self.documents])
-
-
-class FakeDB:
-    """Banco Mongo em memória: entrega a mesma FakeCollection por nome."""
-
-    def __init__(self) -> None:
-        self.collections: dict[str, FakeCollection] = {}
-
-    def __getitem__(self, name: str) -> FakeCollection:
-        return self.collections.setdefault(name, FakeCollection())
+def memory_db():
+    """Banco MongoDB em memória, isolado por chamada."""
+    return AsyncMongoMockClient(tz_aware=True)["aep_test"]
 
 
 @pytest.fixture
-def fake_db() -> FakeDB:
-    return FakeDB()
+def fake_db():
+    return memory_db()
+
+
+@pytest.fixture(autouse=True)
+def _app_uses_memory_db(monkeypatch, fake_db):
+    """O app (deps + lifespan) nunca fala com o Mongo real nos testes."""
+    monkeypatch.setattr(mongodb, "db", fake_db)
+    deps.reset_dependencies()
+    yield
+    deps.reset_dependencies()
 
 
 @pytest.fixture
-def sessions(fake_db) -> FakeCollection:
-    """A coleção que o SessionRepository usa por padrão."""
+def sessions(fake_db):
+    """A coleção crua que o SessionRepository usa."""
     return fake_db["interview_sessions"]
+
+
+@pytest.fixture
+def script_repository(fake_db) -> ScriptRepository:
+    return ScriptRepository(fake_db)
+
+
+@pytest.fixture
+def participant_repository(fake_db) -> ParticipantRepository:
+    return ParticipantRepository(fake_db)
+
+
+@pytest.fixture
+def session_repository(fake_db) -> SessionRepository:
+    return SessionRepository(fake_db)
+
+
+@pytest.fixture
+def synthesis_repository(fake_db) -> SynthesisRepository:
+    return SynthesisRepository(fake_db)
 
 
 # --------------------------------------------------------------------------
 # Fixtures de domínio
 # --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def script() -> InterviewScript:
+    """Roteiro seed (as 4 perguntas da v0.1.0)."""
+    return generalist_script()
 
 
 @pytest.fixture

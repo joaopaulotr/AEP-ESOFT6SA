@@ -1,32 +1,28 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps import (
-    get_interview_service,
-    get_session_repository,
-    get_synthesis_service,
-)
+from app.api import deps
+from app.db.seed import CORE_QUESTIONS
 from app.main import app
 from app.providers.base import ProviderError
-from app.repositories.session_repository import SessionRepository
 from app.services.interview_service import InterviewService
+from app.services.session_service import SessionService
 from app.services.synthesis_service import SynthesisService
-from tests.conftest import FakeDB, FakeLLM
-
-
-@pytest.fixture
-def fake_llm() -> FakeLLM:
-    return FakeLLM()
 
 
 @pytest.fixture
 def client(fake_llm):
-    repository = SessionRepository(database=FakeDB())
-
-    app.dependency_overrides[get_session_repository] = lambda: repository
-    app.dependency_overrides[get_interview_service] = lambda: InterviewService(llm=fake_llm)
-    app.dependency_overrides[get_synthesis_service] = lambda: SynthesisService(
-        session_repository=repository, llm=fake_llm
+    """App inteiro (lifespan, deps, repositórios) sobre o banco em memória do conftest;
+    só o LLM é trocado pelo dublê."""
+    interview = InterviewService(llm=fake_llm)
+    app.dependency_overrides[deps.get_session_service] = lambda: SessionService(
+        sessions=deps.get_session_repository(),
+        scripts=deps.get_script_repository(),
+        participants=deps.get_participant_repository(),
+        interview=interview,
+    )
+    app.dependency_overrides[deps.get_synthesis_service] = lambda: SynthesisService(
+        deps.get_session_repository(), deps.get_synthesis_repository(), fake_llm
     )
 
     with TestClient(app) as test_client:
@@ -48,8 +44,19 @@ def test_create_session_returns_id_and_opening_question(client):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["session_id"]
-    assert body["pergunta"]
+    assert set(body) == {"session_id", "pergunta"}
+    assert body["pergunta"] == CORE_QUESTIONS[0]
+
+
+def test_session_document_references_the_seed_script(client):
+    session_id = _abrir_sessao(client)
+
+    body = client.get(f"/session/{session_id}").json()
+
+    assert body["script_id"] == "entrevista-generalista"
+    assert body["participant_id"] is None
+    assert body["status"] == "em_andamento"
+    assert "synthesis" not in body
 
 
 def test_turn_advances_the_interview_and_persists(client, fake_llm):
@@ -90,6 +97,49 @@ def test_turn_on_finished_interview_returns_409(client, fake_llm):
     response = client.post(f"/turn/{session_id}", json={"texto": "mais uma"})
 
     assert response.status_code == 409
+    assert response.json()["detail"] == "A entrevista já foi encerrada."
+
+
+def test_finish_unknown_session_returns_404(client):
+    response = client.post("/session/inexistente/finish")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Sessão não encontrada."
+
+
+def test_finish_marks_the_session_as_concluded(client):
+    session_id = _abrir_sessao(client)
+
+    body = client.post(f"/session/{session_id}/finish").json()
+
+    assert body["finished"] is True and body["status"] == "concluida"
+
+
+def test_synthesis_of_unknown_session_returns_404(client):
+    response = client.post("/session/inexistente/synthesis")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Sessão não encontrada."
+
+
+def test_startup_creates_indexes_and_the_seed(client):
+    db = deps.get_database()
+
+    async def _inspect():
+        scripts = await db["interview_scripts"].count_documents({"script_id": "entrevista-generalista"})
+        names = {
+            name: set((await db[name].index_information()).keys())
+            for name in ("interview_scripts", "participants", "interview_sessions", "syntheses")
+        }
+        return scripts, names
+
+    scripts, names = client.portal.call(_inspect)
+
+    assert scripts == 1
+    assert "slug_convite_unico" in names["interview_scripts"]
+    assert "participant_id_unico" in names["participants"]
+    assert {"session_id_unico", "script_id_data", "participant_id"} <= names["interview_sessions"]
+    assert {"synthesis_id_unico", "session_id", "script_id_escopo"} <= names["syntheses"]
 
 
 def test_get_unknown_session_returns_404(client):
