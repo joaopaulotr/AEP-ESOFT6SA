@@ -135,3 +135,49 @@ async def test_one_synthesis_per_session(repos, real_db):
         )
 
     assert await real_db["syntheses"].count_documents({"session_id": "s1"}) == 1
+
+
+async def test_concurrent_synthesis_saves_never_duplicate(repos, real_db):
+    import asyncio
+
+    await asyncio.gather(
+        *(
+            repos["syntheses"].save_for_session(
+                Synthesis(escopo="sessao", session_id="s1", script_id="entrevista-generalista", resumo=f"v{i}")
+            )
+            for i in range(10)
+        )
+    )
+
+    assert await real_db["syntheses"].count_documents({"session_id": "s1"}) == 1
+
+
+async def test_stale_session_copy_is_rejected(repos):
+    state = await repos["sessions"].create(InterviewState())
+    turn_copy = await repos["sessions"].get(state.session_id)
+    finish_copy = await repos["sessions"].get(state.session_id)
+
+    finish_copy.finished = True
+    await repos["sessions"].save(finish_copy)
+
+    with pytest.raises(ConflictError):
+        await repos["sessions"].save(turn_copy)
+    assert (await repos["sessions"].get(state.session_id)).finished is True
+
+
+async def test_v010_sessions_are_backfilled(repos, real_db):
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    await real_db["interview_sessions"].insert_one(
+        {"session_id": "antiga", "asked_indices": [], "current_index": 4, "conversation": [],
+         "profile": {}, "finished": True, "synthesis": "Relatório antigo.",
+         "created_at": now, "updated_at": now}
+    )
+
+    assert await repos["sessions"].backfill_legacy(repos["syntheses"].import_legacy) == 1
+
+    details = await repos["sessions"].get_details("antiga")
+    assert details.script.script_id == "entrevista-generalista"
+    assert (await repos["syntheses"].get_for_session("antiga")).resumo == "Relatório antigo."
+    assert "synthesis" not in await real_db["interview_sessions"].find_one({"session_id": "antiga"})

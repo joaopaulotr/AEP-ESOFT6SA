@@ -209,3 +209,74 @@ class TestScriptStats:
             (1, 1.0),  # (2 + 0) / 2 sessões
             (2, 0.0),
         ]
+
+
+def v010_document(session_id: str, finished: bool, synthesis=None) -> dict:
+    now = datetime.now(timezone.utc)
+    return {
+        "session_id": session_id,
+        "asked_indices": [0],
+        "current_index": 1,
+        "conversation": [
+            {"role": "interviewer", "text": "Para começar...", "timestamp": now},
+            {"role": "participant", "text": "Trabalho à noite.", "timestamp": now},
+        ],
+        "profile": {"turno": "noite"},
+        "finished": finished,
+        "synthesis": synthesis,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+class TestBackfillLegacy:
+    async def test_completes_v010_sessions_in_the_database(self, repository, sessions):
+        await sessions.insert_one(v010_document("antiga", finished=True))
+        received = []
+
+        async def on_synthesis(state, text):
+            received.append((state.session_id, text))
+
+        migrated = await repository.backfill_legacy(on_synthesis)
+
+        raw = await sessions.find_one({"session_id": "antiga"})
+        assert migrated == 1
+        assert raw["script_id"] == "entrevista-generalista"
+        assert raw["status"] == "concluida" and raw["versao"] == 0
+        assert raw["participant_id"] is None and "synthesis" not in raw
+        assert received == []  # synthesis era None
+
+    async def test_hands_the_old_synthesis_over_before_removing_it(self, repository, sessions):
+        await sessions.insert_one(v010_document("antiga", finished=True, synthesis="Relatório antigo."))
+        received = []
+
+        async def on_synthesis(state, text):
+            received.append((state.session_id, text))
+
+        await repository.backfill_legacy(on_synthesis)
+
+        assert received == [("antiga", "Relatório antigo.")]
+
+    async def test_is_idempotent_and_skips_current_sessions(self, repository, sessions):
+        await repository.create(InterviewState())
+        await sessions.insert_one(v010_document("antiga", finished=False))
+
+        async def ignore(state, text):
+            raise AssertionError("não deveria ser chamado")
+
+        assert await repository.backfill_legacy(ignore) == 1
+        assert await repository.backfill_legacy(ignore) == 0
+
+    async def test_migrated_sessions_join_lookup_and_stats(self, repository, sessions, script_repository):
+        await script_repository.ensure_seed()
+        await sessions.insert_one(v010_document("antiga", finished=True))
+
+        async def ignore(state, text):
+            pass
+
+        await repository.backfill_legacy(ignore)
+
+        assert (await repository.get_details("antiga")).script.titulo == "Entrevista generalista"
+        stats = await repository.script_stats("entrevista-generalista")
+        assert (stats.total_sessoes, stats.concluidas) == (1, 1)
+        assert [s.session_id for s in await repository.list_by_script("entrevista-generalista")] == ["antiga"]

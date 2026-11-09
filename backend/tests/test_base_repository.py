@@ -4,7 +4,7 @@ import pytest
 from pydantic import BaseModel
 from pymongo import ASCENDING, IndexModel
 
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, CorruptDocumentError, NotFoundError
 from app.repositories.base import BaseRepository
 from app.repositories.participant_repository import ParticipantRepository
 from app.repositories.script_repository import ScriptRepository
@@ -141,6 +141,65 @@ class TestCrud:
         assert await notes.exists("z") is False
         assert await notes.count() == 2
         assert await notes.count({"tag": "x"}) == 1
+
+
+class Versioned(BaseModel):
+    doc_id: str
+    texto: str = ""
+    versao: int = 0
+
+
+class VersionedRepository(BaseRepository[Versioned]):
+    model = Versioned
+    collection_name = "versioned"
+    id_field = "doc_id"
+    stale_message = "Versão velha."
+
+
+class TestOptimisticLocking:
+    async def test_each_save_bumps_the_version(self, fake_db):
+        repo = VersionedRepository(fake_db)
+        doc = await repo.create(Versioned(doc_id="a"))
+
+        await repo.save(doc)
+        await repo.save(doc)
+
+        assert doc.versao == 2
+        assert (await repo.get("a")).versao == 2
+
+    async def test_stale_copy_is_rejected(self, fake_db):
+        repo = VersionedRepository(fake_db)
+        await repo.create(Versioned(doc_id="a"))
+        first = await repo.get("a")
+        second = await repo.get("a")
+
+        first.texto = "primeira"
+        await repo.save(first)
+        second.texto = "velha"
+        with pytest.raises(ConflictError, match="Versão velha."):
+            await repo.save(second)
+        assert (await repo.get("a")).texto == "primeira"
+
+    async def test_document_without_version_field_is_saved(self, fake_db):
+        await fake_db["versioned"].insert_one({"doc_id": "antigo", "texto": "x"})
+        repo = VersionedRepository(fake_db)
+
+        doc = await repo.get("antigo")
+        assert await repo.save(doc) is True
+        assert (await repo.get("antigo")).versao == 1
+
+    async def test_missing_versioned_document_returns_false(self, fake_db):
+        assert await VersionedRepository(fake_db).save(Versioned(doc_id="x")) is False
+
+
+class TestCorruptDocuments:
+    async def test_invalid_stored_document_raises_without_its_content(self, notes, fake_db):
+        await fake_db["notes"].insert_one({"note_id": "a", "texto": {"fala": "Maria mora em SP"}})
+
+        with pytest.raises(CorruptDocumentError) as error:
+            await notes.get("a")
+        assert "Maria" not in str(error.value)
+        assert "notes" in str(error.value)
 
 
 class TestList:

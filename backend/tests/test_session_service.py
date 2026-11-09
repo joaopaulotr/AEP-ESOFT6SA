@@ -6,6 +6,7 @@ from app.core.errors import ConflictError, NotFoundError
 from app.db.seed import CORE_QUESTIONS
 from app.schemas.participant import Participant
 from app.schemas.script import DEFAULT_SCRIPT_ID, InterviewScript, Question
+from app.services.interview_service import DEFAULT_CLOSING
 from app.services.session_service import SessionService
 
 pytestmark = pytest.mark.anyio
@@ -95,11 +96,51 @@ class TestTurns:
             await sessions_service.take_turn(state.session_id, "oi")
         assert fake_llm.prompts == []
 
-    async def test_deleted_script_is_reported(self, sessions_service, script_repository, custom_script):
+    async def test_deleted_script_keeps_the_answer_and_closes(
+        self, sessions_service, script_repository, session_repository, fake_llm, custom_script
+    ):
         state, _ = await sessions_service.start(custom_script.script_id)
         await script_repository.delete(custom_script.script_id)
 
-        with pytest.raises(NotFoundError, match="roteiro desta entrevista não existe mais"):
+        session, fala = await sessions_service.take_turn(state.session_id, "vou de ônibus")
+
+        assert fala == DEFAULT_CLOSING and session.finished
+        stored = await session_repository.get(state.session_id)
+        assert stored.finished and "vou de ônibus" in [t.text for t in stored.conversation]
+        assert fake_llm.prompts == []
+
+
+class TestConcurrency:
+    async def test_finish_during_a_slow_turn_is_not_overwritten(
+        self, sessions_service, session_repository, script_repository, service, fake_llm
+    ):
+        """/turn lê a sessão, o LLM demora, /finish encerra; o turno não pode reabrir a sessão."""
+        state, _ = await sessions_service.start()
+        fake_llm.queue(action="deepen", next_utterance="Me conta mais?")
+        stale = await session_repository.get(state.session_id)
+        script = await script_repository.get_default()
+        await service.run_turn(stale, script, "resposta lenta")  # turno ainda não gravado
+
+        await sessions_service.finish(state.session_id)  # usuário clicou em Concluir
+
+        with pytest.raises(ConflictError, match="alterada por outra ação"):
+            await session_repository.save(stale)
+        assert (await session_repository.get(state.session_id)).finished is True
+
+    async def test_session_deleted_mid_turn_is_not_found(
+        self, sessions_service, session_repository, fake_llm, monkeypatch
+    ):
+        state, _ = await sessions_service.start()
+        fake_llm.queue(action="deepen", next_utterance="E aí?")
+
+        original_save = session_repository.save
+
+        async def delete_then_save(session):
+            await session_repository.delete(session.session_id)
+            return await original_save(session)
+
+        monkeypatch.setattr(session_repository, "save", delete_then_save)
+        with pytest.raises(NotFoundError, match="Sessão não encontrada."):
             await sessions_service.take_turn(state.session_id, "oi")
 
 

@@ -177,3 +177,64 @@ def test_synthesis_when_provider_fails_returns_502(client, fake_llm):
 
     assert response.status_code == 502
     assert response.json() == {"detail": "Falha ao se comunicar com o provedor de IA."}
+
+
+def test_startup_migrates_v010_sessions_and_their_synthesis(fake_db, monkeypatch):
+    from datetime import datetime, timezone
+
+    monkeypatch.setattr(deps.settings, "llm_provider", "fake")
+
+    now = datetime.now(timezone.utc)
+
+    async def _seed_legacy():
+        await fake_db["interview_sessions"].insert_one(
+            {"session_id": "antiga", "asked_indices": [], "current_index": 4, "conversation": [],
+             "profile": {}, "finished": True, "synthesis": "Relatório antigo.",
+             "created_at": now, "updated_at": now}
+        )
+
+    import anyio
+
+    anyio.run(_seed_legacy)
+    with TestClient(app) as client:
+        body = client.get("/session/antiga").json()
+
+        async def _synthesis():
+            return await fake_db["syntheses"].find_one({"session_id": "antiga"}, {"_id": 0})
+
+        stored = client.portal.call(_synthesis)
+
+    assert body["script_id"] == "entrevista-generalista" and body["status"] == "concluida"
+    assert stored["resumo"] == "Relatório antigo." and stored["modelo"] == "v0.1.0"
+
+
+def test_corrupt_session_document_returns_500_without_its_content(client):
+    db = deps.get_database()
+
+    async def _corrupt():
+        await db["interview_sessions"].insert_one(
+            {"session_id": "ruim", "script_id": "x",
+             "conversation": [{"role": "participant", "text": "Maria mora em SP", "acao": "pular"}]}
+        )
+
+    client.portal.call(_corrupt)
+    response = client.get("/session/ruim")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Erro interno ao ler os dados."}
+    assert "Maria" not in response.text
+
+
+def test_turn_on_a_session_whose_script_was_deleted_closes_it(client, fake_llm):
+    session_id = _abrir_sessao(client)
+    db = deps.get_database()
+
+    async def _delete_script():
+        await db["interview_scripts"].delete_many({})
+
+    client.portal.call(_delete_script)
+    response = client.post(f"/turn/{session_id}", json={"texto": "vou de ônibus"})
+
+    assert response.status_code == 200
+    assert response.json()["finalizada"] is True
+    assert fake_llm.prompts == []

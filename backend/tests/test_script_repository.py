@@ -51,6 +51,11 @@ class TestQueries:
         assert (await script_repository.get_by_slug("saude-2026")).script_id == script.script_id
         assert await script_repository.get_by_slug("nao-existe") is None
 
+    async def test_get_by_slug_normalizes_case_and_accents(self, script_repository):
+        script = await script_repository.create(make_script(slug="saude-2026"))
+
+        assert (await script_repository.get_by_slug("Saúde-2026")).script_id == script.script_id
+
     async def test_list_active_skips_inactive_scripts(self, script_repository):
         active = await script_repository.create(make_script("Ativo"))
         await script_repository.create(make_script("Inativo", ativo=False))

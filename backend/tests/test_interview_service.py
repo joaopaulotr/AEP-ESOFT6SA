@@ -35,8 +35,8 @@ class TestCoreQuestions:
         assert len(CORE_QUESTIONS) == 4
         assert all(question.strip() for question in CORE_QUESTIONS)
 
-    def test_opening_question_returns_the_first_one(self):
-        assert InterviewService.opening_question(SCRIPT) == CORE_QUESTIONS[0]
+    def test_start_asks_the_first_question_of_the_seed(self, state):
+        assert InterviewService.start(state, SCRIPT) == CORE_QUESTIONS[0]
 
 
 class TestFormatRecentHistory:
@@ -412,7 +412,7 @@ class TestStart:
         pergunta = service.start(state, script)
 
         assert pergunta == "Como você se desloca?"
-        assert state.script_id == "transporte"
+        assert state.script_id == "entrevista-generalista"  # quem liga a sessão é o SessionService
         opening = state.conversation[-1]
         assert (opening.role, opening.text, opening.pergunta_ordem, opening.acao) == (
             "interviewer", "Como você se desloca?", 10, None,
@@ -465,6 +465,16 @@ class TestScriptDrivenTurns:
 
         assert state.finished
         assert (state.conversation[-1].pergunta_ordem, state.conversation[-1].acao) == (None, "advance")
+
+    async def test_finish_closing_has_the_same_shape_as_advance_closing(self, service, fake_llm, state):
+        state.current_index = 1
+        fake_llm.queue(action="finish", closing_statement="Obrigada!")
+
+        await service.run_turn(state, two_question_script(), "nada")
+
+        closing = state.conversation[-1]
+        assert (closing.pergunta_ordem, closing.acao, closing.text) == (None, "finish", "Obrigada!")
+        assert state.asked_indices == [1]
 
     async def test_deepen_beyond_the_question_limit_becomes_advance(self, service, fake_llm, state):
         script = two_question_script(max_aprofundamentos=1)
