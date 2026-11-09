@@ -22,6 +22,7 @@ class ParticipantService:
         return await self._participants.create(Participant(**data.model_dump()))
 
     async def update(self, participant_id: str, data: ParticipantUpdate) -> Participant:
+        """Sem `versao` de propósito: baixa concorrência e todos os campos opcionais; vale a última escrita."""
         participant = await self._participants.get_or_raise(participant_id)
         changes = data.model_dump(exclude_unset=True)
         if changes.get("canal") is None:

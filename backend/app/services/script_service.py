@@ -61,6 +61,7 @@ class ScriptService:
         # null explícito em campo obrigatório é o mesmo que não enviar.
         changes = {key: value for key, value in changes.items() if value is not None}
         if data.perguntas is not None:
+            # Janela conhecida, não atômica: uma sessão pode abrir entre esta checagem e o save.
             if await self._sessions.has_in_progress(script_id):
                 # A sessão aponta para a posição da pergunta: mexer nelas desloca quem responde.
                 raise ConflictError(IN_PROGRESS_MESSAGE)

@@ -45,7 +45,7 @@ class ScriptUpdate(BaseModel):
     tema: str | None = None
     descricao: str | None = None
     perguntas: list[QuestionCreate] | None = Field(default=None, min_length=1)
-    persona: Persona | None = None
+    persona: Persona | None = None  # persona: null é ignorado (não limpa; sempre há persona)
     ativo: bool | None = None
 
     @field_validator("titulo")

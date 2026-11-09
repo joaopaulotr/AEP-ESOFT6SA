@@ -246,6 +246,22 @@ class TestBackfillLegacy:
         assert raw["participant_id"] is None and "synthesis" not in raw
         assert received == []  # synthesis era None
 
+    async def test_migrated_legacy_session_matches_the_status_filter_of_summaries(
+        self, repository, sessions
+    ):
+        await sessions.insert_one(v010_document("velha-ok", finished=True))
+        await sessions.insert_one(v010_document("velha-aberta", finished=False))
+
+        async def ignore(session_id, text):
+            pass
+
+        await repository.backfill_legacy(ignore)
+
+        done = await repository.list_summaries("entrevista-generalista", status="concluida")
+        open_ = await repository.list_summaries("entrevista-generalista", status="em_andamento")
+        assert [s.session_id for s in done] == ["velha-ok"]
+        assert [s.session_id for s in open_] == ["velha-aberta"]
+
     async def test_hands_the_old_synthesis_over_before_removing_it(self, repository, sessions):
         await sessions.insert_one(v010_document("antiga", finished=True, synthesis="Relatório antigo."))
         received = []
