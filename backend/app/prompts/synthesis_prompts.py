@@ -1,4 +1,4 @@
-SYNTESIS_PROMPT = """Você é um pesquisador analisando a transcrição de uma entrevista qualitativa.
+SYNTHESIS_PROMPT = """Você é um pesquisador analisando a transcrição de uma entrevista qualitativa.
 
 Perfil extraído do participante:
 {profile}

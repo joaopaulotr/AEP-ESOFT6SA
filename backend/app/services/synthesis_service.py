@@ -1,5 +1,5 @@
 from app.core.errors import NotFoundError
-from app.prompts.synthesis_prompts import SYNTESIS_PROMPT
+from app.prompts.synthesis_prompts import SYNTHESIS_PROMPT
 from app.providers.base import LLMProvider
 from app.repositories.session_repository import SessionRepository
 from app.repositories.synthesis_repository import SynthesisRepository
@@ -36,7 +36,7 @@ class SynthesisService:
             if saved is not None:
                 return saved.resumo
 
-        prompt = SYNTESIS_PROMPT.format(
+        prompt = SYNTHESIS_PROMPT.format(
             conversation=format_full_conversation(interview_state.conversation),
             profile=interview_state.profile,
         )
