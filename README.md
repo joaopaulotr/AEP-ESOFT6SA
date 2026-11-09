@@ -353,7 +353,6 @@ Documento de `interview_sessions`:
 `status` é derivado de `finished`. `versao` é o controle otimista de concorrência: uma gravação
 feita a partir de uma cópia velha da sessão (por exemplo, um turno lento que termina depois de
 "Concluir") é recusada com `409` em vez de reabrir a entrevista.
-```
 
 Consultas que usam os relacionamentos (`app/repositories/session_repository.py`):
 

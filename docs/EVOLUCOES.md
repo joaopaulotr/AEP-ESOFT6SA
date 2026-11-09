@@ -145,7 +145,11 @@ Decisões da implementação (plano: `docs/superpowers/plans/2026-11-09-multi-co
   `ConflictError` → 409. Sessão inexistente na síntese passou de 400 para 404.
 - **Migração da v0.1.0 no startup** (idempotente): sessões sem `script_id` ganham `script_id`, `status` e
   `versao` no banco (senão ficariam fora do `$lookup` e das agregações); a `synthesis` antiga vai para
-  `syntheses` (`modelo: "v0.1.0"`) e sai da sessão.
+  `syntheses` (`modelo: "v0.1.0"`) e sai da sessão. A migração lê só `session_id`/`finished`/`synthesis`:
+  sessão antiga com perfil fora do modelo (RK-07) é migrada e não derruba o startup; a síntese é copiada
+  antes do `$unset`, então uma queda no meio é refeita na próxima subida.
+- `/finish` é idempotente e sempre vence a corrida com um `/turn`: sessão já encerrada não é regravada, e
+  em conflito de versão relê e tenta de novo uma vez. Quem perde é o turno (409).
 - Roteiro apagado com sessão em andamento: o turno grava a resposta e encerra (igual ao roteiro encurtado).
 - Encerramento por `finish` e por `advance` na última pergunta gravam o mesmo formato (`pergunta_ordem: null`).
 
@@ -164,6 +168,7 @@ Decisões da implementação:
   lento sobrescreva o `/finish` e reabra a sessão. Documento sem `versao` (legado) conta como versão 0.
 - Documento do banco que não bate com o modelo vira `CorruptDocumentError` → 500 genérico, sem o conteúdo
   (antes o `ValidationError` caía no handler de `ValueError` e devolvia 400 com a fala do participante).
+  A exceção leva só coleção, campo e tipo do erro, sem a causa encadeada (o valor não vai para log).
 - Nomes das coleções em `app/db/collections.py`; `get_by_slug` normaliza a entrada com `slugify`.
 - `BaseRepository[T]` (ABC + `Generic`): `create/get/get_or_raise/exists/save/delete/list/count/ensure_indexes`;
   `DuplicateKeyError` → `ConflictError`; `delete` devolve `bool` (antes levantava `ValueError` → 400).
