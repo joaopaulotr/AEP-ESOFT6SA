@@ -180,7 +180,7 @@ Decisões da implementação:
 - Testes: `mongomock-motor` (dev) no lugar do `FakeDB` caseiro; integração em MongoDB real com
   `pytest -m mongo` (`MONGO_TEST_URI`), executada no CI por um container `mongo:7`.
 
-### EV-03 — Endpoints CRUD das novas coleções `TODO` (R2)
+### EV-03 — Endpoints CRUD das novas coleções `DONE` (R2)
 
 | Recurso | Rotas |
 |---|---|
@@ -193,9 +193,9 @@ Todas sob o prefixo `/api/v1` (EV-15).
 
 Pendências registradas na revisão do EV-01/EV-02 (resolver junto com as rotas):
 
-- **Excluir sessão apaga a síntese dela** (cascata no `SessionService`, com teste): a síntese deriva da fala
+- ✅ resolvido — **Excluir sessão apaga a síntese dela** (cascata no `SessionService`, com teste): a síntese deriva da fala
   do participante e não pode ficar órfã (RK-11).
-- **Editar perguntas de roteiro com sessões em andamento:** a sessão aponta para a posição da pergunta
+- ✅ resolvido — **Editar perguntas de roteiro com sessões em andamento:** a sessão aponta para a posição da pergunta
   (`current_index`), então inserir/reordenar perguntas no meio desloca quem está respondendo. Opções:
   bloquear (409) edição de perguntas de roteiro com sessões `em_andamento`, ou congelar uma cópia do roteiro
   na sessão. Excluir roteiro com sessões: preferir `ativo=false`.
@@ -407,6 +407,7 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 
 ### EV-85 — Telas novas `TODO`
 
+- ✅ Roteiros, sessões por roteiro e detalhe da entrevista (fase 1). Upload, convite e dashboard nas próximas fases.
 - Pesquisador: lista de roteiros, editor/upload (EV-30), dashboard (EV-32), sessão (transcrição + síntese),
   síntese cruzada (EV-33).
 - Participante: entrada pelo convite (EV-31), escolha voz/texto, entrevista, agradecimento.
@@ -445,9 +446,9 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 | EV-10 | Chamadas OpenAI **síncronas** em endpoints `async` bloqueiam o event loop | `AsyncOpenAI`; services `async` (dentro do `OpenAIProvider`, EV-41) ✅ DONE |
 | EV-11 | Saída do LLM não validada: `result["action"]` → KeyError; ação inválida vira `deepen` silencioso; `profile_updates` não-string corrompe a sessão | Modelo Pydantic `DecisionResult` + retry + fallback determinístico ✅ DONE. Decisão: fallback no último turno encerra; a resposta fica na transcrição e entra na síntese (evita prender a pessoa em loop com provedor fora do ar). |
 | EV-12 | `deps.py` recria service, cliente OpenAI e recompila o grafo a cada request | Singletons via `lru_cache` / `lifespan` ✅ DONE |
-| EV-13 | `/synthesis` regenera (e paga) a cada chamada | Retornar existente; `?refresh=true` para regerar |
-| EV-15 | Rotas sem prefixo apesar da pasta `api/v1` | `include_router(prefix="/api/v1")` |
-| EV-16 | Typo `SYNTESIS_PROMPT`; ~~`remaining_questions` como repr de lista~~ (lista numerada desde o EV-01); `asked_indices` redundante; `bash.exe.stackdump` commitado; `api.js` não usado | Limpeza |
+| EV-13 `DONE` | `/synthesis` regenera (e paga) a cada chamada | Retornar existente; `?refresh=true` para regerar |
+| EV-15 `DONE` | Rotas sem prefixo apesar da pasta `api/v1` | `include_router(prefix="/api/v1")` |
+| EV-16 | Typo `SYNTESIS_PROMPT`; ~~`remaining_questions` como repr de lista~~ (lista numerada desde o EV-01); `asked_indices` redundante; `bash.exe.stackdump` commitado; `api.js` não usado | Limpeza. Feito na fase 1: typo SYNTHESIS_PROMPT corrigido; api.js agora é o client único |
 
 ---
 
