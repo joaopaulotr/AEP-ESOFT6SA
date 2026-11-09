@@ -77,7 +77,7 @@ Fonte: *AEP 2026.2 6S — Engenharia de Software*, seções 6, 7, 8 (2º semestr
 | RK-08 | **Latência alta da voz** (STT → LLM → TTS em série, chamadas síncronas) | Experiência "robótica", contradiz o objetivo de realismo | Alta | EV-10 (async), EV-60 (streaming), seção 5 (fillers e masking). |
 | RK-09 | **Transcrição pior com sotaques regionais / fala fora da norma culta** | Atinge justamente o público da ODS 10 | Média | Prompt de domínio no whisper, confirmação da transcrição na tela (EV-82), modo texto (EV-34). Declarar no README como limite. |
 | RK-10 | **Viés do LLM na síntese** | Relatório distorce o que foi dito | Média | Síntese com citações literais obrigatórias e instrução de não inventar; mostrar trecho de origem (EV-33). |
-| RK-11 | **Dados pessoais de participantes sem proteção** (CORS `*`, sem auth, `session_id` expõe transcrição) | Exposição de dados; questionamento ético | Média | Participante sem identificação obrigatória; CORS restrito no deploy (EV-71); auth adiada declarada como limite. |
+| RK-11 | **Dados pessoais de participantes sem proteção** (CORS `*`, sem auth, `session_id` expõe transcrição) | Exposição de dados; questionamento ético | Média | Participante sem identificação obrigatória; CORS restrito no deploy (EV-71); auth adiada declarada como limite. Desde o EV-01 a fala também aparece em `syntheses`: exclusão de sessão precisa apagar a síntese em cascata (EV-03). |
 | RK-12 | **Upload de questionário malformado** (PDF escaneado, formato inesperado) | Roteiro errado ou vazio | Média | EV-30: revisão humana obrigatória antes de publicar; limite de tamanho/tipo. |
 | RK-13 | **Deploy público instável perto da apresentação** | Demo indisponível | Baixa | EV-71 cedo (não no último dia); docker-compose local como plano B. |
 | RK-14 | **Branch de trabalho divergente da `main`** (hoje `devjoao` vs `main`) | Conflitos e versão final confusa | Média | Fluxo por PR curto para `main`; tag final só na `main`. |
@@ -143,6 +143,11 @@ Decisões da implementação (plano: `docs/superpowers/plans/2026-11-09-multi-co
 - `metricas` existe com zeros; quem preenche é o EV-62. `persona` existe; quem usa no prompt é o EV-21.
 - Novo `SessionService` orquestra abrir/turno/encerrar; erros de domínio `NotFoundError` → 404 e
   `ConflictError` → 409. Sessão inexistente na síntese passou de 400 para 404.
+- **Migração da v0.1.0 no startup** (idempotente): sessões sem `script_id` ganham `script_id`, `status` e
+  `versao` no banco (senão ficariam fora do `$lookup` e das agregações); a `synthesis` antiga vai para
+  `syntheses` (`modelo: "v0.1.0"`) e sai da sessão.
+- Roteiro apagado com sessão em andamento: o turno grava a resposta e encerra (igual ao roteiro encurtado).
+- Encerramento por `finish` e por `advance` na última pergunta gravam o mesmo formato (`pergunta_ordem: null`).
 
 ### EV-02 — Repositórios por agregado + base genérica `DONE` (R2, R3)
 
@@ -154,6 +159,12 @@ Decisões da implementação (plano: `docs/superpowers/plans/2026-11-09-multi-co
 
 Decisões da implementação:
 
+- **Controle otimista de concorrência:** modelos com `versao` (`InterviewState`, `InterviewScript`) só são
+  gravados se o documento ainda estiver na versão lida; senão `ConflictError` (409). Evita que um `/turn`
+  lento sobrescreva o `/finish` e reabra a sessão. Documento sem `versao` (legado) conta como versão 0.
+- Documento do banco que não bate com o modelo vira `CorruptDocumentError` → 500 genérico, sem o conteúdo
+  (antes o `ValidationError` caía no handler de `ValueError` e devolvia 400 com a fala do participante).
+- Nomes das coleções em `app/db/collections.py`; `get_by_slug` normaliza a entrada com `slugify`.
 - `BaseRepository[T]` (ABC + `Generic`): `create/get/get_or_raise/exists/save/delete/list/count/ensure_indexes`;
   `DuplicateKeyError` → `ConflictError`; `delete` devolve `bool` (antes levantava `ValueError` → 400).
   Subclasse sem `model`/`collection_name`/`id_field` é recusada na construção.
@@ -174,6 +185,15 @@ Decisões da implementação:
 | Sínteses | `GET /syntheses/session/{id}`, `POST /syntheses/script/{id}` (EV-33) |
 
 Todas sob o prefixo `/api/v1` (EV-15).
+
+Pendências registradas na revisão do EV-01/EV-02 (resolver junto com as rotas):
+
+- **Excluir sessão apaga a síntese dela** (cascata no `SessionService`, com teste): a síntese deriva da fala
+  do participante e não pode ficar órfã (RK-11).
+- **Editar perguntas de roteiro com sessões em andamento:** a sessão aponta para a posição da pergunta
+  (`current_index`), então inserir/reordenar perguntas no meio desloca quem está respondendo. Opções:
+  bloquear (409) edição de perguntas de roteiro com sessões `em_andamento`, ou congelar uma cópia do roteiro
+  na sessão. Excluir roteiro com sessões: preferir `ativo=false`.
 
 ### EV-04 — Quadro de tarefas `TODO` (R4, RK-02)
 

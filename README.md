@@ -37,9 +37,9 @@ A PoC se alinha à **ODS 10** por duas metas específicas:
   ler enunciados longos, digitar nem navegar por uma interface densa.
 - **Custo marginal próximo de zero** — a entrevista roda sem entrevistador humano, o que muda a
   pergunta de "quem dá para ouvir?" para "quem precisa ser ouvido?".
-- **Roteiro generalista e igual para todos** — as perguntas centrais
-  (`CORE_QUESTIONS`, em `backend/app/services/interview_service.py`) são neutras de tema e as
-  mesmas para qualquer entrevistado, o que torna as respostas comparáveis entre si.
+- **Roteiro igual para todos** — as perguntas centrais ficam num roteiro gravado no banco
+  (`interview_scripts`; o padrão "Entrevista generalista" vem de `backend/app/db/seed.py`). Elas
+  são as mesmas para qualquer entrevistado do roteiro, o que torna as respostas comparáveis entre si.
 - **Aprofundamento adaptativo** — a cada turno o serviço decide se aprofunda ou avança
   (`InterviewService.run_turn`). Quem responde de forma curta recebe uma nova chance de
   desenvolver, em vez de ter a fala registrada como "sem conteúdo" — o que protege exatamente
@@ -67,7 +67,7 @@ entrevistada**.
 
 Três processos e um provedor externo. O frontend é uma SPA que captura e reproduz áudio no
 navegador; a API concentra toda a regra de negócio e é o único ponto que fala com a OpenAI; o
-MongoDB guarda o estado da entrevista.
+MongoDB guarda roteiros, participantes, entrevistas e sínteses em quatro coleções.
 
 ```mermaid
 flowchart LR
@@ -76,17 +76,19 @@ flowchart LR
     end
     subgraph API_FastAPI[API - FastAPI]
         EP[Endpoints: session, turns, voice]
-        SV[Services: InterviewService, SynthesisService, VoiceService, LLMClient]
-        RP[SessionRepository]
+        SV[Services: SessionService, InterviewService, SynthesisService]
+        PV[Providers: LLMProvider, SpeechProvider]
+        RP[Repositórios: Script, Participant, Session, Synthesis]
     end
-    DB[(MongoDB - interview_sessions)]
+    DB[(MongoDB: interview_scripts, participants, interview_sessions, syntheses)]
     AI[OpenAI: whisper-1, gpt-4o-mini-tts, gpt-4o-mini]
 
     UI -- HTTP/JSON e audio --> EP
     EP --> SV
     SV --> RP
     RP --> DB
-    SV --> AI
+    SV --> PV
+    PV --> AI
 ```
 
 ### Camadas do backend
@@ -128,7 +130,7 @@ sequenceDiagram
     participant O as OpenAI
 
     F->>A: POST /session
-    A->>M: grava o estado com a 1ª pergunta
+    A->>M: lê o roteiro e grava a sessão com a 1ª pergunta
     A-->>F: session_id + pergunta
     F->>A: POST /voice/fala
     A->>O: gpt-4o-mini-tts
@@ -138,7 +140,7 @@ sequenceDiagram
     A->>O: whisper-1
     A-->>F: texto transcrito
     F->>A: POST /turn/{session_id}
-    A->>M: carrega o estado
+    A->>M: carrega a sessão e o roteiro dela
     A->>O: decide aprofundar ou avançar (JSON)
     A->>M: salva os turnos e o perfil extraído
     A-->>F: próxima fala + finalizada
@@ -146,7 +148,7 @@ sequenceDiagram
     F->>A: POST /session/{id}/finish
     F->>A: POST /session/{id}/synthesis
     A->>O: gera o relatório
-    A->>M: grava a síntese na sessão
+    A->>M: grava a síntese na coleção syntheses
     A-->>F: síntese da entrevista
 ```
 
@@ -331,16 +333,26 @@ Documento de `interview_sessions`:
   "session_id": "df7c97e3-...",
   "script_id": "entrevista-generalista",
   "participant_id": null,
+  "asked_indices": [0],
   "current_index": 1,
+  "finished": false,
   "status": "em_andamento",
+  "versao": 3,
   "profile": { "ocupacao": "agente comunitária de saúde" },
   "metricas": { "tokens": 0, "segundos_audio": 0, "custo_usd": 0 },
   "conversation": [
-    { "role": "interviewer", "text": "Para começar...", "pergunta_ordem": 1, "acao": null, "latencia_ms": null },
-    { "role": "participant", "text": "Eu trabalho...", "pergunta_ordem": 1, "acao": null, "latencia_ms": null },
-    { "role": "interviewer", "text": "E como foi a última vez?", "pergunta_ordem": 1, "acao": "deepen", "latencia_ms": 812 }
-  ]
+    { "role": "interviewer", "text": "Para começar...", "timestamp": "2026-11-09T19:37:32Z", "pergunta_ordem": 1, "acao": null, "latencia_ms": null },
+    { "role": "participant", "text": "Eu trabalho...", "timestamp": "2026-11-09T19:37:50Z", "pergunta_ordem": 1, "acao": null, "latencia_ms": null },
+    { "role": "interviewer", "text": "Como o tema...", "timestamp": "2026-11-09T19:37:51Z", "pergunta_ordem": 2, "acao": "advance", "latencia_ms": 812 }
+  ],
+  "created_at": "2026-11-09T19:37:32Z",
+  "updated_at": "2026-11-09T19:37:51Z"
 }
+```
+
+`status` é derivado de `finished`. `versao` é o controle otimista de concorrência: uma gravação
+feita a partir de uma cópia velha da sessão (por exemplo, um turno lento que termina depois de
+"Concluir") é recusada com `409` em vez de reabrir a entrevista.
 ```
 
 Consultas que usam os relacionamentos (`app/repositories/session_repository.py`):
@@ -350,5 +362,6 @@ Consultas que usam os relacionamentos (`app/repositories/session_repository.py`)
   conclusão, média de respostas, distribuição de ações (`deepen`/`advance`/`finish`) e média de
   aprofundamentos por pergunta (base do dashboard, EV-32).
 
-Sessões gravadas pela v0.1.0 (sem `script_id`) continuam carregando: apontam para o roteiro
-generalista, que tem as mesmas quatro perguntas.
+Sessões gravadas pela v0.1.0 são migradas no startup, de forma idempotente: ganham `script_id`
+do roteiro generalista (que tem as mesmas quatro perguntas), `status` e `versao`, e a síntese
+antiga sai do documento da sessão para `syntheses` (`modelo: "v0.1.0"`).
