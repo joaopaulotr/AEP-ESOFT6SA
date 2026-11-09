@@ -302,11 +302,7 @@ def build_demo_data() -> DemoData:
 
 async def _upsert(repository: Any, entities: list) -> int:
     for entity in entities:
-        await repository._collection.replace_one(
-            {repository.id_field: repository._identity(entity)},
-            repository._to_document(entity),
-            upsert=True,
-        )
+        await repository.upsert(entity)
     return len(entities)
 
 

@@ -2,6 +2,7 @@ from app.core.errors import ConflictError, NotFoundError
 from app.repositories.participant_repository import ParticipantRepository
 from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
+from app.schemas.api import SessionSummary
 from app.schemas.interview import InterviewState, SessionDetails
 from app.services.interview_service import InterviewService
 
@@ -41,6 +42,12 @@ class SessionService:
         pergunta = self._interview.start(state, script)
         await self._sessions.create(state)
         return state, pergunta
+
+    async def list_for_script(
+        self, script_id: str, *, status: str | None = None, limit: int = 50
+    ) -> list[SessionSummary]:
+        await self._scripts.get_or_raise(script_id)  # roteiro inexistente -> 404
+        return await self._sessions.list_summaries(script_id, status=status, limit=limit)
 
     async def get(self, session_id: str) -> InterviewState:
         return await self._sessions.get_or_raise(session_id)

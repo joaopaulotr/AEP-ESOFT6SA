@@ -83,6 +83,13 @@ class BaseRepository(ABC, Generic[ModelT]):
             raise ConflictError(self.duplicate_message) from exc
         return entity
 
+    async def upsert(self, entity: ModelT) -> None:
+        """Grava o documento inteiro, criando-o se não existir (sem controle de versão).
+        Uso: seeds e importações idempotentes."""
+        await self._collection.replace_one(
+            {self.id_field: self._identity(entity)}, self._to_document(entity), upsert=True
+        )
+
     async def get(self, entity_id: str) -> ModelT | None:
         document = await self._collection.find_one({self.id_field: entity_id})
         return None if document is None else self._to_model(document)

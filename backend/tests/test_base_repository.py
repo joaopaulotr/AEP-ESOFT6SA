@@ -84,6 +84,13 @@ class TestCrud:
 
         assert await notes.get("a") == Note(note_id="a", texto="oi")
 
+    async def test_upsert_creates_then_replaces_by_identity(self, notes):
+        await notes.upsert(Note(note_id="n1", texto="a"))
+        await notes.upsert(Note(note_id="n1", texto="b"))
+
+        assert await notes.count() == 1
+        assert (await notes.get("n1")).texto == "b"
+
     async def test_get_missing_returns_none(self, notes):
         assert await notes.get("x") is None
 
