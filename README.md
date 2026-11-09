@@ -224,6 +224,10 @@ cp backend/.env.example backend/.env
 
 2. Preencha `OPENAI_API_KEY` em `backend/.env`.
 
+   Para rodar offline, sem chave da OpenAI, defina `LLM_PROVIDER=fake` em `backend/.env`: as
+   respostas do entrevistador, da síntese e da voz são simuladas (determinísticas). Sem chave e
+   com `LLM_PROVIDER=openai`, a API responde 502 nas rotas que dependem do provedor.
+
 3. Suba os serviços:
 
 ```bash

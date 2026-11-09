@@ -1,5 +1,6 @@
 import pytest
 
+from app.providers.base import ProviderError
 from app.repositories.session_repository import SessionRepository
 from app.schemas.interview import InterviewState, Turn
 from app.services.synthesis_service import SynthesisService
@@ -14,7 +15,7 @@ def repository(fake_db) -> SessionRepository:
 
 @pytest.fixture
 def synthesis(repository, fake_llm) -> SynthesisService:
-    return SynthesisService(session_repository=repository, llm_client=fake_llm)
+    return SynthesisService(session_repository=repository, llm=fake_llm)
 
 
 @pytest.fixture
@@ -33,19 +34,10 @@ def finished_state() -> InterviewState:
 
 class TestConstruction:
     def test_uses_the_injected_collaborators(self, repository, fake_llm):
-        synthesis = SynthesisService(session_repository=repository, llm_client=fake_llm)
+        synthesis = SynthesisService(session_repository=repository, llm=fake_llm)
 
         assert synthesis._sessions is repository
         assert synthesis._llm is fake_llm
-
-    def test_builds_a_default_repository(self, fake_llm):
-        synthesis = SynthesisService(llm_client=fake_llm)
-
-        assert isinstance(synthesis._sessions, SessionRepository)
-
-    def test_default_construction_never_reaches_the_network(self):
-        with pytest.raises(AssertionError, match="cliente OpenAI real"):
-            SynthesisService()
 
 
 class TestGuards:
@@ -134,3 +126,12 @@ class TestSynthesize:
         await synthesis.synthesize(state.session_id)
 
         assert "(sem histórico ainda)" in fake_llm.last_prompt
+
+
+class TestProviderFailure:
+    async def test_provider_error_propagates(self, synthesis, repository, fake_llm, finished_state):
+        await repository.create(finished_state)
+        fake_llm.queue_error(ProviderError("fora do ar"))
+
+        with pytest.raises(ProviderError):
+            await synthesis.synthesize(finished_state.session_id)

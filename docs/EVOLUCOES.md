@@ -69,11 +69,11 @@ Fonte: *AEP 2026.2 6S — Engenharia de Software*, seções 6, 7, 8 (2º semestr
 |---|---|---|---|---|
 | RK-01 | **Requisito NoSQL do 2º semestre não atendido** — hoje só existe `interview_sessions` | Zera R2 e enfraquece R1 | Alta se não priorizado | EV-01..EV-03 são os primeiros itens de código. Nenhuma feature nova entra antes. |
 | RK-02 | **Sem quadro de tarefas** | Zera R4 (0,1) — ponto "grátis" perdido | Alta | EV-04 na semana 1; issues retroativas para o que já foi feito. |
-| RK-03 | **Voz excluída da cobertura** (`omit` em `pyproject.toml`) | Banca pode considerar a cobertura "maquiada" | Média | EV-05: testes da voz com cliente OpenAI mockado e remoção do `omit`. |
+| RK-03 | **Voz excluída da cobertura** (`omit` em `pyproject.toml`) | Banca pode considerar a cobertura "maquiada" | Média | EV-05: testes da voz com cliente OpenAI mockado e remoção do `omit`. — **mitigado** (feat/EV-41-core-providers) |
 | RK-04 | **`htmlcov/` versionado à mão fica desatualizado** (já contém `syntesis_service.py`, que não existe mais) | Evidência de cobertura incoerente com o código | Alta | EV-05: gerar no CI e publicar como artefato/GitHub Pages; remover `htmlcov/` do repo. |
 | RK-05 | **Escopo grande para equipe de 3** | Entrega incompleta ou com bugs | Alta | Ordem da seção 12; obrigatórios primeiro; features marcadas como cortáveis. |
-| RK-06 | **Dependência da OpenAI na demo** (custo, rate limit, queda, latência) | Demo falha ao vivo | Média | EV-61 (provider fake), vídeo gravado com fallback, chave com limite de gasto, EV-62 (métricas de custo). |
-| RK-07 | **Saída do LLM não validada** — JSON incompleto → 500; `profile_updates` não-string corrompe a sessão | Entrevista quebra no meio da demo | Média | EV-11 (schema Pydantic + retry + fallback). |
+| RK-06 | **Dependência da OpenAI na demo** (custo, rate limit, queda, latência) | Demo falha ao vivo | Média | EV-61 (provider fake), vídeo gravado com fallback, chave com limite de gasto, EV-62 (métricas de custo). — provider fake disponível (`LLM_PROVIDER=fake`) |
+| RK-07 | **Saída do LLM não validada** — JSON incompleto → 500; `profile_updates` não-string corrompe a sessão | Entrevista quebra no meio da demo | Média | EV-11 (schema Pydantic + retry + fallback). — **mitigado** (feat/EV-41-core-providers) |
 | RK-08 | **Latência alta da voz** (STT → LLM → TTS em série, chamadas síncronas) | Experiência "robótica", contradiz o objetivo de realismo | Alta | EV-10 (async), EV-60 (streaming), seção 5 (fillers e masking). |
 | RK-09 | **Transcrição pior com sotaques regionais / fala fora da norma culta** | Atinge justamente o público da ODS 10 | Média | Prompt de domínio no whisper, confirmação da transcrição na tela (EV-82), modo texto (EV-34). Declarar no README como limite. |
 | RK-10 | **Viés do LLM na síntese** | Relatório distorce o que foi dito | Média | Síntese com citações literais obrigatórias e instrução de não inventar; mostrar trecho de origem (EV-33). |
@@ -158,6 +158,7 @@ Todas sob o prefixo `/api/v1` (EV-15).
 - Voz coberta com cliente OpenAI mockado → **remover o `omit`**.
 - CI gera `htmlcov` e publica como artefato (e/ou GitHub Pages); **remover `backend/htmlcov/` do repo**.
 - Badge de cobertura no README; comando documentado: `cd backend && pytest --cov-report=html`.
+- ✅ Voz já entra na cobertura (omit removido em `pyproject.toml`).
 
 ### EV-06 — Documentação técnica `TODO` (R7)
 
@@ -301,12 +302,13 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 - Arestas condicionais; cada nó com responsabilidade única e testável isoladamente.
 - O loop deixa de viver em `run_turn` (substitui EV-14 da versão anterior desta spec).
 
-### EV-41 — Abstração `LLMProvider` `TODO` (R3)
+### EV-41 — Abstração `LLMProvider` `DONE` (R3)
 
 - Interface (ABC/`Protocol`) `LLMProvider` com `complete_json`, `complete_text`, `stream_text`;
   `SpeechProvider` com `transcribe`, `synthesize`.
 - Implementações: `OpenAIProvider` e `FakeProvider` (determinística, usada em testes/E2E/demo offline — RK-06).
 - Escolha por configuração. Demonstra polimorfismo para Paradigmas de Linguagem.
+- `stream_text` fica para o EV-60 (streaming), quando houver consumidor.
 
 ### EV-60 — Streaming da fala (SSE) `TODO`
 
@@ -384,9 +386,9 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 
 | ID | Problema | Correção |
 |---|---|---|
-| EV-10 | Chamadas OpenAI **síncronas** em endpoints `async` bloqueiam o event loop | `AsyncOpenAI`; services `async` (dentro do `OpenAIProvider`, EV-41) |
-| EV-11 | Saída do LLM não validada: `result["action"]` → KeyError; ação inválida vira `deepen` silencioso; `profile_updates` não-string corrompe a sessão | Modelo Pydantic `DecisionResult` + retry + fallback determinístico |
-| EV-12 | `deps.py` recria service, cliente OpenAI e recompila o grafo a cada request | Singletons via `lru_cache` / `lifespan` |
+| EV-10 | Chamadas OpenAI **síncronas** em endpoints `async` bloqueiam o event loop | `AsyncOpenAI`; services `async` (dentro do `OpenAIProvider`, EV-41) ✅ DONE |
+| EV-11 | Saída do LLM não validada: `result["action"]` → KeyError; ação inválida vira `deepen` silencioso; `profile_updates` não-string corrompe a sessão | Modelo Pydantic `DecisionResult` + retry + fallback determinístico ✅ DONE. Decisão: fallback no último turno encerra; a resposta fica na transcrição e entra na síntese (evita prender a pessoa em loop com provedor fora do ar). |
+| EV-12 | `deps.py` recria service, cliente OpenAI e recompila o grafo a cada request | Singletons via `lru_cache` / `lifespan` ✅ DONE |
 | EV-13 | `/synthesis` regenera (e paga) a cada chamada | Retornar existente; `?refresh=true` para regerar |
 | EV-15 | Rotas sem prefixo apesar da pasta `api/v1` | `include_router(prefix="/api/v1")` |
 | EV-16 | Typo `SYNTESIS_PROMPT`; `remaining_questions` como repr de lista; `asked_indices` redundante; `bash.exe.stackdump` commitado; `api.js` não usado | Limpeza |

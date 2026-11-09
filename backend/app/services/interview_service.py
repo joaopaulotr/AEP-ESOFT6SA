@@ -1,10 +1,15 @@
+import logging
 from typing import Literal, TypedDict
 
+from pydantic import ValidationError
 from langgraph.graph import END, START, StateGraph
 
 from app.prompts.interview_prompts import DECISION_PROMPT
+from app.providers.base import LLMProvider, ProviderError
+from app.schemas.decision import DecisionResult
 from app.schemas.interview import InterviewState, Turn
-from app.services.llm_client import LLMClient
+
+logger = logging.getLogger(__name__)
 
 CORE_QUESTIONS = [
     "Para começar, me conta um pouco sobre você e sobre o seu dia a dia.",
@@ -16,6 +21,9 @@ CORE_QUESTIONS = [
 DEFAULT_CLOSING = "Obrigado pela sua participação, encerramos por aqui."
 
 HISTORY_WINDOW = 6
+
+MAX_DECISION_ATTEMPTS = 2  # 1 tentativa + 1 retry
+FALLBACK_DECISION = DecisionResult(action="advance")
 
 
 def format_recent_history(conversation: list[Turn]) -> str:
@@ -35,8 +43,8 @@ class GraphState(TypedDict):
 
 
 class InterviewService:
-    def __init__(self, llm_client: LLMClient | None = None) -> None:
-        self._llm = llm_client or LLMClient()
+    def __init__(self, llm: LLMProvider) -> None:
+        self._llm = llm
         self._graph = self._build_graph()
 
     @staticmethod
@@ -56,7 +64,32 @@ class InterviewService:
         graph.add_edge("decide", END)
         return graph.compile()
 
-    def _decide_node(self, state: GraphState) -> GraphState:
+    async def _request_decision(self, prompt: str) -> DecisionResult:
+        for attempt in range(1, MAX_DECISION_ATTEMPTS + 1):
+            try:
+                return DecisionResult.model_validate(await self._llm.complete_json(prompt))
+            except (ProviderError, ValidationError) as exc:
+                # Nunca logar str(exc) nem o payload: ValidationError inclui a entrada
+                # bruta do LLM, que pode conter dados pessoais do participante.
+                details = (
+                    [(e["loc"], e["type"]) for e in exc.errors(include_input=False)]
+                    if isinstance(exc, ValidationError)
+                    else None
+                )
+                # Só o tipo da causa (ex.: AuthenticationError), nunca a mensagem.
+                cause = type(exc.__cause__).__name__ if exc.__cause__ else ""
+                logger.warning(
+                    "Decisão do LLM inválida (tentativa %d/%d): %s %s %s",
+                    attempt,
+                    MAX_DECISION_ATTEMPTS,
+                    type(exc).__name__,
+                    details or "",
+                    f"causa={cause}" if cause else "",
+                )
+        logger.warning("Tentativas esgotadas; usando decisão de fallback (advance).")
+        return FALLBACK_DECISION
+
+    async def _decide_node(self, state: GraphState) -> GraphState:
         interview_state = state["interview_state"]
         current_question = CORE_QUESTIONS[interview_state.current_index]
         remaining = CORE_QUESTIONS[interview_state.current_index + 1 :]
@@ -67,26 +100,26 @@ class InterviewService:
             history=format_recent_history(interview_state.conversation),
             last_answer=state["last_answer"],
         )
-        result = self._llm.complete_json(prompt)
+        decision = await self._request_decision(prompt)
 
-        interview_state.profile.update(result.get("profile_updates", {}))
+        interview_state.profile.update(decision.profile_updates)
 
-        action = result["action"]
+        action = decision.action
         if action == "finish" and interview_state.current_index < len(CORE_QUESTIONS) - 1:
             action = "advance"
 
-        next_utterance = result.get("next_utterance", "")
+        next_utterance = decision.next_utterance
         if action == "finish":
-            next_utterance = result.get("closing_statement") or DEFAULT_CLOSING
+            next_utterance = decision.closing_statement or DEFAULT_CLOSING
 
         return {**state, "action": action, "next_utterance": next_utterance}
 
-    def run_turn(
+    async def run_turn(
         self, interview_state: InterviewState, participant_text: str
     ) -> tuple[InterviewState, str]:
         interview_state.conversation.append(Turn(role="participant", text=participant_text))
 
-        result = self._graph.invoke(
+        result = await self._graph.ainvoke(
             {
                 "interview_state": interview_state,
                 "last_answer": participant_text,
