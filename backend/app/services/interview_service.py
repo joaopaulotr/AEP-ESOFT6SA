@@ -187,6 +187,7 @@ class InterviewService:
         elif action == "finish":
             # Mesmo formato do encerramento por "advance" na última pergunta.
             interview_state.asked_indices.append(interview_state.current_index)
+            interview_state.current_index += 1
             interview_state.finished = True
             pergunta_ordem = None
 

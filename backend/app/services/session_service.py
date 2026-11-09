@@ -65,10 +65,20 @@ class SessionService:
         return session, fala
 
     async def finish(self, session_id: str) -> InterviewState:
-        session = await self._sessions.get_or_raise(session_id)
-        self._interview.finish(session)
-        await self._persist(session)
-        return session
+        """Idempotente. Se um turno gravar no meio, relê e tenta de novo: encerrar
+        sempre vence (quem clicou em Concluir não pode ficar com a sessão aberta)."""
+        for attempt in range(2):
+            session = await self._sessions.get_or_raise(session_id)
+            if session.finished:
+                return session
+            self._interview.finish(session)
+            try:
+                await self._persist(session)
+                return session
+            except ConflictError:
+                if attempt == 1:
+                    raise
+        raise AssertionError("inalcançável")  # pragma: no cover
 
     async def _persist(self, session: InterviewState) -> None:
         """Grava a sessão; versão velha vira ConflictError no repositório."""

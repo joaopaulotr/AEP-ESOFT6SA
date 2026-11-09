@@ -2,7 +2,6 @@ from pymongo import ASCENDING, IndexModel
 
 from app.db import collections
 from app.repositories.base import BaseRepository
-from app.schemas.interview import InterviewState
 from app.schemas.script import DEFAULT_SCRIPT_ID
 from app.schemas.synthesis import Synthesis
 
@@ -31,13 +30,13 @@ class SynthesisRepository(BaseRepository[Synthesis]):
         garante uma síntese por sessão mesmo com pedidos simultâneos."""
         return f"sessao:{session_id}"
 
-    async def import_legacy(self, session: InterviewState, resumo: str) -> None:
+    async def import_legacy(self, session_id: str, resumo: str) -> None:
         """Guarda a síntese que a v0.1.0 deixava dentro da sessão (sem sobrescrever)."""
-        synthesis_id = self.session_synthesis_id(session.session_id)
+        synthesis_id = self.session_synthesis_id(session_id)
         legacy = Synthesis(
             synthesis_id=synthesis_id,
             escopo="sessao",
-            session_id=session.session_id,
+            session_id=session_id,
             script_id=DEFAULT_SCRIPT_ID,
             resumo=resumo,
             modelo="v0.1.0",

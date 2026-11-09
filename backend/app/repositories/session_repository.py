@@ -14,7 +14,7 @@ from app.schemas.interview import (
 from app.schemas.participant import Participant
 from app.schemas.script import DEFAULT_SCRIPT_ID, InterviewScript
 
-LegacySynthesisHandler = Callable[[InterviewState, str], Awaitable[None]]
+LegacySynthesisHandler = Callable[[str, str], Awaitable[None]]  # (session_id, texto)
 
 
 class SessionRepository(BaseRepository[InterviewState]):
@@ -46,19 +46,24 @@ class SessionRepository(BaseRepository[InterviewState]):
         agregações. A síntese antiga (campo `synthesis`) é entregue a `on_synthesis`
         antes de ser removida do documento. Devolve quantas sessões foram migradas.
         """
-        legacy = await self._collection.find({"script_id": {"$exists": False}}).to_list(length=None)
+        # Não valida o documento inteiro: a v0.1.0 podia gravar perfil fora do modelo
+        # (RK-07), e um documento ruim não pode derrubar o startup. Só os campos usados.
+        legacy = await self._collection.find(
+            {"script_id": {"$exists": False}},
+            {"session_id": 1, "finished": 1, "synthesis": 1},
+        ).to_list(length=None)
         for document in legacy:
-            state = self._to_model(document)
+            session_id = document["session_id"]
             old_synthesis = document.get("synthesis")
             if isinstance(old_synthesis, str) and old_synthesis.strip():
-                await on_synthesis(state, old_synthesis)
+                await on_synthesis(session_id, old_synthesis)  # antes do $unset
             await self._collection.update_one(
-                {"session_id": state.session_id, "script_id": {"$exists": False}},
+                {"session_id": session_id, "script_id": {"$exists": False}},
                 {
                     "$set": {
                         "script_id": DEFAULT_SCRIPT_ID,
                         "participant_id": None,
-                        "status": state.status,
+                        "status": "concluida" if document.get("finished") else "em_andamento",
                         "versao": 0,
                     },
                     "$unset": {"synthesis": ""},
@@ -101,8 +106,12 @@ class SessionRepository(BaseRepository[InterviewState]):
         participant = document.pop("participant", None)
         return SessionDetails(
             session=self._to_model(document),
-            script=InterviewScript.model_validate(script) if script else None,
-            participant=Participant.model_validate(participant) if participant else None,
+            script=self._validate(InterviewScript, script, collections.SCRIPTS) if script else None,
+            participant=(
+                self._validate(Participant, participant, collections.PARTICIPANTS)
+                if participant
+                else None
+            ),
         )
 
     # -- agregações (base do dashboard, EV-32) ----------------------------

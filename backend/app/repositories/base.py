@@ -42,16 +42,23 @@ class BaseRepository(ABC, Generic[ModelT]):
         return entity.model_dump()
 
     def _to_model(self, document: dict) -> ModelT:
+        return self._validate(self.model, document, self.collection_name)  # type: ignore[return-value]
+
+    @staticmethod
+    def _validate(model: type[BaseModel], document: dict, collection: str) -> BaseModel:
+        """Valida um documento do banco. Documento fora do modelo é falha do servidor:
+        vira CorruptDocumentError só com coleção, campo e tipo do erro — nunca o valor
+        (pode ser fala ou perfil do participante). `from None` tira o ValidationError
+        (que carrega o valor) do traceback."""
         document = dict(document)
         document.pop("_id", None)
         try:
-            return self.model.model_validate(document)  # type: ignore[return-value]
+            return model.model_validate(document)
         except ValidationError as exc:
-            # Documento do banco fora do modelo é falha do servidor, não da requisição.
-            # A mensagem não leva o conteúdo do documento (pode ter fala do participante).
+            problems = [(error["loc"], error["type"]) for error in exc.errors(include_input=False)]
             raise CorruptDocumentError(
-                f"Documento inválido em {self.collection_name}."
-            ) from exc
+                f"Documento inválido em {collection}: {problems}"
+            ) from None
 
     def _identity(self, entity: ModelT) -> str:
         return getattr(entity, self.id_field)
