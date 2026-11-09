@@ -107,6 +107,7 @@ class TestModelSelection:
 
         assert fake_async_openai.last_call["model"] == "gpt-4o"
         assert provider.model == "gpt-4o"
+        assert provider.model_name == "gpt-4o"  # gravado em syntheses.modelo
 
     def test_model_is_read_only(self, fake_async_openai):
         provider = OpenAILLMProvider(client=fake_async_openai)

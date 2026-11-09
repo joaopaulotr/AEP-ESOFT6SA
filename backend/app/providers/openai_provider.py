@@ -28,6 +28,10 @@ class OpenAILLMProvider(LLMProvider):
     def model(self) -> str:
         return self._model
 
+    @property
+    def model_name(self) -> str:
+        return self.model
+
     async def complete_json(self, prompt: str) -> dict:
         try:
             response = await self._client.chat.completions.create(

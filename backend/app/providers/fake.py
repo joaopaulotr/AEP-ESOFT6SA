@@ -13,6 +13,10 @@ FAKE_TRANSCRIPTION = "Resposta simulada em modo offline."
 
 
 class FakeLLMProvider(LLMProvider):
+    @property
+    def model_name(self) -> str:
+        return "fake"
+
     async def complete_json(self, prompt: str) -> dict:
         return copy.deepcopy(FAKE_DECISION)
 

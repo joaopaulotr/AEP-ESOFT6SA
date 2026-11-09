@@ -52,7 +52,7 @@ Fonte: *AEP 2026.2 6S — Engenharia de Software*, seções 6, 7, 8 (2º semestr
 | # | Critério (pts) | Exigência | Situação v1 | Itens |
 |---|---|---|---|---|
 | R1 | PoC funcional e evolução (0,1) | Fluxos principais OK + evolução verificável vs. 1ª entrega | Fluxo OK; evolução a fazer | Toda a spec; comparação `v0.1.0` → `v2.0.0` |
-| R2 | Banco NoSQL (0,1) | **Múltiplas coleções**, **relacionamento entre coleções**, ≥1 coleção com **objetos complexos** | ❌ 1 coleção. Aninhamento OK | **EV-01, EV-02, EV-03** |
+| R2 | Banco NoSQL (0,1) | **Múltiplas coleções**, **relacionamento entre coleções**, ≥1 coleção com **objetos complexos** | ✅ 4 coleções, referências + `$lookup`, subdocs em 3 (EV-01/02). Falta expor por rotas | **EV-01, EV-02, EV-03** |
 | R3 | POO e qualidade (0,1) | Responsabilidades claras, sem duplicação/acoplamento relevante | Bom, com débitos | EV-02, EV-41, seção 10 |
 | R4 | Metodologia (0,1) | **Quadro de tarefas** | ❌ inexistente | **EV-04** |
 | R5 | Testes automatizados (0,1) | Conjunto pertinente, comportamentos relevantes | Bom; voz fora | EV-05, EV-70 |
@@ -67,7 +67,7 @@ Fonte: *AEP 2026.2 6S — Engenharia de Software*, seções 6, 7, 8 (2º semestr
 
 | ID | Risco | Impacto | Prob. | Mitigação |
 |---|---|---|---|---|
-| RK-01 | **Requisito NoSQL do 2º semestre não atendido** — hoje só existe `interview_sessions` | Zera R2 e enfraquece R1 | Alta se não priorizado | EV-01..EV-03 são os primeiros itens de código. Nenhuma feature nova entra antes. |
+| RK-01 | **Requisito NoSQL do 2º semestre não atendido** — hoje só existe `interview_sessions` | Zera R2 e enfraquece R1 | Alta se não priorizado | EV-01..EV-03 são os primeiros itens de código. Nenhuma feature nova entra antes. — **mitigado em parte** (feat/EV-01-multi-colecao: 4 coleções, `$lookup`, agregações, testes em Mongo real); falta EV-03 (rotas) para a banca ver pela API. |
 | RK-02 | **Sem quadro de tarefas** | Zera R4 (0,1) — ponto "grátis" perdido | Alta | EV-04 na semana 1; issues retroativas para o que já foi feito. |
 | RK-03 | **Voz excluída da cobertura** (`omit` em `pyproject.toml`) | Banca pode considerar a cobertura "maquiada" | Média | EV-05: testes da voz com cliente OpenAI mockado e remoção do `omit`. — **mitigado** (feat/EV-41-core-providers) |
 | RK-04 | **`htmlcov/` versionado à mão fica desatualizado** (já contém `syntesis_service.py`, que não existe mais) | Evidência de cobertura incoerente com o código | Alta | EV-05: gerar no CI e publicar como artefato/GitHub Pages; remover `htmlcov/` do repo. |
@@ -77,7 +77,7 @@ Fonte: *AEP 2026.2 6S — Engenharia de Software*, seções 6, 7, 8 (2º semestr
 | RK-08 | **Latência alta da voz** (STT → LLM → TTS em série, chamadas síncronas) | Experiência "robótica", contradiz o objetivo de realismo | Alta | EV-10 (async), EV-60 (streaming), seção 5 (fillers e masking). |
 | RK-09 | **Transcrição pior com sotaques regionais / fala fora da norma culta** | Atinge justamente o público da ODS 10 | Média | Prompt de domínio no whisper, confirmação da transcrição na tela (EV-82), modo texto (EV-34). Declarar no README como limite. |
 | RK-10 | **Viés do LLM na síntese** | Relatório distorce o que foi dito | Média | Síntese com citações literais obrigatórias e instrução de não inventar; mostrar trecho de origem (EV-33). |
-| RK-11 | **Dados pessoais de participantes sem proteção** (CORS `*`, sem auth, `session_id` expõe transcrição) | Exposição de dados; questionamento ético | Média | Participante sem identificação obrigatória; CORS restrito no deploy (EV-71); auth adiada declarada como limite. |
+| RK-11 | **Dados pessoais de participantes sem proteção** (CORS `*`, sem auth, `session_id` expõe transcrição) | Exposição de dados; questionamento ético | Média | Participante sem identificação obrigatória; CORS restrito no deploy (EV-71); auth adiada declarada como limite. Desde o EV-01 a fala também aparece em `syntheses`: exclusão de sessão precisa apagar a síntese em cascata (EV-03). |
 | RK-12 | **Upload de questionário malformado** (PDF escaneado, formato inesperado) | Roteiro errado ou vazio | Média | EV-30: revisão humana obrigatória antes de publicar; limite de tamanho/tipo. |
 | RK-13 | **Deploy público instável perto da apresentação** | Demo indisponível | Baixa | EV-71 cedo (não no último dia); docker-compose local como plano B. |
 | RK-14 | **Branch de trabalho divergente da `main`** (hoje `devjoao` vs `main`) | Conflitos e versão final confusa | Média | Fluxo por PR curto para `main`; tag final só na `main`. |
@@ -86,7 +86,7 @@ Fonte: *AEP 2026.2 6S — Engenharia de Software*, seções 6, 7, 8 (2º semestr
 
 ## 4. Evoluções obrigatórias (2ª entrega)
 
-### EV-01 — Modelagem multi-coleção `TODO` · bloqueante (R2, RK-01)
+### EV-01 — Modelagem multi-coleção `DONE` · bloqueante (R2, RK-01)
 
 Transforma o roteiro fixo em dado e separa participante de sessão.
 
@@ -127,13 +127,58 @@ interview_scripts (roteiros/campanhas)      participants
 - `CORE_QUESTIONS` vira o roteiro *seed* "Entrevista generalista".
 - `InterviewService` passa a receber o `InterviewScript` em vez de ler constante.
 
-### EV-02 — Repositórios por agregado + base genérica `TODO` (R2, R3)
+Decisões da implementação (plano: `docs/superpowers/plans/2026-11-09-multi-colecao.md`):
+
+- Seed com `script_id` fixo `entrevista-generalista` (slug `generalista`), gravado com `upsert` no
+  `lifespan` sem sobrescrever edições. `POST /session` sem corpo usa esse roteiro → contrato HTTP inalterado.
+- **Compatibilidade:** `InterviewState.script_id` tem default `entrevista-generalista`; sessões da v0.1.0
+  carregam sem migração. O campo antigo `synthesis` é ignorado na leitura.
+- `status` (`em_andamento`/`concluida`) é derivado de `finished` e gravado no documento (uma fonte de verdade).
+- Síntese sai da sessão e vai para `syntheses` (`escopo: sessao`), uma por sessão; regerar substitui.
+  Id determinístico `sessao:<session_id>` + upsert atômico → pedidos simultâneos não duplicam.
+  `syntheses.modelo` vem de `LLMProvider.model_name`.
+- Turnos anotados com `pergunta_ordem`, `acao` (só falas do entrevistador; abertura = `null`) e `latencia_ms`.
+- `max_aprofundamentos` da pergunta é aplicado: `deepen` além do limite vira `advance`.
+- Roteiro encurtado depois que a sessão começou → o turno encerra a entrevista em vez de quebrar.
+- `metricas` existe com zeros; quem preenche é o EV-62. `persona` existe; quem usa no prompt é o EV-21.
+- Novo `SessionService` orquestra abrir/turno/encerrar; erros de domínio `NotFoundError` → 404 e
+  `ConflictError` → 409. Sessão inexistente na síntese passou de 400 para 404.
+- **Migração da v0.1.0 no startup** (idempotente): sessões sem `script_id` ganham `script_id`, `status` e
+  `versao` no banco (senão ficariam fora do `$lookup` e das agregações); a `synthesis` antiga vai para
+  `syntheses` (`modelo: "v0.1.0"`) e sai da sessão. A migração lê só `session_id`/`finished`/`synthesis`:
+  sessão antiga com perfil fora do modelo (RK-07) é migrada e não derruba o startup; a síntese é copiada
+  antes do `$unset`, então uma queda no meio é refeita na próxima subida.
+- `/finish` é idempotente e sempre vence a corrida com um `/turn`: sessão já encerrada não é regravada, e
+  em conflito de versão relê e tenta de novo uma vez. Quem perde é o turno (409).
+- Roteiro apagado com sessão em andamento: o turno grava a resposta e encerra (igual ao roteiro encurtado).
+- Encerramento por `finish` e por `advance` na última pergunta gravam o mesmo formato (`pergunta_ordem: null`).
+
+### EV-02 — Repositórios por agregado + base genérica `DONE` (R2, R3)
 
 - `BaseRepository[T]` com CRUD genérico (`create/get/save/delete/list`) — herança e genéricos aplicados de fato.
 - `ScriptRepository`, `ParticipantRepository`, `SessionRepository`, `SynthesisRepository`.
 - Índices criados no `lifespan`: `session_id` único, `script_id`, `participant_id`, `slug_convite` único.
 - Consulta relacional com `$lookup`: sessão → participante + roteiro.
 - Aggregation pipelines para o dashboard (EV-32).
+
+Decisões da implementação:
+
+- **Controle otimista de concorrência:** modelos com `versao` (`InterviewState`, `InterviewScript`) só são
+  gravados se o documento ainda estiver na versão lida; senão `ConflictError` (409). Evita que um `/turn`
+  lento sobrescreva o `/finish` e reabra a sessão. Documento sem `versao` (legado) conta como versão 0.
+- Documento do banco que não bate com o modelo vira `CorruptDocumentError` → 500 genérico, sem o conteúdo
+  (antes o `ValidationError` caía no handler de `ValueError` e devolvia 400 com a fala do participante).
+  A exceção leva só coleção, campo e tipo do erro, sem a causa encadeada (o valor não vai para log).
+- Nomes das coleções em `app/db/collections.py`; `get_by_slug` normaliza a entrada com `slugify`.
+- `BaseRepository[T]` (ABC + `Generic`): `create/get/get_or_raise/exists/save/delete/list/count/ensure_indexes`;
+  `DuplicateKeyError` → `ConflictError`; `delete` devolve `bool` (antes levantava `ValueError` → 400).
+  Subclasse sem `model`/`collection_name`/`id_field` é recusada na construção.
+- O banco é injetado (`deps.get_database()`); cliente Motor com `tz_aware=True`.
+- Índices extras: `(script_id, created_at)` em sessões; `(script_id, escopo)` em sínteses.
+- `$lookup`: `SessionRepository.get_details`. Agregações: `SessionRepository.script_stats` (total, concluídas,
+  taxa de conclusão, média de respostas, distribuição de ações, média de aprofundamentos por pergunta).
+- Testes: `mongomock-motor` (dev) no lugar do `FakeDB` caseiro; integração em MongoDB real com
+  `pytest -m mongo` (`MONGO_TEST_URI`), executada no CI por um container `mongo:7`.
 
 ### EV-03 — Endpoints CRUD das novas coleções `TODO` (R2)
 
@@ -145,6 +190,15 @@ interview_scripts (roteiros/campanhas)      participants
 | Sínteses | `GET /syntheses/session/{id}`, `POST /syntheses/script/{id}` (EV-33) |
 
 Todas sob o prefixo `/api/v1` (EV-15).
+
+Pendências registradas na revisão do EV-01/EV-02 (resolver junto com as rotas):
+
+- **Excluir sessão apaga a síntese dela** (cascata no `SessionService`, com teste): a síntese deriva da fala
+  do participante e não pode ficar órfã (RK-11).
+- **Editar perguntas de roteiro com sessões em andamento:** a sessão aponta para a posição da pergunta
+  (`current_index`), então inserir/reordenar perguntas no meio desloca quem está respondendo. Opções:
+  bloquear (409) edição de perguntas de roteiro com sessões `em_andamento`, ou congelar uma cópia do roteiro
+  na sessão. Excluir roteiro com sessões: preferir `ativo=false`.
 
 ### EV-04 — Quadro de tarefas `TODO` (R4, RK-02)
 
@@ -391,7 +445,7 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 | EV-12 | `deps.py` recria service, cliente OpenAI e recompila o grafo a cada request | Singletons via `lru_cache` / `lifespan` ✅ DONE |
 | EV-13 | `/synthesis` regenera (e paga) a cada chamada | Retornar existente; `?refresh=true` para regerar |
 | EV-15 | Rotas sem prefixo apesar da pasta `api/v1` | `include_router(prefix="/api/v1")` |
-| EV-16 | Typo `SYNTESIS_PROMPT`; `remaining_questions` como repr de lista; `asked_indices` redundante; `bash.exe.stackdump` commitado; `api.js` não usado | Limpeza |
+| EV-16 | Typo `SYNTESIS_PROMPT`; ~~`remaining_questions` como repr de lista~~ (lista numerada desde o EV-01); `asked_indices` redundante; `bash.exe.stackdump` commitado; `api.js` não usado | Limpeza |
 
 ---
 

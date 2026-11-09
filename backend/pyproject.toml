@@ -8,6 +8,9 @@ addopts = [
     "--cov=app",
     "--cov-report=term-missing",
 ]
+markers = [
+    "mongo: integração com MongoDB real (exige MONGO_TEST_URI; pulado sem ele)",
+]
 
 [tool.coverage.run]
 source = ["app"]

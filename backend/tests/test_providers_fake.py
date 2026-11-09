@@ -58,3 +58,18 @@ def test_factory_builds_fake_providers():
 def test_settings_rejects_unknown_provider():
     with pytest.raises(ValidationError):
         Settings(llm_provider="gemini")
+
+
+def test_fake_llm_identifies_itself_as_fake():
+    assert FakeLLMProvider().model_name == "fake"
+
+
+def test_llm_provider_default_model_name_is_the_class_name():
+    class Minimal(LLMProvider):
+        async def complete_json(self, prompt: str) -> dict:
+            return {}
+
+        async def complete_text(self, prompt: str) -> str:
+            return ""
+
+    assert Minimal().model_name == "Minimal"

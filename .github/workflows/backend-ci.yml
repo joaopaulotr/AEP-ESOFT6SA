@@ -17,6 +17,17 @@ defaults:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      # MongoDB real para os testes de integração (-m mongo): índices, $lookup e agregações.
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping: 1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -32,4 +43,5 @@ jobs:
       - name: Roda os testes com cobertura
         env:
           OPENAI_API_KEY: test-key
+          MONGO_TEST_URI: mongodb://localhost:27017
         run: pytest --cov-fail-under=70
