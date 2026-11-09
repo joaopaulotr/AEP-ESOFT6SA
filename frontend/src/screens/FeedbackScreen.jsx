@@ -1,10 +1,10 @@
+import React from "react";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import React from "react";
 import SideBar from "../components/SideBar";
 import { FileText, ArrowLeft, RefreshCw, AlertCircle } from "lucide-react";
-
-const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+import { api } from "../services/api";
+import ThemeToggle from "../components/ThemeToggle";
 
 export default function FeedbackScreen() {
     const navigate = useNavigate();
@@ -32,20 +32,10 @@ export default function FeedbackScreen() {
         setCarregando(true);
         setErro("");
         try {
-            const res = await fetch(`${API}/session/${sessionId}/synthesis`, { method: "POST" });
-            if (!res.ok) {
-                
-                let detalhe = "";
-                try {
-                    const j = await res.json();
-                    detalhe = j.detail || "";
-                } catch {  }
-                throw new Error(detalhe || "Falha ao gerar a síntese.");
-            }
-            const data = await res.json();
+            const data = await api.generateSynthesis(sessionId);
             setSintese(data.sintese || "");
         } catch (e) {
-            setErro(e.message || "Não consegui gerar a síntese.");
+            setErro(e.detail || "Não consegui gerar a síntese.");
         } finally {
             setCarregando(false);
         }
@@ -64,12 +54,15 @@ export default function FeedbackScreen() {
                             <p style={style.subtitulo}>Relatório gerado a partir da conversa</p>
                         </div>
                     </div>
-                    <button style={style.voltarBtn} onClick={() => navigate("/")}>
-                        <ArrowLeft size={16} /> Voltar
-                    </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <ThemeToggle />
+                        <button style={style.voltarBtn} onClick={() => navigate("/")}>
+                            <ArrowLeft size={16} /> Voltar
+                        </button>
+                    </div>
                 </header>
 
-                <div style={style.card}>
+                <div style={style.card} aria-live="polite">
                     {carregando && (
                         <div style={style.estado}>
                             <RefreshCw size={22} className="girando" />
@@ -79,8 +72,8 @@ export default function FeedbackScreen() {
 
                     {!carregando && erro && (
                         <div style={style.estado}>
-                            <AlertCircle size={22} color="#b4453f" />
-                            <p style={{ ...style.estadoTexto, color: "#b4453f" }}>{erro}</p>
+                            <AlertCircle size={22} style={{ color: "var(--color-error)" }} />
+                            <p style={{ ...style.estadoTexto, color: "var(--color-error)" }}>{erro}</p>
                             {sessionId && (
                                 <button style={style.retryBtn} onClick={gerarSintese}>
                                     <RefreshCw size={15} /> Tentar de novo
@@ -108,7 +101,7 @@ const style = {
     root: {
         width: "100%",
         boxSizing: "border-box",
-        fontFamily: "'DM Sans',sans-serif",
+        fontFamily: "var(--font-sans)",
     },
     topbar: {
         display: "flex",
@@ -116,9 +109,9 @@ const style = {
         justifyContent: "space-between",
         gap: 16,
         flexWrap: "wrap",
-        backgroundColor: "#ffffff",
+        backgroundColor: "var(--color-surface)",
         borderRadius: 20,
-        border: "1px solid #CDE1DC",
+        border: "1px solid var(--color-border)",
         padding: "14px 18px",
         marginBottom: 18,
     },
@@ -129,39 +122,40 @@ const style = {
         width: 38,
         height: 38,
         borderRadius: 12,
-        background: "#F4F8F7",
-        border: "1px solid #CDE1DC",
-        color: "#26443F",
+        background: "var(--color-surface-2)",
+        border: "1px solid var(--color-border)",
+        color: "var(--color-text)",
     },
     titulo: {
         margin: 0,
-        color: "#26443F",
+        color: "var(--color-text)",
         fontWeight: 700,
         fontSize: 16,
     },
     subtitulo: {
         margin: "2px 0 0",
-        color: "#8a93ab",
+        color: "var(--color-text-muted)",
         fontSize: 12.5,
     },
     voltarBtn: {
         display: "inline-flex",
         alignItems: "center",
         gap: 8,
-        background: "#F4F8F7",
-        color: "#26443F",
-        border: "1px solid #CDE1DC",
+        background: "var(--color-surface-2)",
+        color: "var(--color-text)",
+        border: "1px solid var(--color-border)",
         borderRadius: 20,
         padding: "8px 14px",
         fontWeight: 600,
         fontSize: 13,
         cursor: "pointer",
+        minHeight: "var(--touch-target)",
     },
     card: {
-        background: "#ffffff",
-        border: "1px solid #d1e9e4",
+        background: "var(--color-surface)",
+        border: "1px solid var(--color-border-soft)",
         borderRadius: 18,
-        padding: 26,
+        padding: "clamp(16px, 4vw, 26px)",
         minHeight: 400,
     },
     estado: {
@@ -171,13 +165,13 @@ const style = {
         justifyContent: "center",
         gap: 14,
         minHeight: 340,
-        color: "#7fa89f",
+        color: "var(--color-primary-border)",
     },
     estadoTexto: {
         margin: 0,
         fontSize: 14.5,
         fontWeight: 600,
-        color: "#26443F",
+        color: "var(--color-text)",
         textAlign: "center",
         maxWidth: 380,
     },
@@ -185,8 +179,8 @@ const style = {
         display: "inline-flex",
         alignItems: "center",
         gap: 8,
-        background: "#7fa89f",
-        color: "#fff",
+        background: "var(--color-primary)",
+        color: "var(--color-on-primary)",
         border: "none",
         borderRadius: 14,
         padding: "9px 16px",
@@ -197,7 +191,7 @@ const style = {
     },
     relatorio: {
         whiteSpace: "pre-wrap",   
-        color: "#26443F",
+        color: "var(--color-text)",
         fontSize: 15,
         lineHeight: 1.65,
     },

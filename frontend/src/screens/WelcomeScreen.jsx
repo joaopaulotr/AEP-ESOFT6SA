@@ -1,5 +1,5 @@
-import { useState } from "react";
 import React from "react";
+import { useState } from "react";
 import SideBar from "../components/SideBar";
 import Avatar from "../components/Avatar";
 import { useNavigate } from "react-router-dom";
@@ -73,7 +73,7 @@ export default function WelcomeScreen() {
                     </div>
 
                     {micStatus === "denied" && (
-                        <p style={style.aviso}>Não foi possível acessar o microfone. Verifique a permissão do navegador.</p>
+                        <p style={style.aviso} role="alert">Não foi possível acessar o microfone. Verifique a permissão do navegador.</p>
                     )}
                     {micStatus !== "ok" && micStatus !== "denied" && (
                         <p style={style.hint}>Libere o microfone para iniciar a entrevista.</p>
@@ -108,7 +108,7 @@ const style = {
         alignItems: "center",
         justifyContent: "center",
         gap: 32,
-        padding: "24px 0",
+        padding: "24px 16px",
         boxSizing: "border-box",
     },
     card: {
@@ -120,38 +120,38 @@ const style = {
     },
     saudacao: {
         margin: "22px 0 0",
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 15,
-        color: "#6a7d77",
+        color: "var(--color-text-muted)",
     },
     title: {
         margin: "10px 0 0",
-        fontFamily: "Momo Trust Sans",
-        fontSize: 37,
+        fontFamily: "var(--font-heading)",
+        fontSize: "clamp(26px, 6vw, 37px)", // EV-84: menor no celular
         fontWeight: 700,
         lineHeight: 1.12,
         letterSpacing: "-0.02em",
-        color: "#1f2d29",
+        color: "var(--color-heading)",
         maxWidth: 680,
     },
     subtittle: {
         margin: "16px 0 0",
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 16,
         lineHeight: 1.6,
-        color: "#6a7d77",
+        color: "var(--color-text-muted)",
         maxWidth: 660,
     },
     vaga: {
         marginTop: 22,
         padding: "7px 16px",
         borderRadius: 999,
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 13.5,
         fontWeight: 600,
-        color: "#4f776e",
-        backgroundColor: "#e9f3f0",
-        border: "1px solid #d6ebe3",
+        color: "var(--color-primary)",
+        backgroundColor: "var(--color-accent-soft)",
+        border: "1px solid var(--color-accent-soft-border)",
     },
     actions: {
         marginTop: 26,
@@ -163,50 +163,50 @@ const style = {
     micBtn: {
         height: 50,
         padding: "0 22px",
-        backgroundColor: "#ffffff",
+        backgroundColor: "var(--color-surface)",
         borderRadius: 18,
-        border: "1px solid #7fa89f",
+        border: "1px solid var(--color-primary-border)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         gap: 8,
-        color: "#4f776e",
-        fontFamily: "dm sans",
+        color: "var(--color-primary)",
+        fontFamily: "var(--font-sans)",
         fontWeight: 600,
         fontSize: 15,
     },
     micBtnOk: {
-        backgroundColor: "#e9f3f0",
-        border: "1px solid #cfe6df",
+        backgroundColor: "var(--color-accent-soft)",
+        border: "1px solid var(--color-accent-soft-border)",
     },
     startBtn: {
         height: 50,
         padding: "0 26px",
-        backgroundColor: "#4f776e",
+        backgroundColor: "var(--color-primary)",
         borderRadius: 18,
         border: "none",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         gap: 9,
-        color: "#ffffff",
-        fontFamily: "dm sans",
+        color: "var(--color-on-primary)",
+        fontFamily: "var(--font-sans)",
         fontWeight: 600,
         fontSize: 15,
-        boxShadow: "0 10px 26px -14px rgba(31,45,41,.7)",
+        boxShadow: "var(--shadow-button)",
     },
     aviso: {
         margin: "16px 0 0",
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 13,
         fontWeight: 600,
-        color: "#c9563b",
+        color: "var(--color-error)",
     },
     hint: {
         margin: "14px 0 0",
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 13,
-        color: "#9db3ac",
+        color: "var(--color-text-muted)",
     },
     infoRow: {
         width: "100%",
@@ -217,12 +217,12 @@ const style = {
     },
     infoCard: {
         flex: "1 1 210px",
-        minWidth: 200,
+        minWidth: 0,
         display: "flex",
         alignItems: "center",
         gap: 12,
-        backgroundColor: "#ffffff",
-        border: "1px solid #d1e9e4",
+        backgroundColor: "var(--color-surface)",
+        border: "1px solid var(--color-border-soft)",
         borderRadius: 18,
         padding: "14px 16px",
     },
@@ -233,14 +233,14 @@ const style = {
         borderRadius: 18,
         display: "grid",
         placeItems: "center",
-        color: "#4f776e",
-        backgroundColor: "#e9f3f0",
+        color: "var(--color-primary)",
+        backgroundColor: "var(--color-accent-soft)",
     },
     infoText: {
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 14,
         lineHeight: 1.4,
-        color: "#41524d",
+        color: "var(--color-text-2)",
         textAlign: "left",
     },
 };

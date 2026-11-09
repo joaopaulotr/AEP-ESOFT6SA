@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Home, Mic, History as HistoryIcon, LogOut, Sparkles } from "lucide-react";
+import { Home, Mic, LogOut, Sparkles } from "lucide-react";
+import ThemeToggle from "./ThemeToggle";
 
 const NOME = "duda";  
 const EMAIL = "duda";
@@ -25,8 +26,7 @@ export default function Sidebar({ children }) {
     const itens = [
         { rota: "/welcome",    label: "Início",         icon: <Home size={19} /> },
         { rota: "/entrevista", label: "Nova entrevista", icon: <Mic size={19} /> },
-        // Histórico: sem rota/tela ainda — reabilitar quando existir /historico
-        // { rota: "/historico",  label: "Histórico",       icon: <HistoryIcon size={19} /> },
+      
     ];
 
     return (
@@ -39,7 +39,7 @@ export default function Sidebar({ children }) {
                     {!isMobile && <span style={style.brandName}>du</span>}
                 </div>
 
-               <nav style={{
+               <nav aria-label="Menu principal" style={{
     display: "flex",
     flexDirection: "column",
     gap: 4,
@@ -52,6 +52,8 @@ export default function Sidebar({ children }) {
                             <button
                                 key={it.rota}
                                 onClick={() => navigate(it.rota)}
+                                aria-current={ativo ? "page" : undefined}
+                                aria-label={isMobile ? it.label : undefined}
                                 style={{
                                     ...style.navItem,
                                     ...(ativo ? style.navItemActive : {}),
@@ -65,6 +67,10 @@ export default function Sidebar({ children }) {
                     })}
                 </nav>
 
+                <div style={{ display: "flex", justifyContent: isMobile ? "center" : "flex-start", padding: "0 4px 8px" }}>
+                    <ThemeToggle />
+                </div>
+
                 <div style={{ ...style.railUser, ...(isMobile ? { marginLeft: "auto" } : {}) }}>
                     <div style={style.avatarMini}>{NOME.charAt(0).toUpperCase()}</div>
                     {!isMobile && (
@@ -73,7 +79,7 @@ export default function Sidebar({ children }) {
                             <div style={style.userEmail}>{EMAIL}</div>
                         </div>
                     )}
-                    <button style={style.logout} title="Sair" onClick={() => navigate("/")}>
+                    <button style={style.logout} title="Sair" aria-label="Sair" onClick={() => navigate("/")}>
                         <LogOut size={18} />
                     </button>
                 </div>
@@ -93,7 +99,7 @@ const style = {
     root: {
         minHeight: "100vh",
         display: "flex",
-        backgroundColor: "#F8FAF9",
+        backgroundColor: "var(--color-bg)",
     },
     rail: {
         position: "sticky",
@@ -105,9 +111,9 @@ const style = {
         flexDirection: "column",
         gap: 6,
         padding: "22px 16px",
-        backgroundColor: "rgba(255,255,255,.72)",
+        backgroundColor: "var(--color-rail-bg)",
         backdropFilter: "blur(10px)",
-        borderRight: "1px solid #dcebe6",
+        borderRight: "1px solid var(--color-border-soft)",
         boxSizing: "border-box",
     },
    railMobile: {
@@ -127,24 +133,25 @@ const style = {
         borderRadius: 11,
         display: "grid",
         placeItems: "center",
-        background: "linear-gradient(140deg,#7fa89f,#4f776e)",
-        color: "#fff",
+        background: "linear-gradient(140deg,var(--color-primary-border),var(--color-primary))",
+        color: "var(--color-on-primary)",
         boxShadow: "0 8px 18px -8px rgba(79,119,110,.7)",
     },
     brandName: {
-        fontFamily: "Momo Trust Sans",
+        fontFamily: "var(--font-heading)",
         fontWeight: 700,
         fontSize: 20,
-        color: "#1f2d29",
+        color: "var(--color-heading)",
     },
     navItem: {
         display: "flex",
         alignItems: "center",
         gap: 12,
         padding: "11px 12px",
+        minHeight: "var(--touch-target)",
         borderRadius: 12,
-        color: "#6a7d77",
-        fontFamily: "dm sans",
+        color: "var(--color-text-muted)",
+        fontFamily: "var(--font-sans)",
         fontWeight: 600,
         fontSize: 14.5,
         cursor: "pointer",
@@ -154,8 +161,8 @@ const style = {
         width: "100%",
     },
     navItemActive: {
-        backgroundColor: "#4f776e",
-        color: "#fff",
+        backgroundColor: "var(--color-primary)",
+        color: "var(--color-on-primary)",
     },
     railUser: {
         display: "flex",
@@ -163,8 +170,8 @@ const style = {
         gap: 11,
         padding: 10,
         borderRadius: 14,
-        border: "1px solid #dcebe6",
-        backgroundColor: "#fff",
+        border: "1px solid var(--color-border-soft)",
+        backgroundColor: "var(--color-surface)",
     },
     avatarMini: {
         width: 36,
@@ -174,24 +181,24 @@ const style = {
         display: "grid",
         placeItems: "center",
         color: "#fff",
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontWeight: 700,
         fontSize: 14,
         flexShrink: 0,
     },
     userName: {
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontWeight: 700,
         fontSize: 13.5,
-        color: "#1f2d29",
+        color: "var(--color-heading)",
         whiteSpace: "nowrap",
         overflow: "hidden",
         textOverflow: "ellipsis",
     },
     userEmail: {
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 12,
-        color: "#6a7d77",
+        color: "var(--color-text-muted)",
         whiteSpace: "nowrap",
         overflow: "hidden",
         textOverflow: "ellipsis",
@@ -199,9 +206,11 @@ const style = {
     logout: {
         border: "none",
         background: "none",
-        color: "#6a7d77",
+        color: "var(--color-text-muted)",
         cursor: "pointer",
         padding: 8,
+        minWidth: "var(--touch-target)",
+        minHeight: "var(--touch-target)",
         borderRadius: 10,
         display: "grid",
         placeItems: "center",

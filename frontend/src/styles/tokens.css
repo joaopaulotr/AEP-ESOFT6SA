@@ -1,0 +1,108 @@
+
+
+:root {
+  
+  --color-bg: #f4f8f7;            
+  --color-surface: #ffffff;      
+  --color-surface-2: #f4f8f7;     
+  --color-input-bg: #fbfdfc;    
+  --color-accent-soft: #e9f3f0;  
+  --color-accent-soft-border: #cfe6df;
+
+  /* ---------- Bordas ---------- */
+  --color-border: #cde1dc;
+  --color-border-soft: #d1e9e4;
+  --color-divider: #a7caca;
+
+  /* ---------- Texto ---------- */
+  --color-heading: #1f2d29;       
+  --color-text: #26443f;          
+  --color-text-2: #41524d;       
+  --color-text-muted: #5f716b;    
+  --color-text-subtle: #5f716b;  
+  --color-status: #4f776e;        
+  --color-icon: #8aa39c;         
+
+  /* ---------- Ações ---------- */
+  --color-primary: #4f776e;       
+  --color-primary-border: #7fa89f;
+  --color-on-primary: #ffffff;
+  --color-focus: #6d5efc;
+
+  --color-error: #b4453f;        
+  --color-danger: #8d0606;      
+  --color-danger-bg: #ff000015;
+  --color-danger-border: #8f575733;
+
+  /* ---------- Entrevista ---------- */
+  --color-rec: #f0526b;         
+  --color-rec-glow: rgba(240, 82, 107, 0.6);
+  --color-wave-idle: #39415f;
+  --color-wave-from: #a0c9ca;
+  --color-wave-to: #f87060;
+
+  --color-bubble-me-from: #33306e; 
+  --color-bubble-me-to: #3a2f6b;
+  --color-bubble-me-border: #4a3f86;
+  --color-bubble-me-text: #efeaff;
+
+  /* Estados do avatar (EV-80) */
+  --color-listening: #4f776e;
+  --color-thinking: #a86a14;
+  --color-speaking: #f87060;
+
+  /* ---------- Sombras ---------- */
+  --shadow-card: 0 12px 40px #2a262212, 0 2px 6px #2a26220a;
+  --shadow-button: 0 8px 22px -16px rgba(31, 45, 41, 0.6);
+
+  /* ---------- Tipografia ---------- */
+  --font-sans: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-heading: "Momo Trust Sans", "DM Sans", system-ui, sans-serif;
+
+  /* ---------- Acessibilidade / mobile ---------- */
+  --touch-target: 44px;         
+  --radius-full: 999px;
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --color-bg: #0f1716;
+  --color-surface: #172220;
+  --color-surface-2: #1e2b29;
+  --color-input-bg: #1b2725;
+  --color-accent-soft: #22332f;
+  --color-accent-soft-border: #2f4741;
+
+  --color-border: #2d403c;
+  --color-border-soft: #2a3b38;
+  --color-divider: #3a524d;
+
+  --color-heading: #f0f6f4;
+  --color-text: #e3efec;
+  --color-text-2: #c5d3cf;
+  --color-text-muted: #a8b7b3;
+  --color-text-subtle: #a8b7b3;
+  --color-status: #7fd1bf;
+  --color-icon: #7d918b;
+
+  --color-primary: #8fbcb2;
+  --color-primary-border: #8fbcb2;
+  --color-on-primary: #0f1716;
+  --color-focus: #a99ffe;
+
+  --color-error: #ff8a8a;
+  --color-danger: #ff8a8a;
+  --color-danger-bg: #ff4d4d22;
+  --color-danger-border: #ff8a8a44;
+
+  --color-wave-idle: #3a4a47;
+
+  --color-listening: #8fbcb2;
+  --color-thinking: #e0a64a;
+
+  --shadow-card: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --shadow-button: none;
+
+  color-scheme: dark;
+}
