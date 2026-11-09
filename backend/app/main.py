@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import deps
-from app.api.v1.endpoints import session, turns, voice
+from app.api.v1.router import api_router
 from app.core.errors import ConflictError, CorruptDocumentError, NotFoundError
 from app.providers.base import ProviderError
 
@@ -40,9 +40,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(session.router)
-app.include_router(turns.router)
-app.include_router(voice.router)
+app.include_router(api_router)
 
 
 @app.exception_handler(ValueError)

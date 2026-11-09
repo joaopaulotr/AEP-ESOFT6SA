@@ -32,15 +32,21 @@ def client(fake_llm):
 
 
 def _abrir_sessao(client) -> str:
-    return client.post("/session").json()["session_id"]
+    return client.post("/api/v1/session").json()["session_id"]
 
 
 def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
 
 
+def test_routes_live_under_api_v1_and_health_stays_at_the_root(client):
+    assert client.post("/session").status_code == 404
+    assert client.post("/api/v1/session").status_code == 200
+    assert client.get("/api/v1/health").status_code == 404
+
+
 def test_create_session_returns_id_and_opening_question(client):
-    response = client.post("/session")
+    response = client.post("/api/v1/session")
 
     assert response.status_code == 200
     body = response.json()
@@ -51,7 +57,7 @@ def test_create_session_returns_id_and_opening_question(client):
 def test_session_document_references_the_seed_script(client):
     session_id = _abrir_sessao(client)
 
-    body = client.get(f"/session/{session_id}").json()
+    body = client.get(f"/api/v1/session/{session_id}").json()
 
     assert body["script_id"] == "entrevista-generalista"
     assert body["participant_id"] is None
@@ -63,18 +69,18 @@ def test_turn_advances_the_interview_and_persists(client, fake_llm):
     session_id = _abrir_sessao(client)
     fake_llm.queue(action="deepen", next_utterance="Pode detalhar?")
 
-    response = client.post(f"/turn/{session_id}", json={"texto": "é confuso"})
+    response = client.post(f"/api/v1/turn/{session_id}", json={"texto": "é confuso"})
 
     assert response.status_code == 200
     assert response.json() == {"fala": "Pode detalhar?", "finalizada": False, "indice_atual": 0}
 
-    conversa = client.get(f"/session/{session_id}").json()["conversation"]
+    conversa = client.get(f"/api/v1/session/{session_id}").json()["conversation"]
     assert conversa[-1]["text"] == "Pode detalhar?"
     assert conversa[-2]["text"] == "é confuso"
 
 
 def test_turn_on_unknown_session_returns_404(client):
-    response = client.post("/turn/inexistente", json={"texto": "oi"})
+    response = client.post("/api/v1/turn/inexistente", json={"texto": "oi"})
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Sessão não encontrada."
@@ -83,7 +89,7 @@ def test_turn_on_unknown_session_returns_404(client):
 def test_turn_rejects_empty_text(client):
     session_id = _abrir_sessao(client)
 
-    response = client.post(f"/turn/{session_id}", json={"texto": ""})
+    response = client.post(f"/api/v1/turn/{session_id}", json={"texto": ""})
 
     assert response.status_code == 422
 
@@ -92,16 +98,16 @@ def test_turn_on_finished_interview_returns_409(client, fake_llm):
     session_id = _abrir_sessao(client)
     for _ in range(4):
         fake_llm.queue(action="advance", next_utterance="")
-        client.post(f"/turn/{session_id}", json={"texto": "respondi"})
+        client.post(f"/api/v1/turn/{session_id}", json={"texto": "respondi"})
 
-    response = client.post(f"/turn/{session_id}", json={"texto": "mais uma"})
+    response = client.post(f"/api/v1/turn/{session_id}", json={"texto": "mais uma"})
 
     assert response.status_code == 409
     assert response.json()["detail"] == "A entrevista já foi encerrada."
 
 
 def test_finish_unknown_session_returns_404(client):
-    response = client.post("/session/inexistente/finish")
+    response = client.post("/api/v1/session/inexistente/finish")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Sessão não encontrada."
@@ -110,13 +116,13 @@ def test_finish_unknown_session_returns_404(client):
 def test_finish_marks_the_session_as_concluded(client):
     session_id = _abrir_sessao(client)
 
-    body = client.post(f"/session/{session_id}/finish").json()
+    body = client.post(f"/api/v1/session/{session_id}/finish").json()
 
     assert body["finished"] is True and body["status"] == "concluida"
 
 
 def test_synthesis_of_unknown_session_returns_404(client):
-    response = client.post("/session/inexistente/synthesis")
+    response = client.post("/api/v1/session/inexistente/synthesis")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Sessão não encontrada."
@@ -143,13 +149,13 @@ def test_startup_creates_indexes_and_the_seed(client):
 
 
 def test_get_unknown_session_returns_404(client):
-    assert client.get("/session/inexistente").status_code == 404
+    assert client.get("/api/v1/session/inexistente").status_code == 404
 
 
 def test_synthesis_before_finish_returns_400(client):
     session_id = _abrir_sessao(client)
 
-    response = client.post(f"/session/{session_id}/synthesis")
+    response = client.post(f"/api/v1/session/{session_id}/synthesis")
 
     assert response.status_code == 400
     assert "encerrar a entrevista" in response.json()["detail"]
@@ -159,10 +165,10 @@ def test_synthesis_after_finish_returns_the_report(client, fake_llm):
     session_id = _abrir_sessao(client)
     for _ in range(4):
         fake_llm.queue(action="advance", next_utterance="")
-        client.post(f"/turn/{session_id}", json={"texto": "respondi"})
+        client.post(f"/api/v1/turn/{session_id}", json={"texto": "respondi"})
     fake_llm.queue_payload("relatório de síntese")
 
-    response = client.post(f"/session/{session_id}/synthesis")
+    response = client.post(f"/api/v1/session/{session_id}/synthesis")
 
     assert response.status_code == 200
     assert response.json() == {"sintese": "relatório de síntese"}
@@ -170,10 +176,10 @@ def test_synthesis_after_finish_returns_the_report(client, fake_llm):
 
 def test_synthesis_when_provider_fails_returns_502(client, fake_llm):
     session_id = _abrir_sessao(client)
-    client.post(f"/session/{session_id}/finish")
+    client.post(f"/api/v1/session/{session_id}/finish")
     fake_llm.queue_error(ProviderError("timeout"))
 
-    response = client.post(f"/session/{session_id}/synthesis")
+    response = client.post(f"/api/v1/session/{session_id}/synthesis")
 
     assert response.status_code == 502
     assert response.json() == {"detail": "Falha ao se comunicar com o provedor de IA."}
@@ -197,7 +203,7 @@ def test_startup_migrates_v010_sessions_and_their_synthesis(fake_db, monkeypatch
 
     anyio.run(_seed_legacy)
     with TestClient(app) as client:
-        body = client.get("/session/antiga").json()
+        body = client.get("/api/v1/session/antiga").json()
 
         async def _synthesis():
             return await fake_db["syntheses"].find_one({"session_id": "antiga"}, {"_id": 0})
@@ -218,7 +224,7 @@ def test_corrupt_session_document_returns_500_without_its_content(client):
         )
 
     client.portal.call(_corrupt)
-    response = client.get("/session/ruim")
+    response = client.get("/api/v1/session/ruim")
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Erro interno ao ler os dados."}
@@ -233,7 +239,7 @@ def test_turn_on_a_session_whose_script_was_deleted_closes_it(client, fake_llm):
         await db["interview_scripts"].delete_many({})
 
     client.portal.call(_delete_script)
-    response = client.post(f"/turn/{session_id}", json={"texto": "vou de ônibus"})
+    response = client.post(f"/api/v1/turn/{session_id}", json={"texto": "vou de ônibus"})
 
     assert response.status_code == 200
     assert response.json()["finalizada"] is True
@@ -252,11 +258,11 @@ def test_turn_overtaken_by_finish_returns_409_in_portuguese(client, fake_llm):
     fake_llm.complete_json = slow_decision
     fake_llm.queue(action="deepen", next_utterance="Me conta mais?")
 
-    response = client.post(f"/turn/{session_id}", json={"texto": "resposta"})
+    response = client.post(f"/api/v1/turn/{session_id}", json={"texto": "resposta"})
 
     assert response.status_code == 409
     assert response.json() == {"detail": "A sessão foi alterada por outra ação. Tente de novo."}
-    assert client.get(f"/session/{session_id}").json()["finished"] is True
+    assert client.get(f"/api/v1/session/{session_id}").json()["finished"] is True
 
 
 def test_startup_survives_a_v010_session_outside_the_model(fake_db, monkeypatch):
@@ -276,4 +282,4 @@ def test_startup_survives_a_v010_session_outside_the_model(fake_db, monkeypatch)
     anyio.run(_seed)
     with TestClient(app) as client:  # não pode falhar no startup
         assert client.get("/health").status_code == 200
-        assert client.get("/session/quebrada").status_code == 500
+        assert client.get("/api/v1/session/quebrada").status_code == 500
