@@ -175,6 +175,28 @@ class TestUpdate:
 
         assert response.status_code == 200
 
+    def test_default_script_cannot_be_deactivated_nor_have_questions_changed(self, client):
+        detail = "O roteiro padrão não pode ser desativado nem ter as perguntas alteradas."
+        before = client.get(f"{API}/{DEFAULT_ID}").json()
+
+        for body in ({"ativo": False}, {"perguntas": [{"texto": "Outra?"}]}):
+            response = client.put(f"{API}/{DEFAULT_ID}", json=body)
+            assert response.status_code == 409
+            assert response.json() == {"detail": detail}
+
+        after = client.get(f"{API}/{DEFAULT_ID}").json()
+        assert after["ativo"] is True and after["perguntas"] == before["perguntas"]
+
+    def test_default_script_still_accepts_other_edits(self, client):
+        response = client.put(
+            f"{API}/{DEFAULT_ID}",
+            json={"titulo": "Padrão", "tema": "t", "descricao": "d", "persona": {"nome": "Bia", "tom": "neutro"}, "ativo": True},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["titulo"] == "Padrão"
+        assert response.json()["persona"] == {"nome": "Bia", "tom": "neutro"}
+
     def test_unknown_is_404(self, client):
         assert client.put(f"{API}/nao-existe", json={"titulo": "x"}).status_code == 404
 

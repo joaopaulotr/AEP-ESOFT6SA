@@ -8,6 +8,7 @@ IN_PROGRESS_MESSAGE = (
     "Este roteiro tem entrevistas em andamento; não é possível mudar as perguntas agora."
 )
 DEFAULT_SCRIPT_MESSAGE = "O roteiro padrão não pode ser apagado."
+DEFAULT_SCRIPT_EDIT_MESSAGE = "O roteiro padrão não pode ser desativado nem ter as perguntas alteradas."
 
 _SUMMARY_FIELDS = {"script_id", "titulo", "tema", "descricao", "slug_convite", "ativo", "persona"}
 
@@ -53,6 +54,9 @@ class ScriptService:
 
     async def update(self, script_id: str, data: ScriptUpdate) -> InterviewScript:
         script = await self._scripts.get_or_raise(script_id)
+        if script_id == DEFAULT_SCRIPT_ID and (data.perguntas is not None or data.ativo is False):
+            # É o fallback de POST /session sem corpo: precisa ficar ativo e íntegro.
+            raise ConflictError(DEFAULT_SCRIPT_EDIT_MESSAGE)
         changes = data.model_dump(exclude_unset=True, exclude={"perguntas", "persona"})
         # null explícito em campo obrigatório é o mesmo que não enviar.
         changes = {key: value for key, value in changes.items() if value is not None}
