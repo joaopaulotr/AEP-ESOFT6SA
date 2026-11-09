@@ -233,6 +233,8 @@ Roteiro: problema/ODS (30s) → v1 vs v2 (40s) → arquitetura + modelo do banco
 → demo ao vivo: upload de questionário → link → entrevista por voz → dashboard (90s)
 → testes + cobertura no CI (30s) → resultados, custo por entrevista e limites (30s).
 
+- Dados de demonstração: `scripts/seed_demo.py` popula 4 roteiros, ~10 participantes, ~14 sessões e sínteses.
+
 ---
 
 ## 5. Realismo do entrevistador
@@ -397,7 +399,7 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 
 - "Pergunta 2 de 5 · aprofundando" — reduz ansiedade e abandono.
 
-### EV-84 — Design system, dark mode e mobile-first `TODO`
+### EV-84 — Design system, dark mode e mobile-first `DONE`
 
 - Tokens de cor/tipografia/espaçamento em CSS variables; tema claro/escuro.
 - Layout mobile-first (o público da ODS 10 acessa principalmente pelo celular); áreas de toque grandes.
@@ -409,7 +411,7 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
   síntese cruzada (EV-33).
 - Participante: entrada pelo convite (EV-31), escolha voz/texto, entrevista, agradecimento.
 
-### EV-17 — Refatoração da `InterviewScreen` `TODO`
+### EV-17 — Refatoração da `InterviewScreen` `DONE`
 
 - Hooks: `useRecorder` (MediaRecorder + VAD), `useAudioPlayer` (fila + barge-in), `useInterviewSession`, `useTurnStream` (SSE).
 - Client HTTP único em `services/api.js`; nada de `fetch` espalhado nas telas.

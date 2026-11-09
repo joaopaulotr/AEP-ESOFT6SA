@@ -253,6 +253,17 @@ Frontend:
 cd frontend && npm install && npm run dev
 ```
 
+### Dados de demonstração
+
+Para demonstrar o dashboard e as sínteses sem fazer dezenas de entrevistas, rode (a partir de `backend/`, com `MONGO_URI` configurado):
+
+```bash
+.venv/Scripts/python -m scripts.seed_demo           # Windows; no Linux/macOS: .venv/bin/python
+.venv/Scripts/python -m scripts.seed_demo --reset   # apaga só os dados demo- e regrava
+```
+
+Cria 3 roteiros novos (transporte na periferia, UBS, trabalho por aplicativo) além do generalista, 10 participantes, 14 sessões (10 concluídas e 4 em andamento) e as sínteses por sessão e por roteiro, em português e alinhados à ODS 10. Todos os ids começam com `demo-`; rodar de novo não duplica nada e o `--reset` nunca toca em dados reais.
+
 ## 6. Testes e cobertura
 
 Os testes automatizados do backend rodam sem chamadas reais à OpenAI (os clientes são
