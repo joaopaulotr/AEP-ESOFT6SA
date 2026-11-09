@@ -1,5 +1,5 @@
-import { useState } from "react";
 import React from "react";
+import { useState } from "react";
 import Avatar from "../components/Avatar";
 import Layout from "../components/Layout";
 import { useNavigate } from "react-router-dom";
@@ -32,24 +32,28 @@ export default function LoginScreen() {
                 <h1 style={style.title}>Bem vindo de volta!</h1>
                 <p style={style.subtitle}>Entre para fazer entrevistas com a Interviewer.</p>
 
-                <label style={style.label}>E-mail</label>
+                <label style={style.label} htmlFor="login-email">E-mail</label>
                 <div style={style.field}>
-                    <Mail size={18} color="#8aa39c" />
+                    <Mail size={18} style={{ color: "var(--color-icon)" }} aria-hidden="true" />
                     <input
                         style={style.input}
+                        id="login-email"
                         type="email"
+                        autoComplete="email"
                         placeholder="voce@email.com"
                         value={email}
                         onChange={(e) => { setEmail(e.target.value); setErro(""); }}
                     />
                 </div>
 
-                <label style={style.label}>Senha</label>
+                <label style={style.label} htmlFor="login-senha">Senha</label>
                 <div style={style.field}>
-                    <Lock size={18} color="#8aa39c" />
+                    <Lock size={18} style={{ color: "var(--color-icon)" }} aria-hidden="true" />
                     <input
                         style={style.input}
+                        id="login-senha"
                         type="password"
+                        autoComplete="current-password"
                         placeholder="••••••••"
                         value={senha}
                         onChange={(e) => { setSenha(e.target.value); setErro(""); }}
@@ -61,7 +65,7 @@ export default function LoginScreen() {
                     <span style={style.link}>Esqueci a senha</span>
                 </div>
 
-                {erro && <div style={style.erro}>{erro}</div>}
+                {erro && <div style={style.erro} role="alert">{erro}</div>}
 
                 <button style={style.entrarBtn} onClick={entrar}>
                     Entrar <ArrowRight size={18} />
@@ -83,7 +87,7 @@ export default function LoginScreen() {
 
 function GoogleG() {
     return (
-        <svg width="17" height="17" viewBox="0 0 48 48">
+        <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true">
             <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.4 5.4 2.6 13.3l7.8 6.1C12.3 13.2 17.6 9.5 24 9.5z" />
             <path fill="#4285F4" d="M46.1 24.6c0-1.6-.1-2.8-.4-4.1H24v7.8h12.5c-.3 2.1-1.6 5.2-4.6 7.3l7.1 5.5c4.2-3.9 6.7-9.6 6.7-16.5z" />
             <path fill="#FBBC05" d="M10.4 28.6c-.5-1.5-.8-3-.8-4.6s.3-3.1.8-4.6l-7.8-6.1C1 16.3 0 20 0 24s1 7.7 2.6 10.7l7.8-6.1z" />
@@ -99,14 +103,14 @@ const style = {
     card: {
         width: 420,
         maxWidth: "100%",
-        backgroundColor: "white",
+        backgroundColor: "var(--color-surface)",
         borderRadius: 18,
-        padding: 34,
+        padding: "clamp(22px, 6vw, 34px)",
         textAlign: "center",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        boxShadow: "0 12px 40px #2A262212, 0 2px 6px #2A26220A",
+        boxShadow: "var(--shadow-card)",
     },
     badge: {
         display: "inline-flex",
@@ -115,34 +119,34 @@ const style = {
         marginTop: 14,
         padding: "5px 11px",
         borderRadius: 999,
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 12.5,
         fontWeight: 600,
-        color: "#4f776e",
-        backgroundColor: "#e9f3f0",
+        color: "var(--color-primary)",
+        backgroundColor: "var(--color-accent-soft)",
     },
     title: {
-        fontFamily: "Momo Trust Sans",
+        fontFamily: "var(--font-heading)",
         fontWeight: 800,
         fontSize: 24,
         marginTop: 14,
         marginBottom: 0,
-        color: "#1f2d29",
+        color: "var(--color-heading)",
     },
     subtitle: {
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 14,
-        color: "#6a7d77",
+        color: "var(--color-text-muted)",
         marginTop: 6,
         marginBottom: 22,
     },
     label: {
         width: "100%",
         textAlign: "left",
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 13,
         fontWeight: 600,
-        color: "#6a7d77",
+        color: "var(--color-text-muted)",
         marginBottom: 6,
         marginTop: 4,
     },
@@ -154,9 +158,9 @@ const style = {
         display: "flex",
         alignItems: "center",
         gap: 10,
-        border: "1px solid #d1e9e4",
+        border: "1px solid var(--color-border-soft)",
         borderRadius: 18,
-        backgroundColor: "#fbfdfc",
+        backgroundColor: "var(--color-input-bg)",
         boxSizing: "border-box",
     },
     input: {
@@ -164,9 +168,10 @@ const style = {
         border: "none",
         outline: "none",
         background: "none",
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 15,
-        color: "#2f3e3a",
+        color: "var(--color-text)",
+        minWidth: 0,
     },
     forgotRow: {
         width: "100%",
@@ -175,30 +180,30 @@ const style = {
         marginBottom: 6,
     },
     link: {
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 13,
         fontWeight: 600,
-        color: "#4f776e",
+        color: "var(--color-primary)",
         cursor: "pointer",
     },
     erro: {
         width: "100%",
         textAlign: "left",
-        color: "#c9563b",
-        fontFamily: "dm sans",
+        color: "var(--color-error)",
+        fontFamily: "var(--font-sans)",
         fontSize: 13,
         fontWeight: 600,
         marginBottom: 6,
     },
     entrarBtn: {
         width: "100%",
-        height: 40,
+        height: "var(--touch-target)",
         marginTop: 6,
-        backgroundColor: "#4f776e",
+        backgroundColor: "var(--color-primary)",
         borderRadius: 18,
         border: "none",
-        color: "white",
-        fontFamily: "dm sans",
+        color: "var(--color-on-primary)",
+        fontFamily: "var(--font-sans)",
         fontWeight: 600,
         fontSize: 15,
         display: "flex",
@@ -206,26 +211,26 @@ const style = {
         justifyContent: "center",
         gap: 9,
         cursor: "pointer",
-        boxShadow: "0 8px 22px -16px rgba(31,45,41,.6)",
+        boxShadow: "var(--shadow-button)",
     },
     divider: {
         width: "100%",
         display: "flex",
         alignItems: "center",
         gap: 12,
-        color: "#9db3ac",
-        fontFamily: "dm sans",
+        color: "var(--color-text-muted)",
+        fontFamily: "var(--font-sans)",
         fontSize: 13,
         margin: "16px 0",
     },
     googleBtn: {
         width: "100%",
         height: 45,
-        backgroundColor: "#ffffff",
+        backgroundColor: "var(--color-surface)",
         borderRadius: 18,
-        border: "1px solid #d1e9e4",
-        color: "#4f776e",
-        fontFamily: "dm sans",
+        border: "1px solid var(--color-border-soft)",
+        color: "var(--color-primary)",
+        fontFamily: "var(--font-sans)",
         fontWeight: 600,
         fontSize: 15,
         display: "flex",
@@ -235,9 +240,9 @@ const style = {
         cursor: "pointer",
     },
     footer: {
-        fontFamily: "dm sans",
+        fontFamily: "var(--font-sans)",
         fontSize: 13.5,
-        color: "#6a7d77",
+        color: "var(--color-text-muted)",
         marginTop: 16,
         marginBottom: 0,
     },
