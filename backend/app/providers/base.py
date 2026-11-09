@@ -6,6 +6,11 @@ class ProviderError(Exception):
 
 
 class LLMProvider(ABC):
+    @property
+    def model_name(self) -> str:
+        """Identificação do modelo, gravada junto do que ele gerou (ex.: syntheses.modelo)."""
+        return type(self).__name__
+
     @abstractmethod
     async def complete_json(self, prompt: str) -> dict: ...
 

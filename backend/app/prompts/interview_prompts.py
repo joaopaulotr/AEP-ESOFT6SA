@@ -1,7 +1,9 @@
 DECISION_PROMPT = """Você conduz uma entrevista qualitativa por voz, uma pergunta central por vez.
 
 Pergunta central atual: "{current_question}"
-Perguntas centrais restantes após esta: {remaining_questions}
+Objetivo desta pergunta: {question_goal}
+Perguntas centrais restantes após esta:
+{remaining_questions}
 
 Histórico recente da conversa:
 {history}

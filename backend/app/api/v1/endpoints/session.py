@@ -1,53 +1,27 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
-from app.api.deps import (
-    get_interview_service,
-    get_session_repository,
-    get_synthesis_service,
-)
-from app.repositories.session_repository import SessionRepository
-from app.schemas.interview import InterviewState, SessionResponse, Turn
-from app.services.interview_service import InterviewService
+from app.api.deps import get_session_service, get_synthesis_service
+from app.schemas.interview import InterviewState, SessionResponse
+from app.services.session_service import SessionService
 from app.services.synthesis_service import SynthesisService
 
 router = APIRouter()
 
 
 @router.post("/session", response_model=SessionResponse)
-async def create_new_session(
-    interview: InterviewService = Depends(get_interview_service),
-    sessions: SessionRepository = Depends(get_session_repository),
-):
-    state = InterviewState()
-    pergunta = interview.opening_question()
-    state.conversation.append(Turn(role="interviewer", text=pergunta))
-    await sessions.create(state)
+async def create_new_session(sessions: SessionService = Depends(get_session_service)):
+    state, pergunta = await sessions.start()
     return SessionResponse(session_id=state.session_id, pergunta=pergunta)
 
 
 @router.get("/session/{session_id}", response_model=InterviewState)
-async def get_session(
-    session_id: str,
-    sessions: SessionRepository = Depends(get_session_repository),
-):
-    session = await sessions.get(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Sessão não encontrada.")
-    return session
+async def get_session(session_id: str, sessions: SessionService = Depends(get_session_service)):
+    return await sessions.get(session_id)
 
 
 @router.post("/session/{session_id}/finish", response_model=InterviewState)
-async def finish_session(
-    session_id: str,
-    interview: InterviewService = Depends(get_interview_service),
-    sessions: SessionRepository = Depends(get_session_repository),
-):
-    session = await sessions.get(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Sessão não encontrada.")
-    interview.finish(session)
-    await sessions.save(session)
-    return session
+async def finish_session(session_id: str, sessions: SessionService = Depends(get_session_service)):
+    return await sessions.finish(session_id)
 
 
 @router.post("/session/{session_id}/synthesis")

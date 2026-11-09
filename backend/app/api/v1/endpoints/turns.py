@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
-from app.api.deps import get_interview_service, get_session_repository
-from app.repositories.session_repository import SessionRepository
+from app.api.deps import get_session_service
 from app.schemas.interview import TurnRequest, TurnResponse
-from app.services.interview_service import InterviewService
+from app.services.session_service import SessionService
 
 router = APIRouter()
 
@@ -12,18 +11,9 @@ router = APIRouter()
 async def handle_turn(
     session_id: str,
     payload: TurnRequest,
-    interview: InterviewService = Depends(get_interview_service),
-    sessions: SessionRepository = Depends(get_session_repository),
+    sessions: SessionService = Depends(get_session_service),
 ):
-    session = await sessions.get(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Sessão não encontrada.")
-    if session.finished:
-        raise HTTPException(status_code=409, detail="A entrevista já foi encerrada.")
-
-    session, fala = await interview.run_turn(session, payload.texto)
-    await sessions.save(session)
-
+    session, fala = await sessions.take_turn(session_id, payload.texto)
     return TurnResponse(
         fala=fala,
         finalizada=session.finished,
