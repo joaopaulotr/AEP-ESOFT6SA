@@ -2,7 +2,7 @@ import React from "react";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import SideBar from "../components/SideBar";
-import { FileText, ArrowLeft, RefreshCw, AlertCircle } from "lucide-react";
+import { FileText, ArrowLeft, RefreshCw, AlertCircle, ListChecks } from "lucide-react";
 import { api } from "../services/api";
 import ThemeToggle from "../components/ThemeToggle";
 
@@ -84,6 +84,12 @@ export default function FeedbackScreen() {
 
                     {!carregando && !erro && (
                         <div style={style.relatorio}>{sintese}</div>
+                    )}
+
+                    {!carregando && sessionId && (
+                        <button style={style.verBtn} onClick={() => navigate(`/sessao/${sessionId}`)}>
+                            <ListChecks size={16} /> Ver entrevista completa
+                        </button>
                     )}
                 </div>
             </div>
@@ -188,6 +194,21 @@ const style = {
         fontSize: 13.5,
         cursor: "pointer",
         marginTop: 4,
+    },
+    verBtn: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        marginTop: 20,
+        background: "var(--color-surface-2)",
+        color: "var(--color-primary)",
+        border: "1px solid var(--color-primary-border)",
+        borderRadius: 16,
+        padding: "0 16px",
+        minHeight: "var(--touch-target)",
+        fontWeight: 600,
+        fontSize: 14,
+        cursor: "pointer",
     },
     relatorio: {
         whiteSpace: "pre-wrap",   

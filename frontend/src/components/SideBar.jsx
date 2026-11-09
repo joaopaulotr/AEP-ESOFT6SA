@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Home, Mic, LogOut, Sparkles } from "lucide-react";
+import { Home, Mic, ListChecks, LogOut, Sparkles } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 
 const NOME = "duda";  
@@ -25,7 +25,8 @@ export default function Sidebar({ children }) {
 
     const itens = [
         { rota: "/welcome",    label: "Início",         icon: <Home size={19} /> },
-        { rota: "/entrevista", label: "Nova entrevista", icon: <Mic size={19} /> },
+        { rota: "/entrevistas", label: "Entrevistas",    icon: <ListChecks size={19} />, prefixos: ["/entrevistas", "/sessao"] },
+        { rota: "/entrevista",  label: "Nova entrevista", icon: <Mic size={19} /> },
       
     ];
 
@@ -47,7 +48,9 @@ export default function Sidebar({ children }) {
     alignItems: isMobile ? "center" : "stretch",
 }}>
                     {itens.map((it) => {
-                        const ativo = location.pathname === it.rota;
+                        const ativo = it.prefixos
+                            ? it.prefixos.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`))
+                            : location.pathname === it.rota;
                         return (
                             <button
                                 key={it.rota}

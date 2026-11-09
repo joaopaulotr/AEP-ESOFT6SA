@@ -1,6 +1,6 @@
 import React from "react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Mic, Square, Send, Volume2, XCircle, Clock } from "lucide-react";
 import SideBar from "../components/SideBar";
 import Avatar from "../components/Avatar";
@@ -15,11 +15,14 @@ const INTERVIEWER = "du";
 
 export default function InterviewScreen() {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const scriptId = searchParams.get("roteiro") || undefined;
     const [texto, setTexto] = useState("");
     const msgsRef = useRef(null);
     const segundos = useElapsedTime();
 
     const sessao = useInterviewSession({
+        scriptId,
         onFinished: (sessionId) => navigate("/feedback", { state: { sessionId } }),
     });
     const { perguntaAtual, indiceAtual, turno, processando, finalizada, transcricao, erro } = sessao;
@@ -72,6 +75,7 @@ export default function InterviewScreen() {
                 <header style={style.topbar}>
                     <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                         <span style={style.recTag}><span className="rec-dot" /> ENTREVISTA EM ANDAMENTO</span>
+                        {sessao.tituloRoteiro && <span style={style.roteiroTitulo}>{sessao.tituloRoteiro}</span>}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={style.timer}><Clock size={15} /> {mmss(segundos)}</span>

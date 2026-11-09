@@ -4,7 +4,7 @@ import { agora } from "../utils/tempo";
 import { useAudioPlayer } from "./useAudioPlayer";
 
 
-export function useInterviewSession({ onFinished } = {}) {
+export function useInterviewSession({ scriptId, onFinished } = {}) {
     const [sessionId, setSessionId] = useState(null);
     const [perguntaAtual, setPerguntaAtual] = useState("");
     const [indiceAtual, setIndiceAtual] = useState(0);
@@ -13,6 +13,7 @@ export function useInterviewSession({ onFinished } = {}) {
     const [finalizada, setFinalizada] = useState(false);
     const [transcricao, setTranscricao] = useState([]);
     const [erro, setErro] = useState(null); 
+    const [tituloRoteiro, setTituloRoteiro] = useState("");
 
     const player = useAudioPlayer();
 
@@ -63,7 +64,8 @@ export function useInterviewSession({ onFinished } = {}) {
 
     async function iniciar() {
         try {
-            const data = await api.createSession();
+            const data = await api.createSession({ scriptId });
+            setTituloRoteiro(data.titulo || "");
             sessionIdRef.current = data.session_id;
             setSessionId(data.session_id);
             await apresentarFala(data.pergunta, 0, false);
@@ -127,6 +129,7 @@ export function useInterviewSession({ onFinished } = {}) {
 
     return {
         sessionId,
+        tituloRoteiro,
         perguntaAtual,
         indiceAtual,
         turno,

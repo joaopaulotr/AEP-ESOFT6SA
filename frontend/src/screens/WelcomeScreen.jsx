@@ -60,7 +60,7 @@ export default function WelcomeScreen() {
                         </button>
 
                         <button
-                            onClick={() => navigate("/entrevista")}
+                            onClick={() => navigate("/entrevistas")}
                             disabled={micStatus !== "ok"}
                             style={{
                                 ...style.startBtn,
@@ -68,7 +68,7 @@ export default function WelcomeScreen() {
                                 cursor: micStatus === "ok" ? "pointer" : "default",
                             }}
                         >
-                            Começar entrevista <ArrowRight size={18} />
+                            Escolher entrevista <ArrowRight size={18} />
                         </button>
                     </div>
 
