@@ -475,6 +475,7 @@ class TestScriptDrivenTurns:
         closing = state.conversation[-1]
         assert (closing.pergunta_ordem, closing.acao, closing.text) == (None, "finish", "Obrigada!")
         assert state.asked_indices == [1]
+        assert state.current_index == 2  # igual ao encerramento por advance
 
     async def test_deepen_beyond_the_question_limit_becomes_advance(self, service, fake_llm, state):
         script = two_question_script(max_aprofundamentos=1)

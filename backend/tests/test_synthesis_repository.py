@@ -62,11 +62,8 @@ async def test_save_for_session_rejects_script_scope(synthesis_repository):
 
 
 async def test_import_legacy_keeps_the_old_text_without_overwriting(synthesis_repository):
-    from app.schemas.interview import InterviewState
-
-    state = InterviewState(session_id="antiga")
-    await synthesis_repository.import_legacy(state, "texto da v0.1.0")
-    await synthesis_repository.import_legacy(state, "outro texto")
+    await synthesis_repository.import_legacy("antiga", "texto da v0.1.0")
+    await synthesis_repository.import_legacy("antiga", "outro texto")
 
     stored = await synthesis_repository.get_for_session("antiga")
     assert (stored.resumo, stored.modelo, stored.synthesis_id) == ("texto da v0.1.0", "v0.1.0", "sessao:antiga")

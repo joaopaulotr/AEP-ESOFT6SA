@@ -238,3 +238,42 @@ def test_turn_on_a_session_whose_script_was_deleted_closes_it(client, fake_llm):
     assert response.status_code == 200
     assert response.json()["finalizada"] is True
     assert fake_llm.prompts == []
+
+
+def test_turn_overtaken_by_finish_returns_409_in_portuguese(client, fake_llm):
+    session_id = _abrir_sessao(client)
+    original = fake_llm.complete_json
+
+    async def slow_decision(prompt):
+        service = app.dependency_overrides[deps.get_session_service]()
+        await service.finish(session_id)
+        return await original(prompt)
+
+    fake_llm.complete_json = slow_decision
+    fake_llm.queue(action="deepen", next_utterance="Me conta mais?")
+
+    response = client.post(f"/turn/{session_id}", json={"texto": "resposta"})
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "A sessão foi alterada por outra ação. Tente de novo."}
+    assert client.get(f"/session/{session_id}").json()["finished"] is True
+
+
+def test_startup_survives_a_v010_session_outside_the_model(fake_db, monkeypatch):
+    from datetime import datetime, timezone
+
+    import anyio
+
+    monkeypatch.setattr(deps.settings, "llm_provider", "fake")
+    now = datetime.now(timezone.utc)
+
+    async def _seed():
+        await fake_db["interview_sessions"].insert_one(
+            {"session_id": "quebrada", "current_index": 0, "conversation": [],
+             "profile": {"idade": 42}, "finished": False, "created_at": now, "updated_at": now}
+        )
+
+    anyio.run(_seed)
+    with TestClient(app) as client:  # não pode falhar no startup
+        assert client.get("/health").status_code == 200
+        assert client.get("/session/quebrada").status_code == 500

@@ -127,6 +127,74 @@ class TestConcurrency:
             await session_repository.save(stale)
         assert (await session_repository.get(state.session_id)).finished is True
 
+    async def test_take_turn_loses_to_a_finish_that_happened_meanwhile(
+        self, sessions_service, session_repository, fake_llm
+    ):
+        """Pelo caminho real: o LLM 'demora' e o /finish acontece durante a decisão."""
+        state, _ = await sessions_service.start()
+        original = fake_llm.complete_json
+
+        async def slow_decision(prompt):
+            await sessions_service.finish(state.session_id)  # Concluir durante o PROCESSANDO
+            return await original(prompt)
+
+        fake_llm.complete_json = slow_decision
+        fake_llm.queue(action="deepen", next_utterance="Me conta mais?")
+
+        with pytest.raises(ConflictError, match="alterada por outra ação"):
+            await sessions_service.take_turn(state.session_id, "resposta lenta")
+        stored = await session_repository.get(state.session_id)
+        assert stored.finished is True
+        assert "Me conta mais?" not in [t.text for t in stored.conversation]
+
+    async def test_finish_is_idempotent_without_new_writes(self, sessions_service, session_repository):
+        state, _ = await sessions_service.start()
+        await sessions_service.finish(state.session_id)
+        version = (await session_repository.get(state.session_id)).versao
+
+        again = await sessions_service.finish(state.session_id)
+
+        assert again.finished
+        assert (await session_repository.get(state.session_id)).versao == version
+
+    async def test_finish_retries_when_a_turn_saves_in_between(
+        self, sessions_service, session_repository, monkeypatch
+    ):
+        state, _ = await sessions_service.start()
+        original_get = session_repository.get_or_raise
+        calls = {"n": 0}
+
+        async def get_then_turn_saves(session_id):
+            loaded = await original_get(session_id)
+            calls["n"] += 1
+            if calls["n"] == 1:  # um /turn grava entre a leitura e a escrita do /finish
+                concurrent = await original_get(session_id)
+                await session_repository.save(concurrent)
+            return loaded
+
+        monkeypatch.setattr(session_repository, "get_or_raise", get_then_turn_saves)
+
+        finished = await sessions_service.finish(state.session_id)
+
+        assert finished.finished and calls["n"] == 2
+        assert (await session_repository.get(state.session_id)).finished is True
+
+    async def test_finish_gives_up_after_a_second_conflict(
+        self, sessions_service, session_repository, monkeypatch
+    ):
+        state, _ = await sessions_service.start()
+        original_get = session_repository.get_or_raise
+
+        async def always_concurrent(session_id):
+            loaded = await original_get(session_id)
+            await session_repository.save(await original_get(session_id))
+            return loaded
+
+        monkeypatch.setattr(session_repository, "get_or_raise", always_concurrent)
+
+        with pytest.raises(ConflictError):
+            await sessions_service.finish(state.session_id)
+
     async def test_session_deleted_mid_turn_is_not_found(
         self, sessions_service, session_repository, fake_llm, monkeypatch
     ):

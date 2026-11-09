@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, CorruptDocumentError, NotFoundError
 from app.repositories.session_repository import SessionRepository
 from app.schemas.interview import InterviewState, Turn
 from app.schemas.participant import Participant
@@ -234,8 +234,8 @@ class TestBackfillLegacy:
         await sessions.insert_one(v010_document("antiga", finished=True))
         received = []
 
-        async def on_synthesis(state, text):
-            received.append((state.session_id, text))
+        async def on_synthesis(session_id, text):
+            received.append((session_id, text))
 
         migrated = await repository.backfill_legacy(on_synthesis)
 
@@ -250,8 +250,8 @@ class TestBackfillLegacy:
         await sessions.insert_one(v010_document("antiga", finished=True, synthesis="Relatório antigo."))
         received = []
 
-        async def on_synthesis(state, text):
-            received.append((state.session_id, text))
+        async def on_synthesis(session_id, text):
+            received.append((session_id, text))
 
         await repository.backfill_legacy(on_synthesis)
 
@@ -261,7 +261,7 @@ class TestBackfillLegacy:
         await repository.create(InterviewState())
         await sessions.insert_one(v010_document("antiga", finished=False))
 
-        async def ignore(state, text):
+        async def ignore(session_id, text):
             raise AssertionError("não deveria ser chamado")
 
         assert await repository.backfill_legacy(ignore) == 1
@@ -271,7 +271,7 @@ class TestBackfillLegacy:
         await script_repository.ensure_seed()
         await sessions.insert_one(v010_document("antiga", finished=True))
 
-        async def ignore(state, text):
+        async def ignore(session_id, text):
             pass
 
         await repository.backfill_legacy(ignore)
@@ -280,3 +280,52 @@ class TestBackfillLegacy:
         stats = await repository.script_stats("entrevista-generalista")
         assert (stats.total_sessoes, stats.concluidas) == (1, 1)
         assert [s.session_id for s in await repository.list_by_script("entrevista-generalista")] == ["antiga"]
+
+
+    async def test_document_outside_the_model_does_not_stop_the_migration(self, repository, sessions):
+        """A v0.1.0 podia gravar perfil não-string (RK-07): migra mesmo assim."""
+        broken = v010_document("quebrada", finished=True, synthesis="Relatório.")
+        broken["profile"] = {"idade": 42, "turnos": ["manhã"]}
+        await sessions.insert_one(broken)
+        received = []
+
+        async def on_synthesis(session_id, text):
+            received.append(session_id)
+
+        assert await repository.backfill_legacy(on_synthesis) == 1
+        raw = await sessions.find_one({"session_id": "quebrada"})
+        assert raw["script_id"] == "entrevista-generalista" and raw["status"] == "concluida"
+        assert received == ["quebrada"]
+
+    async def test_failure_while_saving_the_synthesis_keeps_the_legacy_document(self, repository, sessions):
+        await sessions.insert_one(v010_document("antiga", finished=True, synthesis="Relatório antigo."))
+
+        async def failing(session_id, text):
+            raise RuntimeError("queda no meio da migração")
+
+        with pytest.raises(RuntimeError):
+            await repository.backfill_legacy(failing)
+        raw = await sessions.find_one({"session_id": "antiga"})
+        assert "script_id" not in raw and raw["synthesis"] == "Relatório antigo."
+
+        received = []
+
+        async def ok(session_id, text):
+            received.append(text)
+
+        assert await repository.backfill_legacy(ok) == 1  # a próxima execução termina o trabalho
+        assert received == ["Relatório antigo."]
+
+
+class TestCorruptRelatedDocuments:
+    async def test_corrupt_participant_in_details_hides_its_content(
+        self, repository, participant_repository, fake_db
+    ):
+        await fake_db["participants"].insert_one({"participant_id": "p", "canal": "Maria, Recife"})
+        state = await repository.create(InterviewState(participant_id="p"))
+
+        with pytest.raises(CorruptDocumentError) as error:
+            await repository.get_details(state.session_id)
+        assert "participants" in str(error.value) and "canal" in str(error.value)
+        assert "Maria" not in str(error.value)
+        assert error.value.__cause__ is None and error.value.__suppress_context__
