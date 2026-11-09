@@ -1,43 +1,150 @@
-from datetime import datetime, timezone
+from pymongo import ASCENDING, DESCENDING, IndexModel
 
-from app.db.mongodb import db as default_db
-from app.schemas.interview import InterviewState
+from app.repositories.base import BaseRepository
+from app.repositories.participant_repository import ParticipantRepository
+from app.repositories.script_repository import ScriptRepository
+from app.schemas.interview import (
+    ActionCount,
+    InterviewState,
+    QuestionDeepening,
+    ScriptStats,
+    SessionDetails,
+)
+from app.schemas.participant import Participant
+from app.schemas.script import InterviewScript
 
 
-class SessionRepository:
-    def __init__(self, database=None, collection: str = "interview_sessions") -> None:
-        self._db = database if database is not None else default_db
-        self._collection = collection
+class SessionRepository(BaseRepository[InterviewState]):
+    model = InterviewState
+    collection_name = "interview_sessions"
+    id_field = "session_id"
+    not_found_message = "Sessão não encontrada."
+    duplicate_message = "Sessão já existe."
+    extra_indexes = (
+        IndexModel([("script_id", ASCENDING), ("created_at", DESCENDING)], name="script_id_data"),
+        IndexModel([("participant_id", ASCENDING)], name="participant_id"),
+    )
 
-    @property
-    def _sessions(self):
-        return self._db[self._collection]
+    async def list_by_script(self, script_id: str, *, limit: int = 100) -> list[InterviewState]:
+        return await self.list({"script_id": script_id}, limit=limit)
 
-    async def create(self, state: InterviewState) -> InterviewState:
-        await self._sessions.insert_one(state.model_dump())
-        return state
+    async def list_by_participant(
+        self, participant_id: str, *, limit: int = 100
+    ) -> list[InterviewState]:
+        return await self.list({"participant_id": participant_id}, limit=limit)
 
-    async def get(self, session_id: str) -> InterviewState | None:
-        document = await self._sessions.find_one({"session_id": session_id})
-        if document is None:
+    # -- consultas relacionais ($lookup) ----------------------------------
+
+    async def get_details(self, session_id: str) -> SessionDetails | None:
+        """Sessão + roteiro + participante numa única consulta."""
+        pipeline = [
+            {"$match": {"session_id": session_id}},
+            {
+                "$lookup": {
+                    "from": ScriptRepository.collection_name,
+                    "localField": "script_id",
+                    "foreignField": "script_id",
+                    "as": "script",
+                }
+            },
+            {
+                "$lookup": {
+                    "from": ParticipantRepository.collection_name,
+                    "localField": "participant_id",
+                    "foreignField": "participant_id",
+                    "as": "participant",
+                }
+            },
+            {"$unwind": {"path": "$script", "preserveNullAndEmptyArrays": True}},
+            {"$unwind": {"path": "$participant", "preserveNullAndEmptyArrays": True}},
+            {"$project": {"_id": 0, "script._id": 0, "participant._id": 0}},
+            {"$limit": 1},
+        ]
+        documents = await self._collection.aggregate(pipeline).to_list(length=1)
+        if not documents:
             return None
-        document.pop("_id", None)
-        return InterviewState(**document)
-
-    async def save(self, state: InterviewState) -> None:
-        state.updated_at = datetime.now(timezone.utc)
-        await self._sessions.update_one(
-            {"session_id": state.session_id},
-            {"$set": state.model_dump()},
+        document = documents[0]
+        script = document.pop("script", None)
+        participant = document.pop("participant", None)
+        return SessionDetails(
+            session=self._to_model(document),
+            script=InterviewScript.model_validate(script) if script else None,
+            participant=Participant.model_validate(participant) if participant else None,
         )
 
-    async def delete(self, session_id: str) -> None:
-        result = await self._sessions.delete_one({"session_id": session_id})
-        if result.deleted_count == 0:
-            raise ValueError("Sessão não encontrada.")
+    # -- agregações (base do dashboard, EV-32) ----------------------------
 
-    async def list_all(self) -> list[InterviewState]:
-        documents = await self._sessions.find().to_list(length=None)
-        for document in documents:
-            document.pop("_id", None)
-        return [InterviewState(**document) for document in documents]
+    async def script_stats(self, script_id: str) -> ScriptStats:
+        match = {"$match": {"script_id": script_id}}
+
+        summary = await self._collection.aggregate(
+            [
+                match,
+                {
+                    "$group": {
+                        "_id": None,
+                        "total": {"$sum": 1},
+                        "concluidas": {"$sum": {"$cond": ["$finished", 1, 0]}},
+                        "media_respostas": {
+                            "$avg": {
+                                "$size": {
+                                    "$filter": {
+                                        "input": "$conversation",
+                                        "as": "turno",
+                                        "cond": {"$eq": ["$$turno.role", "participant"]},
+                                    }
+                                }
+                            }
+                        },
+                    }
+                },
+            ]
+        ).to_list(length=1)
+        if not summary:
+            return ScriptStats(script_id=script_id)
+
+        actions = await self._collection.aggregate(
+            [
+                match,
+                {"$unwind": "$conversation"},
+                {"$match": {"conversation.acao": {"$in": ["deepen", "advance", "finish"]}}},
+                {"$group": {"_id": "$conversation.acao", "total": {"$sum": 1}}},
+                {"$sort": {"_id": 1}},
+            ]
+        ).to_list(length=None)
+
+        deepening = await self._collection.aggregate(
+            [
+                match,
+                {"$unwind": "$conversation"},
+                {"$match": {"conversation.pergunta_ordem": {"$ne": None}}},
+                {
+                    "$group": {
+                        "_id": {
+                            "session_id": "$session_id",
+                            "ordem": "$conversation.pergunta_ordem",
+                        },
+                        "aprofundamentos": {
+                            "$sum": {"$cond": [{"$eq": ["$conversation.acao", "deepen"]}, 1, 0]}
+                        },
+                    }
+                },
+                {"$group": {"_id": "$_id.ordem", "media": {"$avg": "$aprofundamentos"}}},
+                {"$sort": {"_id": 1}},
+            ]
+        ).to_list(length=None)
+
+        total = summary[0]["total"]
+        concluidas = summary[0]["concluidas"]
+        return ScriptStats(
+            script_id=script_id,
+            total_sessoes=total,
+            concluidas=concluidas,
+            taxa_conclusao=round(concluidas / total, 4) if total else 0.0,
+            media_respostas=round(summary[0]["media_respostas"] or 0.0, 2),
+            acoes=[ActionCount(acao=item["_id"], total=item["total"]) for item in actions],
+            aprofundamentos_por_pergunta=[
+                QuestionDeepening(pergunta_ordem=item["_id"], media_aprofundamentos=round(item["media"], 2))
+                for item in deepening
+            ],
+        )
