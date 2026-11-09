@@ -93,17 +93,16 @@ flowchart LR
 
 | Camada | Pasta | Responsabilidade |
 |---|---|---|
-| Endpoints | `app/api/v1/endpoints/` | Traduzem HTTP em chamadas de serviço, validam a existência da sessão e devolvem os códigos de erro |
-| Injeção de dependência | `app/api/deps.py` | Fábricas usadas pelo `Depends` do FastAPI para montar serviços e repositório |
-| Serviços | `app/services/` | Regra de negócio: condução da entrevista, síntese, transcrição e fala, e o acesso ao modelo de linguagem |
-| Repositório | `app/repositories/` | Único ponto que conhece a coleção do Mongo; converte documento em `InterviewState` e de volta |
+| Endpoints | `app/api/v1/endpoints/` | Traduzem HTTP em chamadas de serviço; erros de domínio viram 404/409 em `app/main.py` |
+| Injeção de dependência | `app/api/deps.py` | Singletons do banco, dos 4 repositórios, dos providers e dos serviços, usados pelo `Depends` |
+| Serviços | `app/services/` | Regra de negócio: `SessionService` (ciclo da sessão, liga roteiro/participante/sessão), `InterviewService` (condução), `SynthesisService` (síntese) |
+| Repositórios | `app/repositories/` | `BaseRepository[T]` genérico (CRUD + índices) e um repositório por coleção; únicos que conhecem o Mongo |
 | Esquemas | `app/schemas/` | Modelos Pydantic de entrada, saída e do estado persistido |
 | Prompts | `app/prompts/` | Texto dos prompts, separado do código que os executa |
 
-Cada serviço recebe seus colaboradores pelo construtor e cai em um padrão real quando nada é
-injetado — `InterviewService(llm_client=None)` constrói um `LLMClient`, `SynthesisService`
-constrói repositório e cliente. É isso que permite substituir OpenAI e Mongo por dublês nos
-testes sem tocar em rede.
+Cada serviço e repositório recebe seus colaboradores pelo construtor (provider de IA, banco,
+outros repositórios); quem monta tudo é `app/api/deps.py`. É isso que permite substituir OpenAI e
+Mongo por dublês nos testes sem tocar em rede.
 
 ### Endpoints
 
@@ -112,7 +111,7 @@ testes sem tocar em rede.
 | `POST` | `/session` | Cria a sessão, grava a pergunta de abertura e devolve `session_id` |
 | `GET` | `/session/{id}` | Estado completo da entrevista |
 | `POST` | `/session/{id}/finish` | Encerra a entrevista e registra a fala de encerramento |
-| `POST` | `/session/{id}/synthesis` | Gera a síntese e a persiste na própria sessão |
+| `POST` | `/session/{id}/synthesis` | Gera a síntese e a grava na coleção `syntheses` (uma por sessão) |
 | `POST` | `/turn/{id}` | Processa a resposta do entrevistado e devolve a próxima fala |
 | `POST` | `/voice/transcricao` | Áudio (multipart) para texto |
 | `POST` | `/voice/fala` | Texto para áudio `audio/mpeg` |
@@ -255,10 +254,19 @@ cd frontend && npm install && npm run dev
 ## 6. Testes e cobertura
 
 Os testes automatizados do backend rodam sem chamadas reais à OpenAI (os clientes são
-substituídos por dublês nos testes).
+substituídos por dublês nos testes) e sem MongoDB instalado: o banco é simulado em memória com
+`mongomock-motor`, que executa filtros, índices únicos e pipelines de agregação.
 
 ```bash
 cd backend && .venv/bin/python -m pytest
+```
+
+Os testes de integração (`-m mongo`) repetem índices, `$lookup` e agregações num **MongoDB real**.
+Sem `MONGO_TEST_URI` eles são pulados; na CI, um container `mongo:7` os executa:
+
+```bash
+docker compose up -d mongo
+cd backend && MONGO_TEST_URI=mongodb://localhost:27017 .venv/bin/python -m pytest -m mongo
 ```
 
 Para reproduzir a verificação de cobertura mínima usada na CI:
@@ -281,12 +289,15 @@ backend/
     api/deps.py         # fábricas de serviços e repositório para o Depends
     api/v1/endpoints/   # rotas: session.py, turns.py e voice.py
     core/config.py      # configurações via variáveis de ambiente
+    core/errors.py      # erros de domínio (NotFoundError, ConflictError)
     db/mongodb.py       # cliente Motor e handle do banco
+    db/seed.py          # roteiro "Entrevista generalista" gravado no startup
     prompts/            # prompts de condução e de síntese
-    repositories/       # SessionRepository: persistência das entrevistas
-    schemas/            # modelos Pydantic (InterviewState, Turn, voz)
-    services/           # InterviewService, SynthesisService, VoiceService, LLMClient
-    main.py             # aplicação FastAPI, CORS e handler de erro
+    providers/          # LLMProvider/SpeechProvider: OpenAI e fake
+    repositories/       # BaseRepository[T] + Script, Participant, Session, Synthesis
+    schemas/            # modelos Pydantic das 4 coleções, decisão do LLM e voz
+    services/           # SessionService, InterviewService, SynthesisService
+    main.py             # aplicação FastAPI, lifespan (índices + seed), CORS e handlers
   tests/                # testes automatizados e dublês (conftest.py)
 frontend/
   src/
@@ -297,20 +308,47 @@ frontend/
 
 ### Modelo de dados (NoSQL)
 
-A coleção `interview_sessions` guarda o estado completo da entrevista em um único documento,
-com **subdocumentos aninhados** — a lista `conversation`, com um objeto por turno da conversa,
-e o objeto `profile`, com os dados extraídos do entrevistado ao longo do diálogo:
+Quatro coleções no MongoDB, ligadas por **referência** (campos `*_id`) e com **subdocumentos**
+aninhados em três delas. Planejamento e decisões: `docs/superpowers/plans/2026-11-09-multi-colecao.md`.
+
+```
+interview_scripts ◄── script_id ── interview_sessions ── participant_id ──► participants
+        ▲                                   ▲
+        └──────── script_id ── syntheses ── session_id ┘
+```
+
+| Coleção | Conteúdo | Objetos complexos | Índices |
+|---|---|---|---|
+| `interview_scripts` | Roteiros de entrevista (o seed "Entrevista generalista" é criado no startup) | `perguntas[]` (`ordem`, `texto`, `objetivo`, `max_aprofundamentos`), `origem{}`, `persona{}` | `script_id` único, `slug_convite` único, `ativo` |
+| `participants` | Participante, sem identificação obrigatória | — | `participant_id` único |
+| `interview_sessions` | Estado de uma entrevista; referencia roteiro e participante | `conversation[]` (turnos com `pergunta_ordem`, `acao`, `latencia_ms`), `profile{}`, `metricas{}` | `session_id` único, (`script_id`, `created_at`), `participant_id` |
+| `syntheses` | Síntese por sessão (`escopo: sessao`) ou por roteiro (`escopo: roteiro`) | `temas[]` com `citacoes[]` | `synthesis_id` único, `session_id`, (`script_id`, `escopo`) |
+
+Documento de `interview_sessions`:
 
 ```json
 {
-  "session_id": "0b0f9a5e-...",
-  "current_index": 2,
-  "asked_indices": [0, 1],
-  "finished": false,
-  "profile": { "ocupacao": "agente comunitária de saúde", "contexto": "zona rural" },
+  "session_id": "df7c97e3-...",
+  "script_id": "entrevista-generalista",
+  "participant_id": null,
+  "current_index": 1,
+  "status": "em_andamento",
+  "profile": { "ocupacao": "agente comunitária de saúde" },
+  "metricas": { "tokens": 0, "segundos_audio": 0, "custo_usd": 0 },
   "conversation": [
-    { "role": "interviewer", "text": "Para começar...", "timestamp": "2026-09-10T22:10:00Z" },
-    { "role": "participant", "text": "Eu trabalho...", "timestamp": "2026-09-10T22:10:35Z" }
+    { "role": "interviewer", "text": "Para começar...", "pergunta_ordem": 1, "acao": null, "latencia_ms": null },
+    { "role": "participant", "text": "Eu trabalho...", "pergunta_ordem": 1, "acao": null, "latencia_ms": null },
+    { "role": "interviewer", "text": "E como foi a última vez?", "pergunta_ordem": 1, "acao": "deepen", "latencia_ms": 812 }
   ]
 }
 ```
+
+Consultas que usam os relacionamentos (`app/repositories/session_repository.py`):
+
+- `get_details`: `$lookup` sessão → roteiro → participante, numa única consulta.
+- `script_stats`: pipelines com `$group`, `$unwind`, `$filter` e `$cond` — total de sessões, taxa de
+  conclusão, média de respostas, distribuição de ações (`deepen`/`advance`/`finish`) e média de
+  aprofundamentos por pergunta (base do dashboard, EV-32).
+
+Sessões gravadas pela v0.1.0 (sem `script_id`) continuam carregando: apontam para o roteiro
+generalista, que tem as mesmas quatro perguntas.
