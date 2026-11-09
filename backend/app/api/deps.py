@@ -74,6 +74,7 @@ def get_session_service() -> SessionService:
         scripts=get_script_repository(),
         participants=get_participant_repository(),
         interview=get_interview_service(),
+        syntheses=get_synthesis_repository(),
     )
 
 

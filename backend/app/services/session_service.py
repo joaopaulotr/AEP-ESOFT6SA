@@ -2,8 +2,10 @@ from app.core.errors import ConflictError, NotFoundError
 from app.repositories.participant_repository import ParticipantRepository
 from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
+from app.repositories.synthesis_repository import SynthesisRepository
 from app.schemas.api import SessionSummary
-from app.schemas.interview import InterviewState, SessionDetails
+from app.schemas.interview import InterviewState, SessionDetails, SessionResponse
+from app.schemas.script import InterviewScript
 from app.services.interview_service import InterviewService
 
 
@@ -20,15 +22,36 @@ class SessionService:
         scripts: ScriptRepository,
         participants: ParticipantRepository,
         interview: InterviewService,
+        syntheses: SynthesisRepository,
     ) -> None:
         self._sessions = sessions
         self._scripts = scripts
         self._participants = participants
         self._interview = interview
+        self._syntheses = syntheses
 
     async def start(
         self, script_id: str | None = None, participant_id: str | None = None
     ) -> tuple[InterviewState, str]:
+        state, pergunta, _ = await self._open(script_id, participant_id)
+        return state, pergunta
+
+    async def open(
+        self, script_id: str | None = None, participant_id: str | None = None
+    ) -> SessionResponse:
+        """Abre a sessão e devolve o que a tela precisa para começar."""
+        state, pergunta, script = await self._open(script_id, participant_id)
+        return SessionResponse(
+            session_id=state.session_id,
+            pergunta=pergunta,
+            script_id=script.script_id,
+            titulo=script.titulo,
+            perguntas_total=len(script.perguntas),
+        )
+
+    async def _open(
+        self, script_id: str | None, participant_id: str | None
+    ) -> tuple[InterviewState, str, InterviewScript]:
         if script_id is None:
             script = await self._scripts.get_default()
         else:
@@ -41,7 +64,7 @@ class SessionService:
         state = InterviewState(script_id=script.script_id, participant_id=participant_id)
         pergunta = self._interview.start(state, script)
         await self._sessions.create(state)
-        return state, pergunta
+        return state, pergunta, script
 
     async def list_for_script(
         self, script_id: str, *, status: str | None = None, limit: int = 50
@@ -57,6 +80,14 @@ class SessionService:
         if details is None:
             raise NotFoundError(SessionRepository.not_found_message)
         return details
+
+    async def delete(self, session_id: str) -> None:
+        """Apaga a sessão e, em cascata, a síntese dela: a síntese deriva da fala do
+        participante e não pode sobrar sem a sessão (RK-11). Síntese primeiro: se algo
+        falhar no meio, sobra uma sessão sem síntese, que é regenerável."""
+        await self._sessions.get_or_raise(session_id)
+        await self._syntheses.delete_for_session(session_id)
+        await self._sessions.delete(session_id)
 
     async def take_turn(self, session_id: str, text: str) -> tuple[InterviewState, str]:
         session = await self._sessions.get_or_raise(session_id)

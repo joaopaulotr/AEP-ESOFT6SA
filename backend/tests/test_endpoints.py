@@ -20,6 +20,7 @@ def client(fake_llm):
         scripts=deps.get_script_repository(),
         participants=deps.get_participant_repository(),
         interview=interview,
+        syntheses=deps.get_synthesis_repository(),
     )
     app.dependency_overrides[deps.get_synthesis_service] = lambda: SynthesisService(
         deps.get_session_repository(), deps.get_synthesis_repository(), fake_llm
@@ -50,7 +51,7 @@ def test_create_session_returns_id_and_opening_question(client):
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"session_id", "pergunta"}
+    assert set(body) == {"session_id", "pergunta", "script_id", "titulo", "perguntas_total"}
     assert body["pergunta"] == CORE_QUESTIONS[0]
 
 

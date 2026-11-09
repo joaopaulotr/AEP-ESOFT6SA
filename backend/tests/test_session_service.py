@@ -13,12 +13,15 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-def sessions_service(session_repository, script_repository, participant_repository, service):
+def sessions_service(
+    session_repository, script_repository, participant_repository, synthesis_repository, service
+):
     return SessionService(
         sessions=session_repository,
         scripts=script_repository,
         participants=participant_repository,
         interview=service,
+        syntheses=synthesis_repository,
     )
 
 
@@ -241,3 +244,24 @@ class TestFinishGetDetails:
         assert details.participant is None
         with pytest.raises(NotFoundError):
             await sessions_service.details("x")
+
+
+class TestDelete:
+    async def test_removes_the_session_and_its_synthesis(
+        self, sessions_service, session_repository, synthesis_repository
+    ):
+        from app.schemas.synthesis import Synthesis
+
+        state, _ = await sessions_service.start()
+        await synthesis_repository.save_for_session(
+            Synthesis(escopo="sessao", session_id=state.session_id, script_id=state.script_id, resumo="r")
+        )
+
+        await sessions_service.delete(state.session_id)
+
+        assert await session_repository.get(state.session_id) is None
+        assert await synthesis_repository.get_for_session(state.session_id) is None
+
+    async def test_unknown_session_is_not_found(self, sessions_service):
+        with pytest.raises(NotFoundError, match="Sessão não encontrada."):
+            await sessions_service.delete("nao-existe")
