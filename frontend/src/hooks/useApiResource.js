@@ -12,6 +12,7 @@ export function useApiResource(carregar, deps = []) {
 
     const recarregar = useCallback(async () => {
         const versao = ++versaoRef.current;
+        setData(null);
         setCarregando(true);
         setErro("");
         try {

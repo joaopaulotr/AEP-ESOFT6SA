@@ -152,7 +152,7 @@ export default function SessionDetailScreen() {
             <div style={ui.page}>
                 <style>{CSS}</style>
                 <button className="ui-btn" style={ui.voltar} onClick={() => navigate(voltarPara)}>
-                    <ArrowLeft size={16} aria-hidden="true" /> Entrevistas do roteiro
+                    <ArrowLeft size={16} aria-hidden="true" /> {scriptId ? "Entrevistas do roteiro" : "Voltar"}
                 </button>
 
                 <EstadoTela carregando={detalhes.carregando} erro={detalhes.erro} onRetry={detalhes.recarregar}>
@@ -181,7 +181,7 @@ export default function SessionDetailScreen() {
                                 )}
                             </section>
 
-                            <Sintese sessionId={sessionId} concluida={sessao.status === "concluida"} />
+                            <Sintese key={sessionId} sessionId={sessionId} concluida={sessao.status === "concluida"} />
 
                             <div style={{ marginTop: 28, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
                                 <button className="ui-btn" style={ui.btnPerigo} onClick={excluir} disabled={excluindo}>

@@ -56,16 +56,14 @@ export default function WelcomeScreen() {
                         >
                             {micStatus === "ok"
                                 ? (<><Check size={18} /> Microfone pronto</>)
-                                : (<><Mic size={18} /> Permitir microfone</>)}
+                                : (<><Mic size={18} /> Testar microfone (opcional)</>)}
                         </button>
 
                         <button
                             onClick={() => navigate("/entrevistas")}
-                            disabled={micStatus !== "ok"}
                             style={{
                                 ...style.startBtn,
-                                opacity: micStatus === "ok" ? 1 : 0.45,
-                                cursor: micStatus === "ok" ? "pointer" : "default",
+                                cursor: "pointer",
                             }}
                         >
                             Escolher entrevista <ArrowRight size={18} />
@@ -76,7 +74,7 @@ export default function WelcomeScreen() {
                         <p style={style.aviso} role="alert">Não foi possível acessar o microfone. Verifique a permissão do navegador.</p>
                     )}
                     {micStatus !== "ok" && micStatus !== "denied" && (
-                        <p style={style.hint}>Libere o microfone para iniciar a entrevista.</p>
+                        <p style={style.hint}>O microfone também será pedido quando a entrevista começar.</p>
                     )}
                 </div>
 

@@ -69,8 +69,8 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
             sessionIdRef.current = data.session_id;
             setSessionId(data.session_id);
             await apresentarFala(data.pergunta, 0, false);
-        } catch {
-            falhar("Não consegui iniciar a entrevista. O backend está no ar?");
+        } catch (e) {
+            falhar(e?.detail || "Não consegui iniciar a entrevista. O backend está no ar?");
         }
     }
 
