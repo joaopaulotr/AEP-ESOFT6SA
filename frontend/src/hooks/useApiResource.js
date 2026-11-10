@@ -26,11 +26,12 @@ export function useApiResource(carregar, deps = []) {
         } finally {
             if (versao === versaoRef.current) setCarregando(false);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- deps vêm do chamador (lista dinâmica) e `carregar` é recriado a cada render
     }, deps);
 
     useEffect(() => {
         carregarDados(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- o contador precisa ser o valor atual na desmontagem, para invalidar respostas em voo
         return () => { versaoRef.current++; };
     }, [carregarDados]);
 

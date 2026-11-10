@@ -1,4 +1,3 @@
-import React from "react";
 
 const ROTULOS = {
     concluida: { texto: "Concluída", cor: "var(--color-primary)", fundo: "var(--color-accent-soft)", borda: "var(--color-accent-soft-border)" },

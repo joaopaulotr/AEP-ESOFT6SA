@@ -1,4 +1,3 @@
-import React from "react";
 
 /**
  * Legenda ao vivo da fala da IA: mostra a frase que está tocando. `aria-live="polite"` para

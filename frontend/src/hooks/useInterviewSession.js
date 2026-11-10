@@ -395,6 +395,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         montadoRef.current = true;
         return () => {
             montadoRef.current = false;
+            // eslint-disable-next-line react-hooks/exhaustive-deps -- queremos os timers vigentes na desmontagem, não os do momento do efeito
             timersRef.current.forEach(clearTimeout);
         };
     }, []);
@@ -403,6 +404,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         if (iniciadoRef.current) return;
         iniciadoRef.current = true;
         iniciar();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- inicia a entrevista uma única vez ao montar (guardado por iniciadoRef)
     }, []);
 
     return {

@@ -1,4 +1,3 @@
-import React from "react";
 import { useState } from "react";
 import SideBar from "../components/SideBar";
 import Avatar from "../components/Avatar";
@@ -6,7 +5,6 @@ import { useNavigate } from "react-router-dom";
 import { Mic, Clock, MessageCircle, Check, ArrowRight } from "lucide-react";
 import { ui, CSS as UI_CSS } from "../styles/ui";
 
-const INTERVIEWER = "du";
 
 
 export default function WelcomeScreen() {

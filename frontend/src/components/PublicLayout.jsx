@@ -1,4 +1,3 @@
-import React from "react";
 import ThemeToggle from "./ThemeToggle";
 import { CSS as UI_CSS } from "../styles/ui";
 

@@ -28,7 +28,7 @@ async function request(path, options = {}) {
                     .join("; ");
             }
         } catch {
-        
+            // corpo sem JSON: usa a mensagem padrão
         }
         throw new ApiError(res.status, path, detail);
     }

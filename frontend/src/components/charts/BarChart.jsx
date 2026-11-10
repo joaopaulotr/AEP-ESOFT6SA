@@ -1,4 +1,4 @@
-import React, { useId, useState } from "react";
+import { useId, useState } from "react";
 import DataTable from "./DataTable";
 
 const NUM = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });

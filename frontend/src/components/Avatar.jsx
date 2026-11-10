@@ -1,5 +1,4 @@
-import { useState } from "react";
-import React from "react";
+
 
 /** `ativo`: false para as ondas e deixa só o círculo (IA em silêncio). */
 export default function Avatar({ size = 64, style: extraStyle, ativo = true }) {

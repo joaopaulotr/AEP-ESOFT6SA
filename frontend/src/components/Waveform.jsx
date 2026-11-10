@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const ROTULOS = {
     ouvindo: "Ouvindo você",
@@ -10,7 +10,7 @@ const BARRAS = 24;
 const LARGURA = 240;
 const ALTURA = 56;
 
-function usarMovimentoReduzido() {
+function useMovimentoReduzido() {
     const [reduzido, setReduzido] = useState(() => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
     useEffect(() => {
         const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -45,7 +45,7 @@ function alturaDaBarra(estado, i, t, nivel) {
  */
 export default function Waveform({ estado = "parado", nivelRef }) {
     const canvasRef = useRef(null);
-    const reduzido = usarMovimentoReduzido();
+    const reduzido = useMovimentoReduzido();
 
     useEffect(() => {
         const canvas = canvasRef.current;

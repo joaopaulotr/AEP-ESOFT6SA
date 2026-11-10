@@ -94,7 +94,7 @@ export function useTypewriter() {
         });
     }
 
-    useEffect(() => () => parar(false), []); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => () => parar(false), []);
 
     return { texto, revelar, novoTurno, concluirAgora, parar, limpar };
 }
