@@ -182,7 +182,7 @@ def test_synthesis_after_finish_returns_the_report(client, fake_llm):
     for _ in range(4):
         fake_llm.queue(action="advance", next_utterance="")
         client.post(f"/api/v1/turn/{session_id}", json={"texto": "respondi"})
-    fake_llm.queue_payload("relatório de síntese")
+    fake_llm.queue_payload({"resumo": "relatório de síntese"})
 
     response = client.post(f"/api/v1/session/{session_id}/synthesis")
 

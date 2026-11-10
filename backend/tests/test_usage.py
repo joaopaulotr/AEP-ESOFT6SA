@@ -160,7 +160,7 @@ def test_synthesis_adds_usage(client):
     client.post(f"{API}/session/{sid}/finish")
     before = _metricas(client, sid)["tokens"]
     assert client.post(f"{API}/session/{sid}/synthesis").status_code == 200
-    assert _metricas(client, sid)["tokens"] == before + 130
+    assert _metricas(client, sid)["tokens"] == before + 130 * 3  # 2 JSON inválidos do fake + texto de fallback
 
 
 def test_voice_usage_is_attributed_to_the_session(client):

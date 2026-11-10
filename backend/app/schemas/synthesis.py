@@ -31,7 +31,9 @@ class Synthesis(BaseModel):
     session_id: str | None = None
     resumo: str
     temas: list[Theme] = Field(default_factory=list)
+    divergencias: list[str] = Field(default_factory=list)
     lacunas: list[str] = Field(default_factory=list)
+    sessoes_usadas: int = 0
     modelo: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
