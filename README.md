@@ -350,7 +350,7 @@ Os testes automatizados do backend rodam sem chamadas reais à OpenAI (providers
 dublês ou pelo `fake`) e sem MongoDB instalado: o banco é simulado em memória com
 `mongomock-motor`, que executa filtros, índices únicos e pipelines de agregação.
 
-Estado atual: **348 testes passando, 9 pulados** (os de integração, que exigem `MONGO_TEST_URI`),
+Estado atual: **356 testes passando, 9 pulados** (os de integração, que exigem `MONGO_TEST_URI`),
 **cobertura de 98,8%** (mínimo exigido: 70%, com medição de branches).
 
 Verificação completa da entrega (pytest com cobertura mínima + build do frontend + higiene de
