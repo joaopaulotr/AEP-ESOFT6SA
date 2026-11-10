@@ -28,6 +28,11 @@ export default [
     },
   },
   {
+    // E2E (Playwright) roda em Node, fora do navegador.
+    files: ["e2e/**/*.js"],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  {
     files: ["*.config.js"],
     languageOptions: { globals: { ...globals.node } },
   },

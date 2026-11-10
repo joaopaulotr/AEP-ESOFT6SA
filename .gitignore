@@ -12,3 +12,5 @@ htmlcov/
 *.stackdump
 coverage.xml
 backend/htmlcov/
+playwright-report/
+test-results/
