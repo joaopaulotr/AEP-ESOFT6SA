@@ -99,3 +99,9 @@ async def test_service_builds_draft_and_checks_size(fake_llm):
     assert draft.perguntas
     with pytest.raises(FileTooLargeError, match="Arquivo maior que 2 MB."):
         await service.build_draft("q.txt", b"x" * (settings.max_upload_bytes + 1))
+
+
+async def test_empty_text_is_422_without_llm_call(fake_llm):
+    with pytest.raises(EmptyQuestionnaireError):
+        await QuestionnaireParser(fake_llm).parse("  \n ", "q.txt")
+    assert fake_llm.prompts == []

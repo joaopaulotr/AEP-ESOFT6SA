@@ -79,6 +79,8 @@ class QuestionnaireParser:
         self._llm = llm
 
     async def parse(self, text: str, filename: str) -> ScriptDraft:
+        if not text.strip():
+            raise EmptyQuestionnaireError("Não encontrei perguntas no arquivo.")
         avisos: list[str] = []
         if len(text) > MAX_TEXT_CHARS:
             text = text[:MAX_TEXT_CHARS]

@@ -107,3 +107,52 @@ def test_extractor_for_known(name, cls):
 def test_extractor_for_unknown_is_415(name):
     with pytest.raises(UnsupportedFileError, match="Formato não suportado"):
         extractor_for(name)
+
+
+def test_csv_cell_over_field_limit_is_422():
+    with pytest.raises(ImportFileError):
+        CsvExtractor().extract(b"a," + b"x" * 200_000 + b"\n")
+
+
+def test_docx_zip_bomb_is_422():
+    import zipfile
+
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", b"0" * (5 * 1024 * 1024))
+    with pytest.raises(ImportFileError, match="grande demais"):
+        DocxExtractor().extract(buffer.getvalue())
+
+
+def test_pdf_stops_after_50_pages_or_enough_text(monkeypatch):
+    from app.importing import extractors
+
+    calls = []
+
+    class Page:
+        def extract_text(self):
+            calls.append(1)
+            return "linha?"
+
+    class Reader:
+        def __init__(self, _):
+            self.pages = [Page() for _ in range(200)]
+
+    monkeypatch.setattr("pypdf.PdfReader", Reader)
+    PdfExtractor().extract(b"x")
+    assert len(calls) == 50
+
+    calls.clear()
+
+    class BigPage(Page):
+        def extract_text(self):
+            calls.append(1)
+            return "a" * 21_000
+
+    class BigReader(Reader):
+        def __init__(self, _):
+            self.pages = [BigPage() for _ in range(10)]
+
+    monkeypatch.setattr("pypdf.PdfReader", BigReader)
+    PdfExtractor().extract(b"x")
+    assert len(calls) == 1
