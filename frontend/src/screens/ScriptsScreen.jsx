@@ -23,7 +23,7 @@ export default function ScriptsScreen() {
                     </div>
                 </div>
 
-                <EstadoTela carregando={carregando} erro={erro} onRetry={recarregar}>
+                <EstadoTela carregando={carregando} erro={erro} onRetry={recarregar} data={data}>
                     {roteiros.length === 0 ? (
                         <div style={ui.estado}><p style={ui.estadoTexto}>Nenhum roteiro disponível ainda.</p></div>
                     ) : (

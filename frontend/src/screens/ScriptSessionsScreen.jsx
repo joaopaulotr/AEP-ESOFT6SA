@@ -84,7 +84,7 @@ export default function ScriptSessionsScreen() {
                     })}
                 </div>
 
-                <EstadoTela carregando={sessoes.carregando} erro={sessoes.erro} onRetry={sessoes.recarregar}>
+                <EstadoTela carregando={sessoes.carregando} erro={sessoes.erro} onRetry={sessoes.recarregar} data={sessoes.data}>
                     {lista.length === 0 ? (
                         <div style={ui.estado}>
                             <p style={{ ...ui.estadoTexto, fontWeight: 700, color: "var(--color-heading)" }}>Nenhuma entrevista ainda</p>

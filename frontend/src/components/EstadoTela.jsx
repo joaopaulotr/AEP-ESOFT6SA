@@ -2,9 +2,13 @@ import React from "react";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { ui } from "../styles/ui";
 
-/** Carregando / erro (com "Tentar de novo") / vazio, para as telas de lista. */
-export default function EstadoTela({ carregando, erro, onRetry, children }) {
-    if (carregando) {
+/**
+ * Carregando / erro (com "Tentar de novo") / conteúdo, para as telas de lista.
+ * `data`: dado já carregado. Primeira carga (sem dado) mostra a tela cheia de
+ * "Carregando…"; recarregar com dado na tela mostra o conteúdo + "Atualizando…" discreto.
+ */
+export default function EstadoTela({ carregando, erro, onRetry, data, children }) {
+    if (carregando && !data) {
         return (
             <div style={ui.estado} role="status" aria-live="polite">
                 <RefreshCw size={20} className="girando" aria-hidden="true" />
@@ -21,5 +25,12 @@ export default function EstadoTela({ carregando, erro, onRetry, children }) {
             </div>
         );
     }
-    return children;
+    return (
+        <>
+            {carregando && (
+                <p role="status" aria-live="polite" style={{ ...ui.meta, margin: "0 0 12px" }}>Atualizando…</p>
+            )}
+            {children}
+        </>
+    );
 }

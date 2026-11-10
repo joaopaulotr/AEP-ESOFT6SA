@@ -70,7 +70,7 @@ function Sintese({ sessionId, concluida }) {
     return (
         <section style={{ ...ui.card, marginTop: 20 }} aria-labelledby="titulo-sintese">
             <h2 id="titulo-sintese" style={H2}>Síntese</h2>
-            <EstadoTela carregando={carregando} erro={erro} onRetry={recarregar}>
+            <EstadoTela carregando={carregando} erro={erro} onRetry={recarregar} data={data}>
                 {data ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                         <div>
@@ -171,7 +171,7 @@ export default function SessionDetailScreen() {
                     <ArrowLeft size={16} aria-hidden="true" /> {scriptId ? "Entrevistas do roteiro" : "Voltar"}
                 </button>
 
-                <EstadoTela carregando={detalhes.carregando} erro={detalhes.erro} onRetry={detalhes.recarregar}>
+                <EstadoTela carregando={detalhes.carregando} erro={detalhes.erro} onRetry={detalhes.recarregar} data={detalhes.data}>
                     {sessao && (
                         <>
                             <div style={ui.topo}>
