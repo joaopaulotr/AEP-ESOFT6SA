@@ -1,3 +1,4 @@
+import re
 from abc import ABC
 from datetime import datetime, timezone
 from typing import Any, ClassVar, Generic, TypeVar
@@ -141,6 +142,13 @@ class BaseRepository(ABC, Generic[ModelT]):
     async def delete(self, entity_id: str) -> bool:
         result = await self._collection.delete_one({self.id_field: entity_id})
         return result.deleted_count > 0
+
+    async def delete_by_id_prefix(self, prefix: str) -> int:
+        """Apaga os documentos cujo id começa com `prefix` (literal, não regex). Devolve quantos."""
+        result = await self._collection.delete_many(
+            {self.id_field: {"$regex": f"^{re.escape(prefix)}"}}
+        )
+        return result.deleted_count
 
     async def list(
         self, filters: dict | None = None, *, limit: int = 100, skip: int = 0

@@ -23,7 +23,7 @@ from app.schemas.script import InterviewScript, Persona, Question, ScriptOrigin
 from app.schemas.synthesis import Citation, Synthesis, Theme
 
 BASE_DATE = datetime(2026, 10, 12, 9, 0, tzinfo=timezone.utc)
-MODEL = "gpt-4o-mini"
+MODEL = "demo"  # texto escrito à mão, não gerado por IA
 DEMO_PREFIX = "demo-"
 
 CLOSING = (
@@ -319,13 +319,11 @@ async def seed_demo(database: Any, *, reset: bool = False) -> dict[str, int]:
     await scripts.ensure_seed()
 
     if reset:
-        demo = {"$regex": f"^{DEMO_PREFIX}"}
-        await database[collections.SCRIPTS].delete_many({"script_id": demo})
-        await database[collections.PARTICIPANTS].delete_many({"participant_id": demo})
-        await database[collections.SESSIONS].delete_many({"session_id": demo})
-        await database[collections.SYNTHESES].delete_many(
-            {"synthesis_id": {"$regex": f"^(sessao:)?{DEMO_PREFIX}"}}
-        )
+        await scripts.delete_by_id_prefix(DEMO_PREFIX)
+        await participants.delete_by_id_prefix(DEMO_PREFIX)
+        await sessions.delete_by_id_prefix(DEMO_PREFIX)
+        await syntheses.delete_by_id_prefix(DEMO_PREFIX)  # roteiro: demo-...
+        await syntheses.delete_by_id_prefix(f"sessao:{DEMO_PREFIX}")  # sessão: sessao:demo-...
 
     return {
         collections.SCRIPTS: await _upsert(scripts, data.scripts),

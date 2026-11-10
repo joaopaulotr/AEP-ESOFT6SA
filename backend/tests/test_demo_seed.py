@@ -3,7 +3,9 @@ import pytest
 from app.db import collections
 from app.db.demo_seed import build_demo_data, seed_demo
 from app.schemas.interview import InterviewState
-from app.schemas.script import DEFAULT_SCRIPT_ID
+from app.schemas.participant import Participant
+from app.schemas.script import DEFAULT_SCRIPT_ID, InterviewScript, Question
+from app.schemas.synthesis import Synthesis
 
 pytestmark = pytest.mark.anyio
 
@@ -51,7 +53,7 @@ def test_referential_integrity(data):
 def test_citations_are_literal_participant_quotes(data):
     sessions = {s.session_id: s for s in data.sessions}
     for synthesis in data.syntheses:
-        assert synthesis.modelo == "gpt-4o-mini"
+        assert synthesis.modelo == "demo"
         citations = [c for t in synthesis.temas for c in t.citacoes]
         assert citations and 2 <= len(synthesis.temas) <= 3 or synthesis.escopo == "roteiro"
         for citation in citations:
@@ -132,9 +134,20 @@ async def test_reset_removes_only_demo_documents(
     await seed_demo(fake_db)
     real = InterviewState(session_id="sessao-real", script_id=DEFAULT_SCRIPT_ID)
     await session_repository.create(real)
+    # Resquícios demo que o seed atual não regrava: só o reset de verdade os remove.
+    await session_repository.create(InterviewState(session_id="demo-velha", script_id=DEFAULT_SCRIPT_ID))
+    await synthesis_repository.save_for_session(
+        Synthesis(escopo="sessao", session_id="demo-velha", script_id=DEFAULT_SCRIPT_ID, resumo="x")
+    )
+    await participant_repository.create(Participant(participant_id="demo-fantasma", apelido="Fantasma"))
+    await script_repository.create(InterviewScript(script_id="demo-velho", titulo="Velho", perguntas=[Question(ordem=1, texto="Oi?")]))
     counts = await seed_demo(fake_db, reset=True)
     assert counts[collections.SESSIONS] == 14
     assert await session_repository.get("sessao-real") is not None
+    assert await session_repository.get("demo-velha") is None
+    assert await synthesis_repository.get_for_session("demo-velha") is None
+    assert await participant_repository.get("demo-fantasma") is None
+    assert await script_repository.get("demo-velho") is None
     assert await session_repository.count() == 15
     assert await script_repository.get(DEFAULT_SCRIPT_ID) is not None
 
