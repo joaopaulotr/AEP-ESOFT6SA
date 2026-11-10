@@ -67,8 +67,9 @@ export const api = {
         return res.json();
     },
 
+    /** `ativos=false` lista todos os roteiros, inclusive os com convite encerrado. */
     async listScripts() {
-        const res = await request("/scripts");
+        const res = await request("/scripts?ativos=false");
         return res.json();
     },
 
