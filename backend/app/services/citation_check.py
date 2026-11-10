@@ -12,8 +12,11 @@ _MARKER_TAGS = re.compile(r"</?\s*(?:transcricao|sinteses)\s*>", re.IGNORECASE)
 
 def sanitize(text: str) -> str:
     """Tira as marcas que delimitam os dados nos prompts, para a fala do participante
-    não conseguir fechar o bloco e se passar por instrução."""
-    return _MARKER_TAGS.sub("", text)
+    não conseguir fechar o bloco e se passar por instrução. Repete até estabilizar, senão
+    `<transc<transcricao>ricao>` voltaria a formar a marca depois de uma só passada."""
+    while (cleaned := _MARKER_TAGS.sub("", text)) != text:
+        text = cleaned
+    return text
 
 
 def normalize(text: str) -> str:

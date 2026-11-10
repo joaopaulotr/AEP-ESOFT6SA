@@ -181,3 +181,29 @@ async def test_v010_sessions_are_backfilled(repos, real_db):
     assert details.script.script_id == "entrevista-generalista"
     assert (await repos["syntheses"].get_for_session("antiga")).resumo == "Relatório antigo."
     assert "synthesis" not in await real_db["interview_sessions"].find_one({"session_id": "antiga"})
+
+
+async def test_pull_citations_of_session_is_one_atomic_pull_on_real_mongo(repos, real_db):
+    from app.schemas.synthesis import Citation, Theme
+
+    syntheses = repos["syntheses"]
+    report = Synthesis(
+        escopo="roteiro",
+        script_id="r1",
+        resumo="x",
+        temas=[
+            Theme(tema="t1", citacoes=[Citation(texto="fala de a", session_id="a"),
+                                       Citation(texto="fala de b", session_id="b")]),
+            Theme(tema="t2", citacoes=[Citation(texto="outra de a", session_id="a")]),
+            Theme(tema="t3"),
+        ],
+    )
+    await syntheses.save_for_script(report)
+    before = await syntheses.get_for_script("r1")
+
+    modified = await syntheses.pull_citations_of_session("a")
+
+    after = await syntheses.get_for_script("r1")
+    assert modified == 1
+    assert [[c.session_id for c in t.citacoes] for t in after.temas] == [["b"], [], []]
+    assert after.updated_at == before.updated_at

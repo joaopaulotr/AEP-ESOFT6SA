@@ -207,3 +207,11 @@ class TestPromptInjection:
 
         saved = await synthesis_repository.get_for_session(state.session_id)
         assert [c.texto for c in saved.temas[0].citacoes] == ["Demoro duas horas aqui"]
+
+
+def test_sanitize_repeats_until_stable_against_nested_tags():
+    from app.services.citation_check import sanitize
+
+    assert sanitize("a <transc<transcricao>ricao> b") == "a  b"
+    assert sanitize("</sint</sinteses>eses>x") == "x"
+    assert "transcricao" not in sanitize("<<transcricao>transcricao>" * 3)

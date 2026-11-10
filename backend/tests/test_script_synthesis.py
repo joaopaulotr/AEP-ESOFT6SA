@@ -324,3 +324,77 @@ class TestConcurrentDelete:
         client.delete(f"{API}/session/{a}")
 
         assert order == ["sessao", "pull"]
+
+
+class TestIdempotentDelete:
+    def _orphan_synthesis(self, client, script_id):
+        """Sessão já apagada, mas síntese dela e citação em relatório ainda lá (cleanup falhou antes)."""
+        sid = add_session_synthesis(client, script_id, ["fala orfa qualquer"])
+        run(client, deps.get_session_repository().delete, sid)
+        return sid
+
+    def test_retry_after_session_is_gone_completes_the_cleanup_with_204(self, client):
+        script_id = make_script(client)
+        sid = self._orphan_synthesis(client, script_id)
+        run(
+            client,
+            deps.get_synthesis_repository().create,
+            Synthesis(
+                escopo="roteiro",
+                script_id=script_id,
+                resumo="x",
+                temas=[Theme(tema="t", citacoes=[Citation(texto="fala orfa qualquer", session_id=sid)])],
+            ),
+        )
+
+        assert client.delete(f"{API}/session/{sid}").status_code == 204
+
+        syntheses = deps.get_synthesis_repository()
+        assert run(client, syntheses.get_for_session, sid) is None
+        report = run(client, syntheses.list_for_script, script_id)[0]
+        assert report.temas[0].citacoes == []
+
+    def test_nothing_to_clean_is_404(self, client):
+        response = client.delete(f"{API}/session/nao-existe")
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Sessão não encontrada."}
+
+    def test_cleanup_failure_is_logged_without_content_and_reraised_then_retry_completes(
+        self, client, monkeypatch, caplog
+    ):
+        script_id = make_script(client)
+        sid = add_session_synthesis(client, script_id, ["fala secreta do participante"])
+        syntheses = deps.get_synthesis_repository()
+        run(
+            client,
+            syntheses.create,
+            Synthesis(
+                escopo="roteiro",
+                script_id=script_id,
+                resumo="x",
+                temas=[Theme(tema="t", citacoes=[Citation(texto="fala secreta do participante", session_id=sid)])],
+            ),
+        )
+        calls = {"n": 0}
+        real_pull = syntheses.pull_citations_of_session
+
+        async def flaky_pull(session_id):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("banco caiu")
+            return await real_pull(session_id)
+
+        monkeypatch.setattr(syntheses, "pull_citations_of_session", flaky_pull)
+        import logging
+
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(RuntimeError):
+                client.delete(f"{API}/session/{sid}")
+        record = next(r for r in caplog.records if getattr(r, "error_type", "") == "RuntimeError")
+        assert record.session_id == sid
+        assert "secreta" not in caplog.text and "banco caiu" not in caplog.text
+
+        assert client.delete(f"{API}/session/{sid}").status_code == 204
+        assert run(client, syntheses.get_for_session, sid) is None
+        assert run(client, syntheses.list_for_script, script_id)[0].temas[0].citacoes == []

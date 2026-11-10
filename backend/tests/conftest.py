@@ -312,10 +312,13 @@ REAL_ATOMIC_PULL = SynthesisRepository._atomic_pull_citations
 
 
 @pytest.fixture(autouse=True)
-def _mongomock_pull_shim(monkeypatch):
+def _mongomock_pull_shim(monkeypatch, request):
     """O mongomock ignora `$pull` com `temas.$[].citacoes` (no-op silencioso). Só nos testes,
     o `$pull` atômico de produção vira um equivalente em Python; o teste de repositório
     confere a consulta real contra um stub."""
+
+    if request.node.get_closest_marker("mongo"):
+        return  # MongoDB real: roda o $pull atômico de verdade
 
     async def _python_pull(self, session_id: str) -> int:
         changed = 0

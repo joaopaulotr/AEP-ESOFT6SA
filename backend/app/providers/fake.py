@@ -26,8 +26,16 @@ def _report_llm() -> None:
         meter.add_llm(FAKE_INPUT_TOKENS, FAKE_OUTPUT_TOKENS)
 
 
-_TRANSCRIPT = re.compile(r"<transcricao>(.*?)</transcricao>", re.DOTALL)
-_SYNTHESES = re.compile(r"<sinteses>(.*?)</sinteses>", re.DOTALL)
+# Só vale a marca na posição do template (depois do cabeçalho fixo do prompt): fala do
+# participante nos prompts de entrevista não pode fazer o fake confundir o tipo de prompt.
+_TRANSCRIPT = re.compile(
+    r"^Você é um pesquisador analisando a transcrição.*?<transcricao>\n(.*?)\n</transcricao>\n\nRegra de segurança",
+    re.DOTALL,
+)
+_SYNTHESES = re.compile(
+    r"^Você é um pesquisador cruzando as sínteses.*?<sinteses>\n(.*?)\n</sinteses>\n\nRegra de segurança",
+    re.DOTALL,
+)
 
 
 def _fake_session_synthesis(transcript: str) -> dict:
