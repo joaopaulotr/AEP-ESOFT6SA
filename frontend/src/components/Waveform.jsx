@@ -22,16 +22,23 @@ function useMovimentoReduzido() {
     return reduzido;
 }
 
-/** Altura (0..1) de cada barra por estado. `nivel`: volume do microfone (RMS 0..1). */
+/**
+ * Altura (0..1) de cada barra por estado. `nivel`: volume (RMS 0..1) do microfone ao ouvir ou da
+ * voz da IA ao falar; null quando o volume da fala ainda não está disponível.
+ */
 function alturaDaBarra(estado, i, t, nivel) {
     if (estado === "ouvindo") {
         const ruido = 0.55 + 0.45 * Math.sin(t / 130 + i * 1.7);
-        return 0.08 + Math.min(1, nivel * 9) * ruido * 0.92;
+        return 0.08 + Math.min(1, (nivel ?? 0) * 9) * ruido * 0.92;
     }
     if (estado === "pensando") return 0.15 + 0.12 * (1 + Math.sin(t / 450 - i * 0.25)); // pulso suave
     if (estado === "falando") {
-        // Aproximação: o áudio de saída não passa por um AnalyserNode (evita rotear a voz da IA
-        // pelo AudioContext); o desenho imita a energia da fala.
+        // EV-80: volume real da voz da IA (calculado do arquivo de áudio, sem rotear a saída
+        // pelo AudioContext). Enquanto ele não está disponível, o desenho imita a energia da fala.
+        if (typeof nivel === "number") {
+            const ruido = 0.6 + 0.4 * Math.sin(t / 110 + i * 1.9);
+            return 0.08 + Math.min(1, nivel * 5) * ruido * 0.9;
+        }
         const env = 0.5 + 0.5 * Math.sin(t / 210 + i * 0.6) * Math.sin(t / 530 + i * 1.3);
         return 0.12 + 0.7 * Math.abs(env);
     }
@@ -78,7 +85,7 @@ export default function Waveform({ estado = "parado", nivelRef }) {
 
             const passo = LARGURA / BARRAS;
             const largura = Math.max(3, passo * 0.5);
-            const nivel = nivelRef?.current ?? 0;
+            const nivel = nivelRef ? nivelRef.current : 0;
             for (let i = 0; i < BARRAS; i++) {
                 const h = Math.max(4, alturaDaBarra(reduzido ? "parado" : estado, i, t, nivel) * ALTURA);
                 const x = i * passo + (passo - largura) / 2;

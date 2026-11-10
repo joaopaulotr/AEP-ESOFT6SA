@@ -153,6 +153,8 @@ function Entrevista({ publico, slug, guardada }) {
     }
 
     const estadoOnda = ouvindo ? "ouvindo" : processando ? "pensando" : sessao.audioTocando ? "falando" : "parado";
+    // EV-80: a onda e o avatar seguem o microfone ao ouvir e a voz da IA ao falar.
+    const nivelOnda = estadoOnda === "falando" ? sessao.nivelVozRef : recorder.nivelRef;
     const legendaTexto = processando ? "" : sessao.legenda || perguntaAtual;
     // Única região ao vivo do modo voz (montada desde o início): o que foi entendido, "pensando" e a fala.
     const anuncioVoz = pendente
@@ -306,13 +308,13 @@ function Entrevista({ publico, slug, guardada }) {
                             </div>
 
                             <div style={style.avatarWrap}>
-                                <Avatar size={128} ativo={estadoOnda !== "parado"} />
+                                <Avatar size={128} estado={estadoOnda} nivelRef={nivelOnda} />
                             </div>
 
                             <p style={style.status}>{statusTexto}</p>
                             {incentivo && aguardando && <p style={style.incentivo}>{INCENTIVO}</p>}
 
-                            <Waveform estado={estadoOnda} nivelRef={recorder.nivelRef} />
+                            <Waveform estado={estadoOnda} nivelRef={nivelOnda} />
 
                             <div style={style.questionCard}>
                                 <LiveCaption texto={legendaTexto} vazio={processando ? "…" : undefined} />

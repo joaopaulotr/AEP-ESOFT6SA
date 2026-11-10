@@ -601,6 +601,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         descartarPendente: () => setPendente(null),
         tentarDeNovo: iniciar,
         audioTocando: player.ocupado,
+        nivelVozRef: player.nivelRef, // EV-80: volume da voz da IA
         pararAudio: interromper,
         falarAviso,
         enviarResposta,
