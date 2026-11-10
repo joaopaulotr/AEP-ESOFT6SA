@@ -6,6 +6,7 @@ import InterviewScreen from "./screens/InterviewScreen";
 import FeedbackScreen from "./screens/FeedbackScreen";
 import ScriptsScreen from "./screens/ScriptsScreen";
 import ScriptSessionsScreen from "./screens/ScriptSessionsScreen";
+import ScriptDashboardScreen from "./screens/ScriptDashboardScreen";
 import SessionDetailScreen from "./screens/SessionDetailScreen";
 import ScriptEditorScreen from "./screens/ScriptEditorScreen";
 import ScriptImportScreen from "./screens/ScriptImportScreen";
@@ -25,6 +26,7 @@ export default function App() {
                 <Route path="/roteiros/importar" element={<ScriptImportScreen />} />
                 <Route path="/roteiros/:scriptId/editar" element={<ScriptEditorScreen />} />
                 <Route path="/entrevistas/:scriptId" element={<ScriptSessionsScreen />} />
+                <Route path="/entrevistas/:scriptId/painel" element={<ScriptDashboardScreen />} />
                 <Route path="/sessao/:sessionId" element={<SessionDetailScreen />} />
                 <Route path="/entrevista" element={<InterviewScreen />} />
                 <Route path="/e/:slug" element={<InviteScreen />} />
