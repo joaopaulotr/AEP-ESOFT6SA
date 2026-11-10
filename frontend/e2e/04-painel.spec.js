@@ -5,13 +5,12 @@ test("painel: cartões, gráficos, tabela de dados e relatório do roteiro", asy
     await page.getByRole("button", { name: "Painel do roteiro Transporte público na periferia" }).click();
 
     await expect(page.getByRole("heading", { name: "Painel: Transporte público na periferia" })).toBeVisible();
-    for (const rotulo of ["Entrevistas", "Taxa de conclusão", "Duração média", "Custo médio"]) {
-        await expect(page.getByText(rotulo, { exact: true }).first()).toBeVisible();
-    }
-    const cartoes = page.locator(".painel-tiles > div");
-    await expect(cartoes).toHaveCount(4);
-    await expect(cartoes.nth(0)).toContainText(/\d+/);
-    await expect(cartoes.nth(1)).toContainText(/\d+\s?%/);
+    // Cada cartão: rótulo + valor numérico (o valor é o <strong> irmão do rótulo).
+    const valorDe = (rotulo) => page.locator("div:has(> span):has(> strong)").filter({ has: page.getByText(rotulo, { exact: true }) }).locator("> strong");
+    await expect(valorDe("Entrevistas")).toHaveText(/^\d+$/);
+    await expect(valorDe("Taxa de conclusão")).toHaveText(/^\d+\s?%$/);
+    await expect(valorDe("Duração média")).toHaveText(/\d+([.,]\d+)?\s?min/);
+    await expect(valorDe("Custo médio")).toHaveText(/\d/);
 
     for (const titulo of ["O que a entrevistadora fez", "Aprofundamentos por pergunta", "Temas mais citados", "Canais", "Entrevistas por dia"]) {
         await expect(page.getByRole("heading", { name: titulo, level: 3 })).toBeVisible();

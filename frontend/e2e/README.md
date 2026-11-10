@@ -1,6 +1,7 @@
 # Testes E2E (Playwright)
 
 Rodar: `cd frontend && npx playwright test` (primeira vez: `npx playwright install chromium`).
+Pare servidores de dev nas portas 8090/5190 antes de rodar localmente: `reuseExistingServer` os reutilizaria, possivelmente com outro banco.
 Requer um MongoDB em `127.0.0.1:27017` (ou `E2E_MONGO_URI`) e o venv do backend (ou `E2E_PYTHON`).
 
 - Backend sobe com `LLM_PROVIDER=fake` e banco **`aep_e2e`** (nunca o de desenvolvimento, nunca OpenAI).

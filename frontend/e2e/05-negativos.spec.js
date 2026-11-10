@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { criarRoteiro, entrarPorTexto, responder } from "./helpers";
+import { tituloUnico, criarRoteiro, entrarPorTexto, responder } from "./helpers";
 
 test("convite inexistente mostra a mensagem de convite encerrado", async ({ page }) => {
     await page.goto("/e/nao-existe-e2e");
@@ -8,7 +8,7 @@ test("convite inexistente mostra a mensagem de convite encerrado", async ({ page
 });
 
 test("pedido de parar no modo texto encerra com a mensagem de parada", async ({ page, request }) => {
-    const roteiro = await criarRoteiro(request, "Roteiro de parada (E2E)", [
+    const roteiro = await criarRoteiro(request, tituloUnico("Roteiro de parada (E2E)"), [
         "Como é o seu dia a dia?",
         "O que você mudaria no bairro?",
     ]);

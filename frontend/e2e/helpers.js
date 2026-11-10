@@ -1,7 +1,11 @@
 import { expect } from "@playwright/test";
 
 export const API = "http://127.0.0.1:8090/api/v1";
-export const TITULO_IMPORTADO = "Questionário do bairro (E2E)";
+
+/** Título único por execução/tentativa: um retry do CI nunca colide com dados de uma tentativa anterior. */
+export function tituloUnico(base) {
+    return `${base} ${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
 
 /** Cria um roteiro pela API (isola os cenários entre si) e devolve { script_id, link_convite, titulo }. */
 export async function criarRoteiro(request, titulo, perguntas) {

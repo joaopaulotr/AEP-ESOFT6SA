@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { criarRoteiro } from "./helpers";
+import { tituloUnico, criarRoteiro } from "./helpers";
 
 // Fumaça: microfone falso aceito, a tela entra em "ouvindo" sem erro. Não valida o áudio.
 test("voz: entra por Falar, o microfone falso é aceito e a tela mostra ouvindo", async ({ page, request }) => {
@@ -9,7 +9,7 @@ test("voz: entra por Falar, o microfone falso é aceito e a tela mostra ouvindo"
         await d.dismiss();
     });
 
-    const roteiro = await criarRoteiro(request, "Roteiro de voz (E2E)", ["Como é o seu dia a dia?", "O que você mudaria?"]);
+    const roteiro = await criarRoteiro(request, tituloUnico("Roteiro de voz (E2E)"), ["Como é o seu dia a dia?", "O que você mudaria?"]);
     await page.goto(roteiro.link_convite);
     await page.getByRole("button", { name: "Falar" }).click();
     await page.getByRole("button", { name: "Começar" }).click();
