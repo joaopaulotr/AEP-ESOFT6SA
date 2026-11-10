@@ -4,8 +4,8 @@ from app.repositories.session_repository import SessionRepository
 from app.schemas.api import QuestionCreate, ScriptCreate, ScriptSummary, ScriptUpdate
 from app.schemas.script import DEFAULT_SCRIPT_ID, InterviewScript, Question
 
-IN_PROGRESS_MESSAGE = (
-    "Este roteiro tem entrevistas em andamento; não é possível mudar as perguntas agora."
+HAS_SESSIONS_MESSAGE = (
+    "Este roteiro já tem entrevistas. Crie um novo roteiro para mudar as perguntas."
 )
 DEFAULT_SCRIPT_MESSAGE = "O roteiro padrão não pode ser apagado."
 DEFAULT_SCRIPT_EDIT_MESSAGE = "O roteiro padrão não pode ser desativado nem ter as perguntas alteradas."
@@ -62,9 +62,10 @@ class ScriptService:
         changes = {key: value for key, value in changes.items() if value is not None}
         if data.perguntas is not None:
             # Janela conhecida, não atômica: uma sessão pode abrir entre esta checagem e o save.
-            if await self._sessions.has_in_progress(script_id):
-                # A sessão aponta para a posição da pergunta: mexer nelas desloca quem responde.
-                raise ConflictError(IN_PROGRESS_MESSAGE)
+            if await self._sessions.has_for_script(script_id):
+                # A conversa guarda a posição da pergunta: mexer nelas embaralha a transcrição
+                # das entrevistas já feitas (concluídas ou não).
+                raise ConflictError(HAS_SESSIONS_MESSAGE)
             changes["perguntas"] = _questions(data.perguntas)
         if data.persona is not None:
             changes["persona"] = data.persona

@@ -48,9 +48,6 @@ class SessionRepository(BaseRepository[InterviewState]):
         ).to_list(length=None)
         return {row["_id"]: (row["total"], row["concluidas"]) for row in rows}
 
-    async def has_in_progress(self, script_id: str) -> bool:
-        return await self.count({"script_id": script_id, "finished": False}) > 0
-
     async def has_for_script(self, script_id: str) -> bool:
         return await self.count({"script_id": script_id}) > 0
 

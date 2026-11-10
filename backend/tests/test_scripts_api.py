@@ -144,19 +144,20 @@ class TestUpdate:
 
         assert [q["ordem"] for q in body["perguntas"]] == [1, 2, 3]
 
-    def test_changing_questions_with_an_interview_in_progress_is_409(self, client):
-        created = _novo(client)
-        _gravar_sessao(client, created["script_id"])
+    def test_changing_questions_with_any_session_is_409(self, client):
+        for finished in (False, True):
+            created = _novo(client)
+            _gravar_sessao(client, created["script_id"], finished=finished)
 
-        response = client.put(
-            f"{API}/{created['script_id']}", json={"perguntas": [{"texto": "Outra?"}]}
-        )
+            response = client.put(
+                f"{API}/{created['script_id']}", json={"perguntas": [{"texto": "Outra?"}]}
+            )
 
-        assert response.status_code == 409
-        assert response.json() == {
-            "detail": "Este roteiro tem entrevistas em andamento; não é possível mudar as perguntas agora."
-        }
-        assert client.get(f"{API}/{created['script_id']}").json()["perguntas"] == created["perguntas"]
+            assert response.status_code == 409
+            assert response.json() == {
+                "detail": "Este roteiro já tem entrevistas. Crie um novo roteiro para mudar as perguntas."
+            }
+            assert client.get(f"{API}/{created['script_id']}").json()["perguntas"] == created["perguntas"]
 
     def test_other_fields_can_change_during_an_interview(self, client):
         created = _novo(client)
@@ -167,13 +168,13 @@ class TestUpdate:
         assert response.status_code == 200
         assert response.json()["ativo"] is False
 
-    def test_questions_can_change_when_only_finished_sessions_exist(self, client):
+    def test_questions_can_change_when_the_script_has_no_sessions(self, client):
         created = _novo(client)
-        _gravar_sessao(client, created["script_id"], finished=True)
 
         response = client.put(f"{API}/{created['script_id']}", json={"perguntas": [{"texto": "Nova?"}]})
 
         assert response.status_code == 200
+        assert [q["texto"] for q in response.json()["perguntas"]] == ["Nova?"]
 
     def test_default_script_cannot_be_deactivated_nor_have_questions_changed(self, client):
         detail = "O roteiro padrão não pode ser desativado nem ter as perguntas alteradas."
