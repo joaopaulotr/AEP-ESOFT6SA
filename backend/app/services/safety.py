@@ -1,16 +1,17 @@
 """Checagem determinística de segurança (EV-26), antes e independente do LLM.
 
-Escolhas de projeto:
-- Pedido de parar deterministico so em mensagem curta (<= 8 palavras) com frase de parada,
-  ou com frase explicita sobre a entrevista em qualquer tamanho; o resto vai ao LLM (risco).
-- O texto é normalizado (sem acento, minúsculas) e comparado com frases inteiras,
-  conservadoras. Pedido de parar exige a forma de pedido em 1ª pessoa/imperativo
-  ("quero parar", "pode parar", "vamos parar"): "parar o ônibus" ou "parar de fumar"
-  NÃO disparam, porque não casam com nenhuma dessas frases. "chega" só vale como
-  palavra inteira ("chegamos", "chegada" não disparam).
-- Precedência: segurança primeiro. Se houver termo de sofrimento, o resultado é
-  "sofrimento" mesmo que a pessoa também peça para parar: o acolhimento já inclui a
-  opção de encerrar e cita o CVV. Só sem termos de sofrimento vale "pedido_parar".
+Política conservadora: um falso positivo (encerrar a entrevista sem a pessoa pedir) é
+muito pior que um falso negativo, porque o LLM ainda pode devolver risco="pedido_parar".
+Por isso o atalho determinístico só dispara em pedido claro:
+- Sofrimento vem primeiro: termo de sofrimento sempre retorna "sofrimento" (o
+  acolhimento já inclui a opção de encerrar e cita o CVV).
+- Pergunta nunca encerra: mensagem que termina em "?" ou tem "quando", "que horas",
+  "quanto tempo", "sera que" ou "como" vai para o LLM ("quando vamos parar a entrevista?").
+- Fora isso, é pedido de parar se tiver uma frase explícita sobre a entrevista
+  ("parar a entrevista", "encerra a entrevista" no início...) ou se for curta
+  (<= 8 palavras) com frase de parada cercada só de cortesia ("chega por hoje",
+  "por favor, quero parar"). Assim "quero parar de fumar" ou "o ônibus chega às 7h"
+  não disparam. O texto é normalizado (sem acento, minúsculas).
 """
 
 import re
@@ -19,41 +20,24 @@ from typing import Literal
 
 Risco = Literal["nenhum", "sofrimento", "pedido_parar"]
 
-_SHORT_STOP_PHRASES = [
-    "quero parar",
-    "nao quero mais",
-    "nao quero continuar",
-    "pode parar",
-    "vamos parar",
-    "chega",
-]
-# Em mensagem curta, a frase de parada so vale se o resto for so cortesia: assim
-# "nao quero mais onibus lotado" ou "quero parar de fumar" seguem para o LLM.
+MAX_STOP_WORDS = 8
+
+_DISTRESS_RE = re.compile(
+    r"me matar|tirar minha vida|me machucar|nao aguento mais viver|quero morrer|acabar com tudo|suicid"
+)
+_QUESTION_RE = re.compile(r"\?$|\b(quando|que horas|quanto tempo|sera que|como)\b")
+_EXPLICIT_STOP_RE = re.compile(
+    r"parar a entrevista|parar essa entrevista|encerrar a entrevista|quero parar a entrevista"
+    r"|nao quero continuar a entrevista|^(encerra|termina|para) a entrevista"
+)
+
+_SHORT_STOP_PHRASES = [p.split() for p in ("quero parar", "nao quero mais", "nao quero continuar", "pode parar", "vamos parar", "chega")]
 _LEAD_WORDS = {"eu", "ah", "ok", "entao", "olha", "desculpa", "bom", "e", "por", "favor", "oi", "ola"}
-_TAIL_WORDS = {"obrigado", "obrigada", "por", "favor", "agora", "aqui", "hoje", "mesmo", "de", "verdade", "pra", "valeu", "sim", "tchau", "muito", "tudo", "bem", "ta", "bom", "desculpa", "desculpe", "com", "isso", "vez", "falar", "continuar", "conversa", "entrevista"}
-_EXPLICIT_STOP_PATTERNS = [
-    r"parar a entrevista",
-    r"parar essa entrevista",
-    r"encerrar a entrevista",
-    r"nao quero continuar a entrevista",
-    r"quero parar a entrevista",
-
-
-    r"^(encerra|termina|para) a entrevista",
-]
-MAX_STOP_WORDS = 8  # frase curta: pedido de parar; mais longa e ambigua vai para o LLM
-_DISTRESS_PATTERNS = [
-    r"me matar",
-    r"tirar minha vida",
-    r"me machucar",
-    r"nao aguento mais viver",
-    r"quero morrer",
-    r"acabar com tudo",
-    r"suicid",
-]
-
-_EXPLICIT_STOP_RE = re.compile("|".join(_EXPLICIT_STOP_PATTERNS))
-_DISTRESS_RE = re.compile("|".join(_DISTRESS_PATTERNS))
+_TAIL_WORDS = {
+    "obrigado", "obrigada", "por", "favor", "agora", "aqui", "hoje", "mesmo", "de", "verdade",
+    "pra", "valeu", "sim", "tchau", "muito", "tudo", "bem", "ta", "bom", "desculpa", "desculpe",
+    "com", "isso", "vez", "falar", "continuar", "conversa", "entrevista",
+}
 
 
 def _normalize(text: str) -> str:
@@ -67,27 +51,19 @@ def _is_short_stop(normalized: str) -> bool:
     if not words or len(words) > MAX_STOP_WORDS:
         return False
     for phrase in _SHORT_STOP_PHRASES:
-        size = len(phrase.split())
-        for i in range(len(words) - size + 1):
-            if words[i : i + size] == phrase.split():
-                if set(words[:i]) <= _LEAD_WORDS and set(words[i + size :]) <= _TAIL_WORDS:
-                    return True
+        n = len(phrase)
+        for i in range(len(words) - n + 1):
+            if words[i : i + n] == phrase and set(words[:i]) <= _LEAD_WORDS and set(words[i + n :]) <= _TAIL_WORDS:
+                return True
     return False
-
-
-def _is_timing_question(normalized: str) -> bool:
-    """Pergunta sobre o fim ("quando termina...?") não é pedido, salvo com pedido em 1ª pessoa."""
-    asks = "quando " in normalized or "que horas" in normalized or normalized.endswith("?")
-    requests = any(w in normalized.split() for w in ("quero", "pode", "vamos")) or "por favor" in normalized
-    return asks and not requests
 
 
 def check_safety(text: str) -> Risco:
     normalized = _normalize(text)
     if _DISTRESS_RE.search(normalized):
         return "sofrimento"
-    if _EXPLICIT_STOP_RE.search(normalized) and not _is_timing_question(normalized):
-        return "pedido_parar"
-    if _is_short_stop(normalized):
+    if _QUESTION_RE.search(normalized):
+        return "nenhum"
+    if _EXPLICIT_STOP_RE.search(normalized) or _is_short_stop(normalized):
         return "pedido_parar"
     return "nenhum"

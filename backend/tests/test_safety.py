@@ -67,6 +67,14 @@ def test_distress_terms(text):
         "não quero parar de usar o ônibus",
         "eu quero parar de pegar dois ônibus todo dia",
         "",
+        # Pergunta nunca encerra de forma determinística: o LLM decide.
+        "quero saber quando vamos parar a entrevista?",
+        "você pode me dizer quando vai encerrar a entrevista?",
+        "quando a gente pode encerrar a entrevista?",
+        "quero parar a entrevista?",
+        "pode parar a entrevista?",
+        "como faço pra parar a entrevista",
+        "será que dá pra encerrar a entrevista",
     ],
 )
 def test_common_false_positives_do_not_trigger(text):
