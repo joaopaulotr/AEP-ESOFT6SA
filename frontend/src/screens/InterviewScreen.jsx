@@ -6,6 +6,10 @@ import PublicLayout from "../components/PublicLayout";
 import ChatComposer from "../components/ChatComposer";
 import SideBar from "../components/SideBar";
 import Avatar from "../components/Avatar";
+import Waveform from "../components/Waveform";
+import LiveCaption from "../components/LiveCaption";
+import InterviewProgress from "../components/InterviewProgress";
+import TranscriptConfirm from "../components/TranscriptConfirm";
 import ThemeToggle from "../components/ThemeToggle";
 import { useInterviewSession } from "../hooks/useInterviewSession";
 import { useRecorder } from "../hooks/useRecorder";
@@ -60,9 +64,9 @@ function Entrevista({ publico, slug }) {
                 ? navigate(`/e/${encodeURIComponent(slug)}/obrigado`, { replace: true })
                 : navigate("/feedback", { state: { sessionId, ...extra } }),
     });
-    const { perguntaAtual, indiceAtual, turno, processando, finalizada, transcricao, erro } = sessao;
+    const { perguntaAtual, turno, processando, finalizada, transcricao, erro, progresso, pendente } = sessao;
 
-    const { pararAudio, falarAviso } = sessao;
+    const { pararAudio, falarAviso, descartarPendente } = sessao;
     const recorder = useRecorder({
         onRecorded: sessao.enviarAudio,
         // Barge-in: a pessoa começou a falar por cima da IA → corta o áudio e já grava.
@@ -78,6 +82,7 @@ function Entrevista({ publico, slug }) {
     useEffect(() => {
         if (modoTexto) {
             pararAudio();
+            descartarPendente();
             liberarMicrofone();
         }
     }, [modoTexto]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -97,7 +102,7 @@ function Entrevista({ publico, slug }) {
     // Incentivo: 12 s esperando a pessoa sem que ela fale -> uma vez por pergunta.
     const [incentivo, setIncentivo] = useState(false);
     const perguntasIA = transcricao.filter((m) => m.quem === "ia").length;
-    const aguardando = turno === "voce" && !processando && !finalizada && !recorder.gravando;
+    const aguardando = turno === "voce" && !processando && !finalizada && !recorder.gravando && !pendente;
     useEffect(() => {
         setIncentivo(false);
     }, [perguntasIA]);
@@ -110,7 +115,7 @@ function Entrevista({ publico, slug }) {
         return () => clearTimeout(t);
     }, [aguardando, perguntasIA]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const podeResponder = turno === "voce" && !processando && !finalizada;
+    const podeResponder = turno === "voce" && !processando && !finalizada && !pendente;
     const ouvindo = recorder.gravando; // inclui a gravação iniciada por barge-in (turno ainda é da IA)
     const iaFalando = !modoTexto && turno === "interviewer" && !processando && !finalizada;
     const podeAlternar = !recorder.gravando && !processando && !finalizada && !!sessao.sessionId;
@@ -129,6 +134,9 @@ function Entrevista({ publico, slug }) {
         sessao.enviarResposta(texto);
         setTexto("");
     }
+
+    const estadoOnda = ouvindo ? "ouvindo" : processando ? "pensando" : sessao.audioTocando ? "falando" : "parado";
+    const legendaTexto = processando ? "" : sessao.legenda || perguntaAtual;
 
     const statusTexto = processando
         ? "PROCESSANDO…"
@@ -192,6 +200,7 @@ function Entrevista({ publico, slug }) {
 
                 {modoTexto ? (
                     <div style={{ ...style.colRight, maxWidth: 760, margin: "0 auto" }}>
+                        <div style={{ padding: "12px 14px 0" }}><InterviewProgress {...progresso} /></div>
                         <div
                             style={{ ...style.msgs, maxHeight: "60vh" }}
                             ref={msgsRef}
@@ -227,29 +236,25 @@ function Entrevista({ publico, slug }) {
                     <div style={style.colLeft}>
                         <div style={style.aiPanel}>
                             <div style={style.panelHead}>
-                                <span style={style.perguntaNum}>Pergunta {indiceAtual + 1}</span>
+                                <InterviewProgress {...progresso} />
                                 <span style={style.voiceChip}><Volume2 size={14} /> Voz: Ativada</span>
                             </div>
 
                             <div style={style.avatarWrap}>
-                                <Avatar size={128} />
+                                <Avatar size={128} ativo={estadoOnda !== "parado"} />
                             </div>
 
                             <p style={style.status} role="status">{statusTexto}</p>
                             {incentivo && aguardando && <p style={style.incentivo} role="status">{INCENTIVO}</p>}
 
-                            <div style={style.wave}>
-                                {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-                                    <span key={i} className={ouvindo || iaFalando ? "bar on" : "bar"} style={{ animationDelay: `${i * 0.09}s` }} />
-                                ))}
-                            </div>
+                            <Waveform estado={estadoOnda} nivelRef={recorder.nivelRef} />
 
                             <div style={style.questionCard}>
-                                <p style={style.textoIA}>
-                                    {perguntaAtual ? `"${perguntaAtual}"` : "Conectando à entrevista…"}
-                                </p>
+                                <LiveCaption texto={legendaTexto} vazio={processando ? "…" : undefined} />
                             </div>
                         </div>
+
+                        {pendente && <TranscriptConfirm key={pendente.texto} texto={pendente.texto} onEnviar={sessao.confirmarTranscricao} />}
 
                         <div style={style.bottomBar}>
                             <div style={{ flex: 1 }}>

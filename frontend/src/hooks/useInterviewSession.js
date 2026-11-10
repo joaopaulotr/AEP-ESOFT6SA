@@ -23,6 +23,8 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     const [erro, setErro] = useState(null);
     const [erroInicio, setErroInicio] = useState("");
     const [tituloRoteiro, setTituloRoteiro] = useState("");
+    const [progresso, setProgresso] = useState({ ordem: 0, total: 0, acao: null });
+    const [pendente, setPendente] = useState(null); // transcrição aguardando confirmação: { texto }
     const [legenda, setLegenda] = useState(""); // frase da IA que está tocando agora
 
     const player = useAudioPlayer();
@@ -134,6 +136,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         const ultima = [...turnos].reverse().find((t) => t.role === "interviewer");
         if (ultima) setPerguntaAtual(ultima.text);
         setIndiceAtual(sessao.current_index || 0);
+        setProgresso({ ordem: (sessao.current_index || 0) + 1, total: det.script?.perguntas?.length || 0, acao: null });
         if (sessao.finished) {
             setFinalizada(true);
             setTurno("interviewer");
@@ -155,6 +158,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             }
             const data = await api.createSession({ scriptId });
             setTituloRoteiro(data.titulo || "");
+            setProgresso({ ordem: 1, total: data.perguntas_total || 0, acao: null });
             sessionIdRef.current = data.session_id;
             setSessionId(data.session_id);
             if (vozRef.current) await carregarTom(data.session_id);
@@ -253,6 +257,11 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
                 setProcessando(false);
                 setPerguntaAtual(fim.fala);
                 if (typeof fim.indice_atual === "number") setIndiceAtual(fim.indice_atual);
+                setProgresso((p) => ({
+                    ordem: fim.pergunta_ordem || p.ordem,
+                    total: fim.perguntas_total || p.total,
+                    acao: fim.acao || null,
+                }));
                 adicionarMensagem("ia", fim.fala);
                 await concluirFala(fim.finalizada);
             })
@@ -281,6 +290,14 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             return;
         }
         setProcessando(false);
+        if (!montadoRef.current || !texto?.trim()) return;
+        // Voz: mostra o que foi entendido por 3 s (corrigível) antes de enviar.
+        setPendente({ texto: texto.trim() });
+    }
+
+    /** Envia a transcrição confirmada (ou corrigida). */
+    async function confirmarTranscricao(texto) {
+        setPendente(null);
         await enviarResposta(texto);
     }
 
@@ -329,6 +346,10 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         erro,
         erroInicio,
         legenda,
+        progresso,
+        pendente,
+        confirmarTranscricao,
+        descartarPendente: () => setPendente(null),
         tentarDeNovo: iniciar,
         audioTocando: player.ocupado,
         pararAudio: interromper,
