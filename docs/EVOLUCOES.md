@@ -69,8 +69,8 @@ Fonte: *AEP 2026.2 6S — Engenharia de Software*, seções 6, 7, 8 (2º semestr
 |---|---|---|---|---|
 | RK-01 | **Requisito NoSQL do 2º semestre não atendido** — hoje só existe `interview_sessions` | Zera R2 e enfraquece R1 | Alta se não priorizado | EV-01..EV-03 são os primeiros itens de código. Nenhuma feature nova entra antes. — **mitigado em parte** (feat/EV-01-multi-colecao: 4 coleções, `$lookup`, agregações, testes em Mongo real); falta EV-03 (rotas) para a banca ver pela API. |
 | RK-02 | **Sem quadro de tarefas** | Zera R4 (0,1) — ponto "grátis" perdido | Alta | EV-04 na semana 1; issues retroativas para o que já foi feito. |
-| RK-03 | **Voz excluída da cobertura** (`omit` em `pyproject.toml`) | Banca pode considerar a cobertura "maquiada" | Média | EV-05: testes da voz com cliente OpenAI mockado e remoção do `omit`. — **mitigado** (feat/EV-41-core-providers) |
-| RK-04 | **`htmlcov/` versionado à mão fica desatualizado** (já contém `syntesis_service.py`, que não existe mais) | Evidência de cobertura incoerente com o código | Alta | EV-05: gerar no CI e publicar como artefato/GitHub Pages; remover `htmlcov/` do repo. |
+| RK-03 | **Voz excluída da cobertura** (`omit` em `pyproject.toml`) | Banca pode considerar a cobertura "maquiada" | Média | EV-05: testes da voz com cliente OpenAI mockado e remoção do `omit`. — **mitigado** (feat/EV-41-core-providers; no EV-05 `verify-delivery.sh` passou a falhar se `pyproject.toml` voltar a ter `omit`) |
+| RK-04 | **`htmlcov/` versionado à mão fica desatualizado** (já contém `syntesis_service.py`, que não existe mais) | Evidência de cobertura incoerente com o código | Alta | EV-05: gerar no CI e publicar como artefato/GitHub Pages; remover `htmlcov/` do repo. — **mitigado** (EV-05: artefato `cobertura` na CI, `backend/htmlcov/` fora do repositório e no `.gitignore`) |
 | RK-05 | **Escopo grande para equipe de 3** | Entrega incompleta ou com bugs | Alta | Ordem da seção 12; obrigatórios primeiro; features marcadas como cortáveis. |
 | RK-06 | **Dependência da OpenAI na demo** (custo, rate limit, queda, latência) | Demo falha ao vivo | Média | EV-61 (provider fake), vídeo gravado com fallback, chave com limite de gasto, EV-62 (métricas de custo). — provider fake disponível (`LLM_PROVIDER=fake`) |
 | RK-07 | **Saída do LLM não validada** — JSON incompleto → 500; `profile_updates` não-string corrompe a sessão | Entrevista quebra no meio da demo | Média | EV-11 (schema Pydantic + retry + fallback). — **mitigado** (feat/EV-41-core-providers) |
@@ -206,20 +206,22 @@ Pendências registradas na revisão do EV-01/EV-02 (resolver junto com as rotas)
 - 1 issue por `EV-xx`, linkada ao PR. Labels: `obrigatorio`, `back`, `front`, `infra`, `realismo`.
 - Print do quadro + link no README (seção "Metodologia").
 
-### EV-05 — Testes e evidência de cobertura `TODO` (R5, R6, RK-03, RK-04)
+### EV-05 — Testes e evidência de cobertura `DONE` (R5, R6, RK-03, RK-04)
 
 - Testes para todos os novos repositórios, services e endpoints.
 - Voz coberta com cliente OpenAI mockado → **remover o `omit`**.
 - CI gera `htmlcov` e publica como artefato (e/ou GitHub Pages); **remover `backend/htmlcov/` do repo**.
 - Badge de cobertura no README; comando documentado: `cd backend && pytest --cov-report=html`.
 - ✅ Voz já entra na cobertura (omit removido em `pyproject.toml`).
+- ✅ Feito: CI publica `coverage.xml` e `htmlcov` como artefato `cobertura` (com resumo no job), `backend/htmlcov/` saiu do repositório e entrou no `.gitignore`, e o job `integration` roda `pytest -m mongo` num container `mongo:7`. Números em `docs/testes.md`.
 
-### EV-06 — Documentação técnica `TODO` (R7)
+### EV-06 — Documentação técnica `DONE` (R7)
 
 - `docs/banco.md`: coleções, documento de exemplo real de cada uma, relacionamentos, índices, pipelines.
 - `docs/arquitetura.md`: diagrama de componentes, diagrama de sequência de um turno, grafo LangGraph final.
 - `docs/api.md` ou link para o Swagger (`/docs`) com exemplos.
 - README: seção "Evolução v1 → v2" com tabela do que mudou + seção "Limites" atualizada.
+- ✅ Feito: `docs/arquitetura.md`, `docs/banco.md`, `docs/api.md` (rotas e SSE; Swagger em `/docs`) e `docs/testes.md`, com seção "Documentação técnica" no README apontando para eles. A tabela "Evolução v1 → v2" não foi criada.
 
 ### EV-07 — Versionamento identificável `TODO` (R8)
 
@@ -476,11 +478,12 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 
 ## 9. Processo, qualidade e entrega
 
-### EV-70 — Testes E2E com Playwright `TODO`
+### EV-70 — Testes E2E com Playwright `DONE`
 
 - Fluxos: upload de questionário → publicar → entrevista (modo texto) → síntese → dashboard.
 - Backend com `FakeProvider` (EV-41) → testes determinísticos, sem custo de OpenAI.
 - Roda no CI com docker-compose.
+- ✅ Feito: 7 testes em `frontend/e2e/` (Playwright, Chromium), backend com `LLM_PROVIDER=fake` e banco `aep_e2e` limpo e semeado a cada execução, `VITE_E2E=1` sem atrasos de realismo; no CI roda num service `mongo:7` (sem docker-compose). Detalhes em `docs/testes.md`.
 
 ### EV-71 — Deploy público `TODO`
 
@@ -488,9 +491,10 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 - CORS restrito ao domínio do front; chave OpenAI com limite de gasto (RK-06, RK-11, RK-13).
 - Deploy automático a partir da `main`.
 
-### EV-72 — CI do frontend `TODO`
+### EV-72 — CI do frontend `DONE`
 
 - Workflow `frontend-ci.yml`: `npm ci`, ESLint, `vite build` (e E2E do EV-70).
+- ✅ Feito: jobs `lint-build` e `e2e` em `.github/workflows/frontend-ci.yml`.
 
 ---
 

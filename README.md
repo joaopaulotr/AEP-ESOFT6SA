@@ -6,6 +6,16 @@ aprofunda ou avança, e entrega ao final uma síntese estruturada do que foi dit
 
 ---
 
+## Documentação técnica
+
+| Documento | Conteúdo |
+|---|---|
+| [`docs/arquitetura.md`](docs/arquitetura.md) | Componentes, camadas do backend, diagrama de sequência de um turno em streaming, grafo LangGraph, estrutura do frontend e decisões de projeto |
+| [`docs/banco.md`](docs/banco.md) | As 4 coleções do MongoDB (campos, exemplo real de cada uma, relacionamentos), índices, pipelines de agregação, regras de exclusão, `versao` otimista e migração da v0.1.0 |
+| [`docs/api.md`](docs/api.md) | Todas as rotas `/api/v1` (método, corpo, resposta, erros e eventos SSE); a versão interativa está no Swagger em `/docs` |
+| [`docs/testes.md`](docs/testes.md) | Suítes (unitária, integração com Mongo real e E2E), como rodar cada uma, CI, cobertura e processo de entrega |
+| [`docs/EVOLUCOES.md`](docs/EVOLUCOES.md) | Spec de evoluções (EV-xx), riscos (RK-xx) e roadmap |
+
 ## 1. Problema
 
 Ouvir pessoas em profundidade é caro. Uma entrevista qualitativa exige entrevistador treinado,
@@ -63,190 +73,42 @@ entrevistada**.
 
 ## 3. Arquitetura
 
-### Visão geral
-
-Três processos e um provedor externo. O frontend é uma SPA que captura e reproduz áudio no
-navegador; a API concentra toda a regra de negócio e é o único ponto que fala com a OpenAI (ou com
-o provider `fake`, offline); o MongoDB guarda roteiros, participantes, entrevistas e sínteses em
-quatro coleções. Toda a API de negócio fica sob `/api/v1`; só `/health` fica na raiz.
+Três processos e um provedor externo: uma SPA React que captura e reproduz áudio no navegador, uma
+API FastAPI que concentra toda a regra de negócio (e é o único ponto que fala com a OpenAI, ou com o
+provider `fake`, offline) e um MongoDB com quatro coleções. Toda a API de negócio fica sob
+`/api/v1`; só `/health` fica na raiz.
 
 ```mermaid
 flowchart LR
-    subgraph Navegador
-        UI[React SPA: screens, hooks, MediaRecorder, Audio]
-    end
-    subgraph API_FastAPI[API - FastAPI]
-        EP[Endpoints /api/v1: scripts, participants, session, turn, voice]
-        SV[Services: Script, Participant, Session, Interview, Synthesis]
-        PV[Providers: LLMProvider, SpeechProvider - OpenAI ou fake]
-        RP[Repositórios: Script, Participant, Session, Synthesis]
-    end
-    DB[(MongoDB: interview_scripts, participants, interview_sessions, syntheses)]
-    AI[OpenAI: whisper-1, gpt-4o-mini-tts, gpt-4o-mini]
-
-    UI -- HTTP/JSON e audio --> EP
-    EP --> SV
-    SV --> RP
-    RP --> DB
-    SV --> PV
-    PV --> AI
+    UI["SPA React"] -- "HTTP, multipart e SSE" --> EP["Endpoints /api/v1"]
+    EP --> SV["Services"]
+    SV --> RP["Repositories"]
+    RP --> DB[("MongoDB")]
+    SV --> PV["Providers: OpenAI ou fake"]
 ```
 
-### Camadas do backend
+Camadas do backend (`backend/app/`): **endpoints** (`api/v1/endpoints/`) traduzem HTTP em chamadas
+de **serviços** (`services/`), que usam **repositórios** (`repositories/`, os únicos que conhecem o
+Mongo) e **providers** de IA (`providers/`); `core/` tem configuração, medidor de uso, log JSON e
+erros. Cada classe recebe seus colaboradores pelo construtor (montados em `api/deps.py`), o que
+permite trocar OpenAI e Mongo por dublês nos testes.
 
-| Camada | Pasta | Responsabilidade |
-|---|---|---|
-| Endpoints | `app/api/v1/endpoints/` | Traduzem HTTP em chamadas de serviço (`scripts`, `participants`, `session`, `turns`, `voice`); erros de domínio viram 404/409, `ValueError` vira 400 e `ProviderError` vira 502 em `app/main.py` |
-| Injeção de dependência | `app/api/deps.py` | Singletons do banco, dos 4 repositórios, dos providers e dos serviços, usados pelo `Depends` |
-| Serviços | `app/services/` | Regra de negócio: `ScriptService` (edição segura e exclusão de roteiros), `ParticipantService`, `SessionService` (ciclo da sessão; liga roteiro, participante e sessão), `InterviewService` (condução da conversa), `SynthesisService` (síntese salva e regeneração) |
-| Providers | `app/providers/` | Abstrações `LLMProvider` (`complete_json`, `complete_text`) e `SpeechProvider` (`transcribe`, `synthesize`); implementações OpenAI assíncronas (`OpenAILLMProvider`, `OpenAISpeechProvider`) e `Fake*` para modo offline; `factory.py` escolhe por `LLM_PROVIDER`; falhas viram `ProviderError` |
-| Repositórios | `app/repositories/` | `BaseRepository[T]` genérico (CRUD, `upsert`, índices, `save` com controle otimista de `versao`) e um repositório por coleção; únicos que conhecem o Mongo |
-| Esquemas | `app/schemas/` | Modelos Pydantic de entrada, saída e do estado persistido, incluindo `DecisionResult` (saída validada do LLM) |
-| Banco | `app/db/` | Cliente Motor, nomes das coleções, seed do roteiro padrão e dados de demonstração |
-| Importação | `app/importing/` | `TextExtractor` (classe abstrata) com uma implementação por formato (texto/markdown, CSV, DOCX, PDF), escolhida por extensão em `extractor_for`; `QuestionnaireParser` transforma o texto em rascunho de roteiro pelo LLM, com perguntas abertas |
-| Convite | `app/services/invite_service.py`, `app/core/links.py` | `InviteService` serve o convite público e abre a sessão do participante; `build_invite_link` monta o link a partir de `FRONTEND_URL` |
-| Prompts | `app/prompts/` | Texto dos prompts de condução e de síntese, separado do código que os executa |
-
-Cada serviço e repositório recebe seus colaboradores pelo construtor (provider de IA, banco,
-outros repositórios); quem monta tudo é `app/api/deps.py`. É isso que permite substituir OpenAI e
-Mongo por dublês nos testes sem tocar em rede.
-
-### Endpoints
-
-Todas as rotas abaixo ficam sob `/api/v1`, exceto `GET /health` (raiz, usado pelo Compose).
-`422` (corpo ou parâmetro inválido) vale para qualquer rota que recebe dados e não é repetido.
-
-| Método | Rota | Responsabilidade | Erros principais |
-|---|---|---|---|
-| `GET` | `/scripts?ativos=true` | Lista roteiros com contagens (perguntas, sessões, concluídas, em andamento); `ativos=false` inclui os desativados | — |
-| `POST` | `/scripts` | Cria roteiro (`201`); a ordem das perguntas é a posição na lista | — |
-| `POST` | `/scripts/upload` | Questionário (multipart `file`: `.txt`, `.md`, `.csv`, `.docx`, `.pdf`) para **rascunho** de roteiro; não salva nada, a pessoa revisa e publica pelo `POST /scripts` | `413` acima de `MAX_UPLOAD_BYTES`; `415` formato não aceito; `422` arquivo ilegível, sem texto ou sem perguntas |
-| `GET` | `/scripts/{script_id}` | Roteiro completo | `404` |
-| `PUT` | `/scripts/{script_id}` | Edita campos, perguntas e persona | `404`; `409` roteiro padrão (não pode ser desativado nem ter perguntas alteradas), perguntas de roteiro que já tem entrevistas (concluídas ou não; crie um novo roteiro) ou versão velha |
-| `DELETE` | `/scripts/{script_id}` | Sem sessões, apaga; com sessões, só desativa (`204`) | `404`; `409` roteiro padrão |
-| `GET` | `/scripts/{script_id}/sessions?status=&limit=` | Resumo das sessões do roteiro (`status`: `em_andamento` ou `concluida`; `limit` 1 a 200, padrão 50) | `404` roteiro |
-| `GET` | `/scripts/{script_id}/painel` | Painel do roteiro: sessões, taxa de conclusão, duração média, ações, aprofundamentos por pergunta, custo, temas mais citados, entrevistas por dia (fuso de São Paulo) e canais | `404` |
-| `GET` | `/scripts/{script_id}/sintese` | Relatório cruzado já salvo do roteiro (`escopo: roteiro`) | `404` roteiro ou relatório ainda não gerado |
-| `POST` | `/scripts/{script_id}/sintese?refresh=false` | Devolve o relatório salvo; sem ele (ou com `refresh=true`) gera pelo LLM a partir das sínteses de sessão (no máximo 30, com teto de 12 mil caracteres no prompt) e grava | `404`; `409` menos de 2 sínteses de sessão; `502` LLM |
-| `GET` | `/scripts/{script_id}/convite` | Slug e link público de convite do roteiro | `404` |
-| `GET` | `/scripts/{script_id}/qrcode.svg` | QR code (SVG) do link de convite | `404` |
-| `GET` | `/participants` | Lista participantes | — |
-| `POST` | `/participants` | Cria participante, sem identificação obrigatória (`201`) | — |
-| `GET` | `/participants/{participant_id}` | Um participante | `404` |
-| `PUT` | `/participants/{participant_id}` | Atualiza campos (vale a última escrita) | `404` |
-| `DELETE` | `/participants/{participant_id}` | Apaga (`204`) | `404`; `409` se tem entrevistas |
-| `POST` | `/session` | Abre sessão num roteiro (corpo opcional `script_id`, `participant_id`; sem corpo usa o roteiro padrão) e devolve `session_id`, 1ª pergunta, título e total de perguntas | `404` roteiro ou participante; `409` roteiro desativado |
-| `GET` | `/convite/{slug}` | **Pública.** Dados do roteiro para a tela de entrada do participante (título, tema, descrição, persona, total de perguntas, link) | `404` convite inválido ou roteiro desativado |
-| `POST` | `/convite/{slug}/sessao` | **Pública.** Cria o participante (todos os campos opcionais: `canal` `voz`/`texto`, `apelido`, `faixa_etaria`, `regiao`) e abre a sessão (`201`, mesma resposta de `POST /session`) | `404` convite inválido ou encerrado |
-| `GET` | `/session/{id}` | Estado completo da entrevista | `404` |
-| `GET` | `/session/{id}/detalhes` | Sessão com roteiro e participante resolvidos (`$lookup`) | `404` |
-| `DELETE` | `/session/{id}` | Apaga a sessão e, em cascata, a síntese dela (`204`) | `404` |
-| `POST` | `/session/{id}/finish` | Encerra a entrevista (idempotente) | `404`; `409` se a sessão mudou de novo durante o encerramento |
-| `POST` | `/session/{id}/synthesis?refresh=false` | Devolve a síntese salva; sem síntese (ou com `refresh=true`) gera pelo LLM e grava | `400` entrevista não encerrada; `404`; `502` LLM |
-| `GET` | `/session/{id}/synthesis` | Síntese já salva (completa, com `temas`, `lacunas`, `modelo`) | `404` sessão ou síntese ainda não gerada |
-| `POST` | `/turn/{id}` | Processa a resposta (`texto`) e devolve `fala`, `finalizada`, `indice_atual` | `404`; `409` entrevista encerrada ou sessão alterada por outra ação |
-| `POST` | `/turn/{id}/stream` | Mesmo turno, em SSE (`text/event-stream`): `pensando` (na hora), `frase` (`texto`, `indice`, `finalizada`, uma por frase da fala decidida), `fim` (mesmo corpo de `POST /turn/{id}`) e `erro` (`detail`, após o início do stream). O LLM é chamado uma vez; o turno é gravado antes da 1ª frase e sobrevive à desconexão do cliente | `404` e `409` antes de abrir o stream |
-| `POST` | `/voice/transcricao?session_id=` | Áudio (multipart `file`) para texto; `session_id` (opcional) atribui os segundos de áudio à sessão nas métricas | `400` áudio vazio ou ininteligível; `413` acima de `MAX_AUDIO_BYTES`; `502` |
-| `POST` | `/voice/fala?session_id=` | Texto para áudio `audio/mpeg`; `session_id` (opcional) atribui os caracteres de TTS à sessão | `502` |
-| `GET` | `/health` (raiz) | Verificação de saúde | — |
-
-Códigos: `400` regra de estado violada (`ValueError`) ou áudio inválido, `404` recurso inexistente,
-`409` conflito de estado, `413` áudio grande demais, `502` falha do provedor de IA (inclui chave
-ausente).
+Em cada turno, um grafo LangGraph (`services/interview_graph.py`) faz uma checagem de segurança
+determinística e **uma única chamada ao LLM**, que decide entre aprofundar, avançar ou encerrar.
+O diagrama de sequência de um turno em streaming, o grafo completo e a estrutura do frontend estão
+em [`docs/arquitetura.md`](docs/arquitetura.md); as rotas, em [`docs/api.md`](docs/api.md).
 
 ### Fluxo de uma entrevista
 
 1. O frontend lista os roteiros (`GET /scripts`) e a pessoa escolhe um.
 2. `POST /session` com o `script_id` abre a sessão e grava a primeira pergunta do roteiro.
-3. A cada turno: a fala é transcrita, enviada em `POST /turn/{id}` e o LLM decide aprofundar,
-   avançar ou encerrar; a API devolve a próxima fala e o front a reproduz em áudio.
+3. A cada turno: a fala é transcrita, enviada em `POST /turn/{id}/stream` (SSE) e o LLM decide
+   aprofundar, avançar ou encerrar; a API devolve a fala por frase e o front a reproduz em áudio.
 4. Ao encerrar (`finish`), a tela de devolutiva pede a síntese; ela é gravada em `syntheses` e,
    nas próximas consultas, vem do banco sem nova chamada ao LLM.
 5. **Falha do LLM no meio do turno:** a decisão é validada e tentada de novo uma vez; se continuar
    inválida ou o provedor falhar, o turno **avança para a próxima pergunta do roteiro** em vez de
    derrubar a entrevista.
-
-```mermaid
-sequenceDiagram
-    participant U as Entrevistado
-    participant F as Frontend
-    participant A as API
-    participant M as MongoDB
-    participant O as Provedor de IA
-
-    F->>A: GET /api/v1/scripts
-    A->>M: lista roteiros ativos e contagens
-    A-->>F: roteiros
-    F->>A: POST /api/v1/session (script_id)
-    A->>M: lê o roteiro e grava a sessão com a 1ª pergunta
-    A-->>F: session_id + pergunta
-    F->>A: POST /api/v1/voice/fala
-    A->>O: gpt-4o-mini-tts
-    A-->>F: áudio da pergunta
-    U->>F: responde falando (MediaRecorder)
-    F->>A: POST /api/v1/voice/transcricao
-    A->>O: whisper-1
-    A-->>F: texto transcrito
-    F->>A: POST /api/v1/turn/{session_id}
-    A->>M: carrega a sessão e o roteiro dela
-    A->>O: decide aprofundar ou avançar (JSON validado, 1 retry)
-    Note over A,O: se falhar de novo, fallback: advance
-    A->>M: salva turnos e perfil (versao + 1)
-    A-->>F: próxima fala + finalizada
-    Note over F,A: repete até finalizada = true
-    F->>A: POST /api/v1/session/{id}/finish
-    F->>A: POST /api/v1/session/{id}/synthesis
-    A->>M: já existe síntese salva?
-    A->>O: se não, gera o relatório
-    A->>M: grava a síntese na coleção syntheses
-    A-->>F: síntese da entrevista
-```
-
-### Grafo de decisão (LangGraph)
-
-`InterviewGraphBuilder` (`app/services/interview_graph.py`) compila o grafo executado a cada
-turno. Há **uma única chamada ao LLM por turno** (nó `decide`); a checagem de segurança que vem
-antes é determinística (`app/services/safety.py`) e não usa rede:
-
-```mermaid
-flowchart LR
-    START((START)) --> safety["safety_check"]
-    safety -->|pedido_parar| parar["encerrar_a_pedido"]
-    safety -->|sofrimento| acolher["acolher"]
-    safety -->|nenhum| decide["decide<br/>chama o LLM"]
-    decide -->|risco| acolher
-    decide -->|deepen| aprof["aprofundar"]
-    decide -->|advance| trans["transicionar"]
-    decide -->|finish| enc["encerrar"]
-    parar --> END((END))
-    acolher --> END
-    aprof --> END
-    trans --> END
-    enc --> END
-```
-
-Cada nó final tem uma responsabilidade só: `aprofundar` fala a próxima sondagem (com o
-reconhecimento do que a pessoa disse), `transicionar` avança para a próxima pergunta,
-`encerrar` fecha a entrevista, `encerrar_a_pedido` atende um pedido claro de parar e `acolher`
-trata sofrimento. O avanço pelas perguntas do roteiro (`script.perguntas`, cada uma com
-`max_aprofundamentos`) acontece nesses nós:
-
-```mermaid
-stateDiagram-v2
-    [*] --> Pergunta1
-    Pergunta1 --> Pergunta1: deepen
-    Pergunta1 --> Pergunta2: advance
-    Pergunta2 --> Pergunta2: deepen
-    Pergunta2 --> PerguntaN: advance
-    PerguntaN --> PerguntaN: deepen
-    PerguntaN --> Encerrada: advance / finish
-    Encerrada --> [*]
-```
-
-Cada transição é decidida pelo LLM no nó `decide`; os nós do grafo aplicam o efeito
-(`current_index += 1`, marca `finished`) e o `run_turn` anexa o turno e persiste o estado. Duas
-regras do código corrigem o LLM: `finish` antes da última pergunta vira `advance`, e `deepen` além de
-`max_aprofundamentos` da pergunta também vira `advance`.
 
 ### Realismo do entrevistador
 
@@ -267,45 +129,25 @@ A fase 3 (`docs/EVOLUCOES.md`, seção 5; referências na seção 13) deixa a co
 - **Interface:** onda de áudio por estado, legenda ao vivo, confirmação da transcrição (3 s, com
   opção de corrigir) e progresso "Pergunta N de M".
 
-A base de pesquisa (atrasos dinâmicos, digitação humana, sondagens e turn-taking) está citada na
-seção 13 de `docs/EVOLUCOES.md`.
+### Decisões de projeto (resumo)
 
-### Decisões de projeto
+- **A API não guarda estado em memória:** o progresso vive no documento da sessão, recarregado a
+  cada turno.
+- **Providers atrás de abstrações** (`LLMProvider`, `SpeechProvider`); com `LLM_PROVIDER=fake` tudo
+  responde de forma determinística, sem rede e sem chave.
+- **Cuidado (safety):** sofrimento (por regras ou pelo LLM) gera um acolhimento que cita o CVV
+  (188, cvv.org.br) e **encerra a sessão**; só o tipo do alerta é guardado, nunca o texto da
+  pessoa. A parada determinística é conservadora: só pedidos claros e curtos encerram, e **pergunta
+  nunca encerra**.
+- **A saída do LLM é validada** (Pydantic), com uma nova tentativa e fallback para `advance`; os
+  logs registram só o tipo do erro, nunca o conteúdo da fala.
+- **Concorrência otimista** (`versao`): uma cópia velha da sessão nunca reabre uma entrevista
+  encerrada (`409`).
+- **Regras de exclusão preservam o histórico:** apagar sessão apaga a síntese dela; roteiro com
+  sessões só é desativado; o roteiro padrão e participantes com entrevistas não são apagados.
+- **O áudio nunca é armazenado:** só o texto persiste.
 
-- **A API não guarda estado em memória.** Todo o progresso da entrevista vive no documento do
-  Mongo e é recarregado a cada turno, então qualquer instância da API atende qualquer requisição.
-- **Providers atrás de abstrações.** `LLMProvider` e `SpeechProvider` isolam o SDK da OpenAI
-  (cliente assíncrono, `max_retries=0`, timeout `LLM_TIMEOUT_SECONDS`); nenhum endpoint ou serviço
-  o importa. Com `LLM_PROVIDER=fake`, `FakeLLMProvider` e `FakeSpeechProvider` respondem de forma
-  determinística, sem rede e sem chave: serve para demo offline e para testes.
-- **A decisão de condução é um grafo.** O grafo LangGraph tem `safety_check`, `decide` (executa o
-  `DECISION_PROMPT` e devolve `deepen`, `advance` ou `finish` em JSON) e os nós `aprofundar`,
-  `transicionar`, `encerrar`, `encerrar_a_pedido` e `acolher`, isolando a política de condução.
-- **Cuidado (safety).** Sofrimento (detectado por regras ou pelo LLM) gera um acolhimento que cita o
-  CVV (188, cvv.org.br) e **encerra a sessão**; só o tipo do alerta é guardado (`profile.alerta`),
-  nunca o texto da pessoa. A parada determinística é conservadora: só pedidos claros e curtos
-  encerram, e **pergunta nunca encerra** (o resto fica com o LLM).
-- **A saída do LLM é validada, com retry e fallback.** O JSON vira `DecisionResult` (Pydantic:
-  `action` restrito, `deepen` exige fala, `profile_updates` normalizado para texto). Resposta
-  inválida ou erro do provedor gera uma segunda tentativa (`MAX_DECISION_ATTEMPTS = 2`); esgotadas,
-  usa-se `FALLBACK_DECISION` (`advance`). Os logs registram só o tipo do erro, nunca o conteúdo
-  da fala do participante.
-- **Síntese salva (EV-13).** A síntese fica em `syntheses`; `POST /session/{id}/synthesis` devolve
-  a salva sem chamar o LLM, e só `?refresh=true` gera de novo (e paga a chamada).
-- **API versionada em `/api/v1`.** O frontend monta todas as URLs com esse prefixo em
-  `src/services/api.js`.
-- **Concorrência otimista.** Sessões e roteiros têm o campo `versao`: `BaseRepository.save` só grava
-  se o documento ainda está na versão lida e, senão, levanta `ConflictError` (`409`). Um turno
-  lento que termina depois de "Concluir" não reabre a entrevista; já `finish` relê e tenta de novo,
-  então encerrar sempre vence.
-- **Regras de exclusão preservam o histórico.** Apagar uma sessão apaga também a síntese dela, em
-  cascata; roteiro com sessões é apenas desativado, e o roteiro padrão não pode ser apagado nem
-  desativado; participante com entrevistas não pode ser apagado (`409`).
-- **Regras de estado são checadas no servidor.** Responder a uma entrevista encerrada devolve
-  `409`, e pedir a síntese antes do encerramento levanta `ValueError`, convertido em `400` pelo
-  handler registrado em `app/main.py`.
-- **O áudio nunca é armazenado.** A gravação vai para a transcrição e é descartada; só o texto
-  persiste. O tamanho máximo é `MAX_AUDIO_BYTES` (`413` acima disso).
+Justificativas e detalhes em [`docs/arquitetura.md`](docs/arquitetura.md).
 
 ## 4. Tecnologias
 
@@ -315,9 +157,9 @@ seção 13 de `docs/EVOLUCOES.md`.
 | IA | OpenAI — `whisper-1` (transcrição), `gpt-4o-mini-tts` (voz), modelo de texto (`LLM_MODEL`, padrão `gpt-4o-mini`) para condução e síntese; provider `fake` offline |
 | Banco de dados | MongoDB 7 (NoSQL), acesso assíncrono via Motor |
 | Frontend | React 18, Vite, React Router, `fetch` (cliente único em `services/api.js`), tokens de design em CSS com modo claro e escuro |
-| Testes | pytest, pytest-cov, mongomock-motor |
+| Testes | pytest, pytest-cov, mongomock-motor (backend); Playwright (E2E); ESLint (lint do frontend) |
 | Infra | Docker e Docker Compose |
-| CI | GitHub Actions (`.github/workflows/backend-ci.yml`) |
+| CI | GitHub Actions (`.github/workflows/backend-ci.yml` e `frontend-ci.yml`) |
 
 ## 5. Como executar
 
@@ -397,47 +239,47 @@ nunca toca em dados reais.
 
 ## 6. Testes e cobertura
 
-Os testes automatizados do backend rodam sem chamadas reais à OpenAI (providers substituídos por
-dublês ou pelo `fake`) e sem MongoDB instalado: o banco é simulado em memória com
-`mongomock-motor`, que executa filtros, índices únicos e pipelines de agregação.
+Três suítes (detalhes e comandos em [`docs/testes.md`](docs/testes.md)):
 
-Estado atual: **587 testes passando, 10 pulados** (os de integração `-m mongo`, que exigem `MONGO_TEST_URI`),
-**cobertura de 98,3%** (mínimo exigido: 70%, com medição de branches).
+| Suíte | Banco | Quantidade |
+|---|---|---|
+| Unitários e de API (pytest) | MongoDB simulado em memória (`mongomock-motor`), sem OpenAI | 587 |
+| Integração (`pytest -m mongo`) | MongoDB real, via `MONGO_TEST_URI` | 13 (pulados sem a variável) |
+| E2E (Playwright) | MongoDB real (`aep_e2e`) e `LLM_PROVIDER=fake` | 7, em 6 arquivos |
 
-Verificação completa da entrega (pytest com cobertura mínima + build do frontend + higiene de
-arquivos proibidos):
+Estado atual do backend: **587 testes passando, 13 pulados** (os de integração),
+**cobertura de 98,3%** (mínimo exigido: 70%, com medição de branches e sem `omit`).
+
+Verificação completa da entrega (pytest com cobertura mínima + lint e build do frontend +
+higiene de arquivos proibidos):
 
 ```bash
 bash scripts/verify-delivery.sh             # tudo
 bash scripts/verify-delivery.sh --backend   # só backend
 bash scripts/verify-delivery.sh --frontend  # só frontend
+bash scripts/verify-delivery.sh --integration   # pytest -m mongo (exige MONGO_TEST_URI)
+bash scripts/verify-delivery.sh --e2e           # Playwright (exige MongoDB local)
 ```
 
-Só os testes do backend:
+Só os testes do backend e a cobertura:
 
 ```bash
 cd backend && .venv/bin/python -m pytest        # Windows: .venv/Scripts/python
+cd backend && .venv/bin/python -m pytest --cov-fail-under=70
+cd backend && .venv/bin/python -m pytest --cov-report=html     # backend/htmlcov/
 ```
 
-Os testes de integração (`-m mongo`) repetem índices, `$lookup`, agregações do painel e o `$pull` das citações (que o mongomock ignora) num **MongoDB real**.
-Sem `MONGO_TEST_URI` eles são pulados (são os 10 acima); na CI, um container `mongo:7` os executa:
+Integração com Mongo real (índices, `$lookup`, painel e o `$pull` das citações, que o mongomock
+ignora) e E2E:
 
 ```bash
 docker compose up -d mongo
-cd backend && MONGO_TEST_URI=mongodb://localhost:27017 .venv/bin/python -m pytest -m mongo
+cd backend && MONGO_TEST_URI=mongodb://localhost:27017 .venv/bin/python -m pytest -m mongo --no-cov
+cd frontend && npx playwright install chromium && npx playwright test
 ```
 
-Para reproduzir a verificação de cobertura mínima usada na CI:
-
-```bash
-cd backend && .venv/bin/python -m pytest --cov-fail-under=70
-```
-
-O relatório em HTML é gerado em `backend/htmlcov/` com:
-
-```bash
-cd backend && .venv/bin/python -m pytest --cov-report=html
-```
+Na CI, o relatório de cobertura (HTML e XML) é publicado como artefato `cobertura`, com o resumo
+no job; `backend/htmlcov/` não é versionado.
 
 ## Métricas e custo
 
@@ -485,43 +327,42 @@ a preferência do sistema e guarda a escolha). A voz fica em hooks (`useRecorder
 backend/
   app/
     api/deps.py         # fábricas de serviços, repositórios e providers para o Depends
-    api/v1/router.py    # monta o prefixo /api/v1
-    api/v1/endpoints/   # rotas: scripts.py, invites.py, participants.py, session.py, turns.py e voice.py
-    core/config.py      # configurações via variáveis de ambiente
-    core/links.py       # monta o link público do convite a partir de FRONTEND_URL
-    core/errors.py      # erros de domínio (NotFoundError, ConflictError, CorruptDocumentError)
+    api/v1/             # router.py (prefixo /api/v1) e endpoints/ (scripts, invites, participants, session, turns, voice)
+    core/               # config, usage (medidor de uso), logging, links, errors
     importing/          # extratores por formato (TextExtractor) e QuestionnaireParser
     db/                 # mongodb.py, collections.py, seed.py (roteiro padrão), demo_seed.py e demo_content.py
-    prompts/            # prompts de condução e de síntese
+    prompts/            # prompts de condução, de síntese e de importação
     providers/          # LLMProvider/SpeechProvider: base, openai_provider, fake e factory
     repositories/       # BaseRepository[T] + Script, Participant, Session, Synthesis
     schemas/            # modelos Pydantic das 4 coleções, decisão do LLM, API e voz
-    services/           # Script, Import, Invite, Participant, Session, Interview, Synthesis
+    services/           # Script, Import, Invite, Participant, Session, Interview, Synthesis, grafo, safety
     main.py             # aplicação FastAPI, lifespan (índices + seed + migração), CORS e handlers
   scripts/seed_demo.py  # carga de dados de demonstração
   tests/                # testes automatizados e dublês (conftest.py)
 frontend/
   src/
-    screens/            # login, boas-vindas, roteiros, sessões, detalhe, entrevista e devolutiva
-    components/         # layout, navegação, avatar, estados de tela, tema
-    hooks/              # useRecorder, useAudioPlayer, useInterviewSession, useApiResource, useTheme
+    screens/            # login, boas-vindas, roteiros, sessões, painel, editor, importação, detalhe, entrevista, convite e devolutiva
+    components/         # layout, navegação, entrevista (onda, legenda, chat), editor, gráficos e tema
+    hooks/              # useInterviewSession, useTurnStream, useRecorder, useAudioPlayer, useVoiceActivity, useApiResource, useTheme...
     services/api.js     # cliente HTTP único (prefixo /api/v1)
     styles/             # tokens.css (modo claro/escuro), base.css, ui.js
-    utils/              # funções auxiliares (tempo)
+    utils/              # tempo.js e e2e.js
+  e2e/                  # testes Playwright (6 arquivos, 7 testes)
 scripts/verify-delivery.sh  # verificação determinística da entrega
 docs/
+  arquitetura.md, banco.md, api.md, testes.md   # documentação técnica
   EVOLUCOES.md          # spec de evoluções (EV-xx), riscos (RK-xx) e roadmap
   superpowers/plans/    # planos de implementação por fase
 .claude/
   skills/entregar/      # rotina de entrega (/entregar)
   agents/               # revisor-spec, revisor-codigo, revisor-interface
-.github/workflows/      # backend-ci.yml
+.github/workflows/      # backend-ci.yml e frontend-ci.yml
 ```
 
 ### Modelo de dados (NoSQL)
 
 Quatro coleções no MongoDB, ligadas por **referência** (campos `*_id`) e com **subdocumentos**
-aninhados em três delas. Planejamento e decisões: `docs/superpowers/plans/2026-11-09-multi-colecao.md`.
+aninhados:
 
 ```
 interview_scripts ◄── script_id ── interview_sessions ── participant_id ──► participants
@@ -529,72 +370,25 @@ interview_scripts ◄── script_id ── interview_sessions ── participa
         └──────── script_id ── syntheses ── session_id ┘
 ```
 
-| Coleção | Conteúdo | Objetos complexos | Índices |
-|---|---|---|---|
-| `interview_scripts` | Roteiros: `titulo`, `tema`, `descricao`, `slug_convite`, `ativo`, `versao` (o seed "Entrevista generalista" é criado no startup) | `perguntas[]` (`ordem`, `texto`, `objetivo`, `max_aprofundamentos`), `origem{}` (`tipo`, `arquivo`), `persona{}` (`nome`, `tom`) | `script_id` único, `slug_convite` único, `ativo` |
-| `participants` | Participante, sem identificação obrigatória: `apelido`, `faixa_etaria`, `regiao`, `canal` (`voz`/`texto`) | — | `participant_id` único |
-| `interview_sessions` | Estado de uma entrevista; referencia roteiro (`script_id`) e participante (`participant_id`, opcional) | `conversation[]` (turnos com `pergunta_ordem`, `acao`, `latencia_ms`), `profile{}`, `metricas{}` (`llm_input_tokens`, `llm_output_tokens`, `stt_seconds`, `tts_chars`, `tokens`, `segundos_audio`, `custo_usd`) | `session_id` único, (`script_id`, `created_at`), `participant_id` |
-| `syntheses` | Síntese por sessão (`escopo: sessao`, com `session_id`) ou por roteiro (`escopo: roteiro`, sem `session_id`); `resumo`, `lacunas[]`, `modelo`; no relatório do roteiro também `divergencias[]` e `sessoes_usadas`. Ids fixos: `sessao:{session_id}` e `roteiro:{script_id}` | `temas[]` (`tema`, `pontos[]`, `citacoes[]` com `texto` e `session_id`) | `synthesis_id` único, `session_id`, (`script_id`, `escopo`) |
+| Coleção | Conteúdo | Objetos complexos |
+|---|---|---|
+| `interview_scripts` | Roteiros (`titulo`, `tema`, `slug_convite`, `ativo`, `versao`); o seed "Entrevista generalista" é criado no startup | `perguntas[]`, `persona{}`, `origem{}` |
+| `participants` | Participante sem identificação obrigatória (`apelido`, `faixa_etaria`, `regiao`, `canal`) | — |
+| `interview_sessions` | Estado de uma entrevista; referencia roteiro e participante | `conversation[]`, `profile{}`, `metricas{}` |
+| `syntheses` | Síntese por sessão (`escopo: sessao`) ou por roteiro (`escopo: roteiro`) | `temas[]` com `citacoes[]` |
 
-A síntese de sessão e o relatório cruzado por roteiro (EV-33) são gerados pela API. As citações só
-entram se forem trecho literal da fala do participante e são guardadas como o trecho original; ao
-apagar uma sessão, suas citações saem dos relatórios de roteiro (`$pull` atômico).
-
-Documento de `interview_sessions`:
-
-```json
-{
-  "session_id": "df7c97e3-...",
-  "script_id": "entrevista-generalista",
-  "participant_id": null,
-  "asked_indices": [0],
-  "current_index": 1,
-  "finished": false,
-  "status": "em_andamento",
-  "versao": 3,
-  "profile": { "ocupacao": "agente comunitária de saúde" },
-  "metricas": { "llm_input_tokens": 0, "llm_output_tokens": 0, "stt_seconds": 0, "tts_chars": 0, "tokens": 0, "segundos_audio": 0, "custo_usd": 0 },
-  "conversation": [
-    { "role": "interviewer", "text": "Para começar...", "timestamp": "2026-11-09T19:37:32Z", "pergunta_ordem": 1, "acao": null, "latencia_ms": null },
-    { "role": "participant", "text": "Eu trabalho...", "timestamp": "2026-11-09T19:37:50Z", "pergunta_ordem": 1, "acao": null, "latencia_ms": null },
-    { "role": "interviewer", "text": "Como o tema...", "timestamp": "2026-11-09T19:37:51Z", "pergunta_ordem": 2, "acao": "advance", "latencia_ms": 812 }
-  ],
-  "created_at": "2026-11-09T19:37:32Z",
-  "updated_at": "2026-11-09T19:37:51Z"
-}
-```
-
-`status` é derivado de `finished`. `versao` é o controle otimista de concorrência (também usado em
-`interview_scripts`): uma gravação feita a partir de uma cópia velha da sessão (por exemplo, um
-turno lento que termina depois de "Concluir") é recusada com `409` em vez de reabrir a entrevista.
-
-Consultas que usam os relacionamentos (`app/repositories/session_repository.py`):
-
-- `get_details`: `$lookup` sessão → roteiro → participante, numa única consulta.
-- `list_summaries` e `count_by_script`: resumo das sessões e contagens por roteiro (total e
-  concluídas) usados nas telas de roteiros.
-- `script_dashboard`: um `$facet` com `$group`, `$unwind`, `$filter` e `$cond` — total de sessões,
-  taxa de conclusão, duração e respostas médias, distribuição de ações (`deepen`/`advance`/`finish`),
-  aprofundamentos por pergunta, custo, temas e canais; os dias são agrupados em Python no fuso
-  America/Sao_Paulo. É a base de `GET /scripts/{id}/painel`.
-
-Sessões gravadas pela v0.1.0 são migradas no startup, de forma idempotente: ganham `script_id`
-do roteiro generalista (que tem as mesmas quatro perguntas), `status` e `versao`, e a síntese
-antiga sai do documento da sessão para `syntheses` (`modelo: "v0.1.0"`).
+As citações só entram se forem trecho literal da fala do participante; ao apagar uma sessão, suas
+citações saem dos relatórios de roteiro (`$pull` atômico). Sessões da v0.1.0 são migradas no startup
+de forma idempotente. Campos, exemplo real de cada coleção, índices exatos, pipelines de agregação
+(`$lookup`, `$facet`) e regras de exclusão: [`docs/banco.md`](docs/banco.md).
 
 ## 9. Processo de entrega
 
-Toda entrega segue a rotina `/entregar` (`.claude/skills/entregar/SKILL.md`):
-
-1. **Branch e commits** por item da spec (`feat/EV-xx-...`, Conventional Commits em português).
-2. **Verificação determinística:** `bash scripts/verify-delivery.sh` (pytest com cobertura mínima de
-   70%, build do frontend e checagem de arquivos proibidos).
-3. **Três revisões independentes por agentes** (`.claude/agents/`): `revisor-spec` (aderência à
-   spec e à AEP), `revisor-codigo` (backend, providers, Mongo, testes) e `revisor-interface`
-   (frontend, quando a mudança o toca). Achados P1/P2 são corrigidos com teste.
-4. **Spec atualizada:** `docs/EVOLUCOES.md` marca os itens como concluídos e registra decisões e
-   riscos; os planos de implementação ficam em `docs/superpowers/plans/`.
-5. **PR** com a verificação em números e os limites que seguem abertos.
+Toda entrega segue a rotina `/entregar` (`.claude/skills/entregar/SKILL.md`): branch e commits por
+item da spec, `bash scripts/verify-delivery.sh`, **três revisões independentes por agentes**
+(`revisor-spec`, `revisor-codigo` e `revisor-interface`), spec (`docs/EVOLUCOES.md`) atualizada e PR
+com a verificação em números e os limites abertos. Detalhes em
+[`docs/testes.md`](docs/testes.md#6-processo-de-entrega).
 
 ## 10. Limites
 
