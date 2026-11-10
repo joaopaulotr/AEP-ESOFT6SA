@@ -17,16 +17,11 @@ from app.providers.base import LLMProvider, ProviderError
 from app.schemas.decision import DecisionResult
 from app.schemas.interview import Action, InterviewState, Turn
 from app.schemas.script import InterviewScript, Question
-from app.services.safety import check_safety
+from app.services.safety import check_safety, mentions_stop
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CLOSING = "Obrigado pela sua participação, encerramos por aqui."
-
-
-def default_closing(nome: str) -> str:
-    return f"{nome} agradece a sua participação. Encerramos por aqui."
-
+DEFAULT_CLOSING = "Agradeço muito pela conversa. Encerramos por aqui."
 
 STOP_CLOSING = "Tudo bem, vamos parar por aqui. Obrigado por ter conversado comigo."
 ACOLHIMENTO = (
@@ -36,6 +31,11 @@ ACOLHIMENTO = (
     "Vou encerrar nossa conversa por aqui para você poder cuidar de si. "
     "Se quiser, a gente conversa outro dia."
 )
+
+# Marca do acolhimento no perfil (sem texto da pessoa): é o que diz, depois, que a
+# entrevista terminou no acolhimento (TurnResponse.acolhimento e a rota pública).
+ALERT_KEY = "alerta"
+ALERT_WELCOME = "acolhimento"
 
 HISTORY_WINDOW = 6
 LAST_UTTERANCES = 3
@@ -58,9 +58,7 @@ def _history_for_prompt(conversation: list[Turn]) -> str:
     if past and past[-1].role == "participant":
         past = past[:-1]
     recent = past[-HISTORY_WINDOW:]
-    lines = [
-        f"{t.role}: {_clean(t.text) if t.role == 'participant' else t.text}" for t in recent
-    ]
+    lines = [f"{t.role}: {_clean(t.text)}" for t in recent]
     return "\n".join(lines) or "(sem histórico ainda)"
 
 
@@ -94,12 +92,12 @@ def _said_before(conversation: list[Turn]) -> str:
 
 
 def _last_utterances(conversation: list[Turn]) -> str:
-    said = [t.text for t in conversation if t.role == "interviewer"][-LAST_UTTERANCES:]
+    said = [_clean(t.text) for t in conversation if t.role == "interviewer"][-LAST_UTTERANCES:]
     return "\n".join(f"- {t}" for t in said) or "(nenhuma ainda)"
 
 
 def _format_profile(profile: dict[str, str]) -> str:
-    return "; ".join(f"{k}: {v}" for k, v in profile.items()) or "nada ainda"
+    return "; ".join(f"{_clean(k)}: {_clean(v)}" for k, v in profile.items()) or "nada ainda"
 
 
 def _with_acknowledgement(reconhecimento: str, utterance: str) -> str:
@@ -126,7 +124,8 @@ class InterviewGraphBuilder:
 
     # ---- decisão (LLM) -------------------------------------------------
 
-    async def _request_decision(self, prompt: str) -> DecisionResult:
+    async def _request_decision(self, prompt: str) -> DecisionResult | None:
+        """Decisão validada, ou None se o LLM falhou nas duas tentativas."""
         for attempt in range(1, MAX_DECISION_ATTEMPTS + 1):
             try:
                 return DecisionResult.model_validate(await self._llm.complete_json(prompt))
@@ -148,8 +147,7 @@ class InterviewGraphBuilder:
                     details or "",
                     f"causa={cause}" if cause else "",
                 )
-        logger.warning("Tentativas esgotadas; usando decisão de fallback (advance).")
-        return FALLBACK_DECISION
+        return None
 
     @staticmethod
     def _current(state: GraphState) -> Question:
@@ -187,8 +185,17 @@ class InterviewGraphBuilder:
 
     async def decide(self, state: GraphState) -> dict:
         decision = await self._request_decision(self._build_prompt(state))
+        if decision is None:
+            # Sem o LLM, a lista ampla de parada decide: na dúvida, respeitar um possível
+            # pedido de parar é melhor que seguir para a próxima pergunta.
+            if mentions_stop(state["last_answer"]):
+                logger.warning("Tentativas esgotadas; mensagem com frase de parada: encerrando a pedido.")
+                return {"decision": FALLBACK_DECISION, "risco": "pedido_parar"}
+            logger.warning("Tentativas esgotadas; usando decisão de fallback (advance).")
+            return {"decision": FALLBACK_DECISION, "risco": "nenhum"}
         if decision.risco == "nenhum":
-            state["interview_state"].profile.update(decision.profile_updates)
+            updates = {k: v for k, v in decision.profile_updates.items() if k != ALERT_KEY}
+            state["interview_state"].profile.update(updates)
         return {"decision": decision, "risco": decision.risco}
 
     async def aprofundar(self, state: GraphState) -> dict:
@@ -227,8 +234,7 @@ class InterviewGraphBuilder:
 
     def _closing(self, state: GraphState, acao: Action) -> dict:
         decision = state["decision"]
-        nome = state["script"].persona.nome
-        text = decision.closing_statement.strip() or default_closing(nome)
+        text = decision.closing_statement.strip() or DEFAULT_CLOSING
         state["interview_state"].finished = True
         return {"acao": acao, "pergunta_ordem": None, "next_utterance": text}
 
@@ -239,7 +245,7 @@ class InterviewGraphBuilder:
     async def acolher(self, state: GraphState) -> dict:
         interview_state = state["interview_state"]
         interview_state.finished = True
-        interview_state.profile["alerta"] = "acolhimento"  # sem texto da pessoa
+        interview_state.profile[ALERT_KEY] = ALERT_WELCOME  # sem texto da pessoa
         text = ACOLHIMENTO.format(nome=state["script"].persona.nome)
         return {"acao": "finish", "pergunta_ordem": None, "next_utterance": text}
 
@@ -292,3 +298,8 @@ class InterviewGraphBuilder:
 
 def build_interview_graph(llm: LLMProvider):
     return InterviewGraphBuilder(llm).build()
+
+
+def ended_in_welcome(interview_state: InterviewState) -> bool:
+    """A entrevista terminou no acolhimento (o nó `acolher` encerra e marca o perfil)."""
+    return interview_state.finished and interview_state.profile.get(ALERT_KEY) == ALERT_WELCOME
