@@ -207,3 +207,26 @@ async def test_pull_citations_of_session_is_one_atomic_pull_on_real_mongo(repos,
     assert modified == 1
     assert [[c.session_id for c in t.citacoes] for t in after.temas] == [["b"], [], []]
     assert after.updated_at == before.updated_at
+
+
+@pytest.mark.parametrize("script_id", ["demo-transporte", "demo-saude", "demo-aplicativo"])
+async def test_script_dashboard_on_real_mongo_matches_mongomock(real_db, script_id):
+    """Painel do roteiro (EV-32): $lookup/$group no Mongo real = versão mongomock."""
+    from datetime import datetime, timezone
+
+    from app.db.demo_seed import seed_demo
+    from tests.conftest import memory_db
+
+    now = datetime(2026, 11, 10, 15, 0, tzinfo=timezone.utc)
+    reference_db = memory_db()
+    await seed_demo(reference_db)
+    await seed_demo(real_db)
+
+    results = []
+    for database in (real_db, reference_db):
+        script = await ScriptRepository(database).get_or_raise(script_id)
+        results.append(await SessionRepository(database).script_dashboard(script, now=now))
+    real, reference = results
+
+    assert real.total_sessoes > 0
+    assert real.model_dump() == reference.model_dump()
