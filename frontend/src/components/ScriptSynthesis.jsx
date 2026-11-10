@@ -37,6 +37,7 @@ export default function ScriptSynthesis({ scriptId, concluidas = null }) {
     async function gerar(refresh) {
         if (refresh && !window.confirm("Gerar o relatório de novo? O atual será substituído.")) return;
         setGerando(true);
+        setBloqueio("");
         setErroGerar("");
         try {
             await api.generateScriptSynthesis(scriptId, { refresh });
