@@ -125,8 +125,6 @@ def test_docx_zip_bomb_is_422():
 
 
 def test_pdf_stops_after_50_pages_or_enough_text(monkeypatch):
-    from app.importing import extractors
-
     calls = []
 
     class Page:
@@ -156,3 +154,16 @@ def test_pdf_stops_after_50_pages_or_enough_text(monkeypatch):
     monkeypatch.setattr("pypdf.PdfReader", BigReader)
     PdfExtractor().extract(b"x")
     assert len(calls) == 1
+
+
+def test_docx_real_size_is_counted_even_if_header_is_trusted(monkeypatch):
+    import zipfile
+
+    from app.importing import extractors
+
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", b"0" * (25 * 1024 * 1024))
+    monkeypatch.setattr(extractors, "_check_zip_headers", lambda infos: None)  # header "enganado"
+    with pytest.raises(ImportFileError, match="grande demais"):
+        DocxExtractor().extract(buffer.getvalue())

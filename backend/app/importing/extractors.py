@@ -3,6 +3,7 @@
 import csv
 import io
 import zipfile
+import zlib
 from abc import ABC, abstractmethod
 from typing import ClassVar
 
@@ -54,16 +55,33 @@ class CsvExtractor(TextExtractor):
         return "\n".join(cell for cell in cells if cell)
 
 
-def _check_zip_size(data: bytes) -> None:
-    """Recusa arquivo-bomba (muito grande depois de descompactar) antes de abrir."""
-    try:
-        infos = zipfile.ZipFile(io.BytesIO(data)).infolist()
-    except zipfile.BadZipFile as exc:
-        raise ImportFileError(UNREADABLE_MESSAGE) from exc
+def _check_zip_headers(infos: list[zipfile.ZipInfo]) -> None:
+    """Checagem barata: os tamanhos do cabeçalho (podem ser falsificados)."""
     if sum(i.file_size for i in infos) > MAX_DOCX_UNCOMPRESSED or any(
         i.file_size > MAX_DOCX_RATIO * max(i.compress_size, 1) for i in infos
     ):
         raise ImportFileError(DOCX_TOO_BIG_MESSAGE)
+
+
+def _check_zip_real_size(archive: zipfile.ZipFile) -> None:
+    """Checagem real: conta os bytes de fato descompactados, em blocos, e aborta no limite."""
+    total = 0
+    for info in archive.infolist():
+        with archive.open(info) as entry:
+            while chunk := entry.read(64 * 1024):
+                total += len(chunk)
+                if total > MAX_DOCX_UNCOMPRESSED:
+                    raise ImportFileError(DOCX_TOO_BIG_MESSAGE)
+
+
+def _check_zip_size(data: bytes) -> None:
+    """Recusa arquivo-bomba (muito grande depois de descompactar) antes de abrir."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            _check_zip_headers(archive.infolist())
+            _check_zip_real_size(archive)
+    except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError) as exc:
+        raise ImportFileError(UNREADABLE_MESSAGE) from exc
 
 
 class DocxExtractor(TextExtractor):
