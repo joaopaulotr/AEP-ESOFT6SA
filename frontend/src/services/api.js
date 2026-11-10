@@ -88,6 +88,18 @@ export const api = {
         return `${BASE_URL}${API_PREFIX}/scripts/${encodeURIComponent(scriptId)}/qrcode.svg`;
     },
 
+    /** Convite público (sem login): só o que a pessoa convidada precisa ver. */
+    async getPublicInvite(slug) {
+        const res = await request(`/convite/${encodeURIComponent(slug)}`);
+        return res.json();
+    },
+
+    /** Cria participante + sessão pelo convite. Devolve {session_id, pergunta, titulo, ...}. */
+    async startFromInvite(slug, data) {
+        const res = await request(`/convite/${encodeURIComponent(slug)}/sessao`, postJson(data));
+        return res.json();
+    },
+
     async listScriptSessions(scriptId, { status } = {}) {
         const qs = status ? `?status=${encodeURIComponent(status)}` : "";
         const res = await request(`/scripts/${encodeURIComponent(scriptId)}/sessions${qs}`);

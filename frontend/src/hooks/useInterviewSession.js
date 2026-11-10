@@ -4,7 +4,13 @@ import { agora } from "../utils/tempo";
 import { useAudioPlayer } from "./useAudioPlayer";
 
 
-export function useInterviewSession({ scriptId, onFinished } = {}) {
+/**
+ * `existente`: { sessionId, perguntaInicial?, titulo? } quando a sessão já foi criada
+ * (entrada pelo convite). Nesse caminho nunca cria sessão nova: sem `perguntaInicial`
+ * (página recarregada), busca a sessão e retoma da última fala do entrevistador.
+ * `voz`: false no modo texto (sem TTS). Pode mudar durante a entrevista.
+ */
+export function useInterviewSession({ scriptId, onFinished, existente, voz = true } = {}) {
     const [sessionId, setSessionId] = useState(null);
     const [perguntaAtual, setPerguntaAtual] = useState("");
     const [indiceAtual, setIndiceAtual] = useState(0);
@@ -23,6 +29,8 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
     const processandoRef = useRef(false);
     const iniciadoRef = useRef(false);
     const respostasRef = useRef(0);
+    const vozRef = useRef(voz);
+    vozRef.current = voz;
     const onFinishedRef = useRef(onFinished);
     onFinishedRef.current = onFinished;
 
@@ -41,6 +49,7 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
     }
 
     async function falar(fala) {
+        if (!vozRef.current) return;
         try {
             const audio = await api.synthesizeSpeech(fala);
             await player.play(audio);
@@ -65,9 +74,41 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
         }
     }
 
+    async function retomar(id) {
+        const det = await api.getSessionDetails(id);
+        const sessao = det.session;
+        sessionIdRef.current = id;
+        setSessionId(id);
+        setTituloRoteiro(det.script?.titulo || "");
+        const turnos = sessao.conversation || [];
+        respostasRef.current = turnos.filter((t) => t.role === "participant").length;
+        setTranscricao(turnos.map((t) => ({ quem: t.role === "participant" ? "voce" : "ia", texto: t.text, hora: "" })));
+        const ultima = [...turnos].reverse().find((t) => t.role === "interviewer");
+        if (ultima) setPerguntaAtual(ultima.text);
+        setIndiceAtual(sessao.current_index || 0);
+        if (sessao.finished) {
+            setFinalizada(true);
+            setTurno("interviewer");
+            setTimeout(() => onFinishedRef.current?.(id), 300);
+        } else {
+            setTurno("voce");
+        }
+    }
+
     async function iniciar() {
         setErroInicio("");
         try {
+            if (existente?.sessionId) {
+                if (existente.perguntaInicial) {
+                    sessionIdRef.current = existente.sessionId;
+                    setSessionId(existente.sessionId);
+                    setTituloRoteiro(existente.titulo || "");
+                    await apresentarFala(existente.perguntaInicial, 0, false);
+                } else {
+                    await retomar(existente.sessionId);
+                }
+                return;
+            }
             const data = await api.createSession({ scriptId });
             setTituloRoteiro(data.titulo || "");
             sessionIdRef.current = data.session_id;
@@ -148,7 +189,8 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
         erro,
         erroInicio,
         tentarDeNovo: iniciar,
-        audioTocando: player.tocando, 
+        audioTocando: player.tocando,
+        pararAudio: player.stop,
         enviarResposta,
         enviarAudio,
         concluir,

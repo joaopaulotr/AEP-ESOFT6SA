@@ -9,6 +9,8 @@ import ScriptSessionsScreen from "./screens/ScriptSessionsScreen";
 import SessionDetailScreen from "./screens/SessionDetailScreen";
 import ScriptEditorScreen from "./screens/ScriptEditorScreen";
 import ScriptImportScreen from "./screens/ScriptImportScreen";
+import InviteScreen from "./screens/InviteScreen";
+import ThankYouScreen from "./screens/ThankYouScreen";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 
@@ -25,6 +27,9 @@ export default function App() {
                 <Route path="/entrevistas/:scriptId" element={<ScriptSessionsScreen />} />
                 <Route path="/sessao/:sessionId" element={<SessionDetailScreen />} />
                 <Route path="/entrevista" element={<InterviewScreen />} />
+                <Route path="/e/:slug" element={<InviteScreen />} />
+                <Route path="/e/:slug/entrevista" element={<InterviewScreen publico />} />
+                <Route path="/e/:slug/obrigado" element={<ThankYouScreen />} />
                 <Route path="/feedback" element={<FeedbackScreen />} />
             </Routes>
         </BrowserRouter>
