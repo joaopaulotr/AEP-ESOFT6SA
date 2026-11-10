@@ -32,13 +32,16 @@ const FOCAVEIS = 'button, a[href], input, [tabindex]:not([tabindex="-1"])';
 export default function InviteModal({ roteiro, onClose }) {
     const dialogRef = useRef(null);
     const [aviso, setAviso] = useState("");
+    const [qrFalhou, setQrFalhou] = useState(false);
     const link = roteiro.link_convite;
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
 
     useEffect(() => {
         const aberto = document.activeElement;
         dialogRef.current?.querySelector("button")?.focus();
         function aoTeclar(e) {
-            if (e.key === "Escape") { e.stopPropagation(); onClose(); return; }
+            if (e.key === "Escape") { e.stopPropagation(); onCloseRef.current(); return; }
             if (e.key !== "Tab") return;
             const itens = [...dialogRef.current.querySelectorAll(FOCAVEIS)].filter((el) => !el.disabled);
             if (itens.length === 0) return;
@@ -52,7 +55,7 @@ export default function InviteModal({ roteiro, onClose }) {
             document.removeEventListener("keydown", aoTeclar);
             aberto?.focus?.();
         };
-    }, [onClose]);
+    }, []);
 
     async function copiar() {
         const ok = await copiarTexto(link);
@@ -61,7 +64,7 @@ export default function InviteModal({ roteiro, onClose }) {
 
     return (
         <div
-            onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+            onClick={(e) => { if (e.target === e.currentTarget) onCloseRef.current(); }}
             style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, backgroundColor: "rgba(0,0,0,0.5)" }}
         >
             <style>{CSS}</style>
@@ -71,7 +74,7 @@ export default function InviteModal({ roteiro, onClose }) {
                     <h2 id="convite-titulo" style={{ margin: 0, fontSize: 19, color: "var(--color-heading)", fontFamily: "var(--font-heading)" }}>
                         Convidar para “{roteiro.titulo}”
                     </h2>
-                    <button className="ui-btn" style={ui.btnPerigo} onClick={onClose} aria-label="Fechar">
+                    <button className="ui-btn" style={{ ...ui.btnSecundario, padding: "0 12px" }} onClick={onClose} aria-label="Fechar">
                         <X size={18} aria-hidden="true" />
                     </button>
                 </div>
@@ -90,9 +93,15 @@ export default function InviteModal({ roteiro, onClose }) {
                     </a>
                 </div>
                 <p role="status" aria-live="polite" style={{ margin: 0, minHeight: 20, fontSize: 14, color: "var(--color-primary)", fontWeight: 600 }}>{aviso}</p>
-                <img src={api.qrCodeUrl(roteiro.script_id)} alt={`QR code do convite para ${roteiro.titulo}`}
-                    width={200} height={200}
-                    style={{ alignSelf: "center", backgroundColor: "#fff", padding: 8, borderRadius: 12, border: "1px solid var(--color-border)" }} />
+                {qrFalhou ? (
+                    <p role="status" style={{ margin: 0, textAlign: "center", fontSize: 14, color: "var(--color-text-muted)" }}>
+                        Não consegui carregar o QR; use o link acima.
+                    </p>
+                ) : (
+                    <img src={api.qrCodeUrl(roteiro.script_id)} alt={`QR code do convite para ${roteiro.titulo}`}
+                        width={200} height={200} onError={() => setQrFalhou(true)}
+                        style={{ alignSelf: "center", backgroundColor: "#fff", padding: 8, borderRadius: 12, border: "1px solid var(--color-border)" }} />
+                )}
             </div>
         </div>
     );

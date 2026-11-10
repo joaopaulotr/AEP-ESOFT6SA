@@ -135,7 +135,7 @@ function Formulario({ script }) {
                 if (form.descricao.trim() !== (script.descricao ?? "")) dados.descricao = form.descricao.trim();
                 if (persona.nome !== script.persona?.nome || persona.tom !== script.persona?.tom) dados.persona = persona;
                 const originais = script.perguntas.map((p) => ({
-                    texto: p.texto, objetivo: p.objetivo ?? "", max_aprofundamentos: p.max_aprofundamentos,
+                    texto: (p.texto ?? "").trim(), objetivo: (p.objetivo ?? "").trim(), max_aprofundamentos: p.max_aprofundamentos,
                 }));
                 if (!mesmasPerguntas(perguntas, originais)) dados.perguntas = perguntas;
                 if (Object.keys(dados).length > 0) await api.updateScript(script.script_id, dados);
@@ -148,7 +148,7 @@ function Formulario({ script }) {
                 await api.createScript(dados);
                 limparRascunho();
             }
-            navigate("/entrevistas");
+            navigate("/entrevistas", { replace: true });
         } catch (err) {
             setErro(err instanceof ApiError && err.detail ? err.detail : "Não consegui salvar. Tente de novo.");
             setSalvando(false);

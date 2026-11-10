@@ -19,7 +19,14 @@ async function request(path, options = {}) {
         let detail = "";
         try {
             const body = await res.json();
-            detail = typeof body.detail === "string" ? body.detail : "";
+            if (typeof body.detail === "string") {
+                detail = body.detail;
+            } else if (Array.isArray(body.detail)) {
+                detail = body.detail
+                    .map((d) => (typeof d?.msg === "string" ? d.msg : ""))
+                    .filter(Boolean)
+                    .join("; ");
+            }
         } catch {
         
         }
