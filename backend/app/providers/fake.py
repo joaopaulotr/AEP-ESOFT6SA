@@ -1,6 +1,6 @@
 import copy
 
-from app.providers.base import LLMProvider, SpeechProvider
+from app.providers.base import LLMProvider, SpeechProvider, Tom
 
 FAKE_DECISION: dict = {
     "action": "advance",
@@ -31,5 +31,5 @@ class FakeSpeechProvider(SpeechProvider):
     async def transcribe(self, audio: bytes, filename: str = "audio.webm") -> str:
         return FAKE_TRANSCRIPTION
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, tom: Tom | None = None) -> bytes:
         return b""

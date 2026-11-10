@@ -15,6 +15,7 @@ class RecordingSpeech(SpeechProvider):
         self.transcription = "texto transcrito"
         self.audio = b"mp3-bytes"
         self.transcribe_calls: list[tuple[bytes, str]] = []
+        self.synth_calls: list[tuple[str, str | None]] = []
         self._error: Exception | None = None
 
     def fail_with(self, exc: Exception) -> None:
@@ -30,8 +31,9 @@ class RecordingSpeech(SpeechProvider):
         self.transcribe_calls.append((audio, filename))
         return self.transcription
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, tom: str | None = None) -> bytes:
         self._maybe_fail()
+        self.synth_calls.append((text, tom))
         return self.audio
 
 
@@ -118,3 +120,17 @@ def test_unconfigured_openai_provider_returns_502_not_500(monkeypatch):
         deps.reset_dependencies()
     assert r.status_code == 502
     assert r.json() == {"detail": "Falha ao se comunicar com o provedor de IA."}
+
+
+def test_speech_forwards_tom_to_the_provider(client, speech):
+    r = client.post("/api/v1/voice/fala", json={"texto": "Oi", "tom": "acolhedor"})
+    assert r.status_code == 200 and speech.synth_calls == [("Oi", "acolhedor")]
+
+
+def test_speech_without_tom_passes_none(client, speech):
+    client.post("/api/v1/voice/fala", json={"texto": "Oi"})
+    assert speech.synth_calls == [("Oi", None)]
+
+
+def test_speech_rejects_unknown_tom(client, speech):
+    assert client.post("/api/v1/voice/fala", json={"texto": "Oi", "tom": "bravo"}).status_code == 422
