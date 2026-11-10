@@ -28,6 +28,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     const sessionIdRef = useRef(null);
     const processandoRef = useRef(false);
     const iniciadoRef = useRef(false);
+    const timersRef = useRef([]);
     const respostasRef = useRef(0);
     const vozRef = useRef(voz);
     vozRef.current = voz;
@@ -37,6 +38,10 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     function setProcessando(valor) {
         processandoRef.current = valor;
         setProcessandoState(valor);
+    }
+
+    function agendar(fn, ms) {
+        timersRef.current.push(setTimeout(fn, ms));
     }
 
     function falhar(mensagem) {
@@ -68,7 +73,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
 
         if (terminou) {
             setFinalizada(true);
-            setTimeout(() => onFinishedRef.current?.(sessionIdRef.current), 1200);
+            agendar(() => onFinishedRef.current?.(sessionIdRef.current), 1200);
         } else {
             setTurno("voce");
         }
@@ -89,9 +94,11 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         if (sessao.finished) {
             setFinalizada(true);
             setTurno("interviewer");
-            setTimeout(() => onFinishedRef.current?.(id), 300);
+            agendar(() => onFinishedRef.current?.(id), 300);
         } else {
             setTurno("voce");
+            // Sessão recém-criada (nenhuma resposta ainda): fala a primeira pergunta.
+            if (respostasRef.current === 0 && ultima) falar(ultima.text);
         }
     }
 
@@ -99,14 +106,8 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         setErroInicio("");
         try {
             if (existente?.sessionId) {
-                if (existente.perguntaInicial) {
-                    sessionIdRef.current = existente.sessionId;
-                    setSessionId(existente.sessionId);
-                    setTituloRoteiro(existente.titulo || "");
-                    await apresentarFala(existente.perguntaInicial, 0, false);
-                } else {
-                    await retomar(existente.sessionId);
-                }
+                // Sempre busca a sessão: location.state sobrevive ao recarregar a página.
+                await retomar(existente.sessionId);
                 return;
             }
             const data = await api.createSession({ scriptId });
@@ -124,17 +125,24 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         if (!msg || !sessionIdRef.current || processandoRef.current) return;
 
         adicionarMensagem("voce", msg);
+        const desfazer = () => {
+            respostasRef.current = Math.max(0, respostasRef.current - 1);
+            setTranscricao((prev) => prev.slice(0, -1));
+        };
         setProcessando(true);
         setTurno("interviewer");
 
         try {
             const data = await api.sendTurn(sessionIdRef.current, msg);
             setProcessando(false);
-            await apresentarFala(data.fala, data.indice_atual, data.finalizada);
+            apresentarFala(data.fala, data.indice_atual, data.finalizada);
+            return true;
         } catch {
+            desfazer();
             setProcessando(false);
-            falhar("Erro ao enviar a resposta.");
+            falhar("Não consegui enviar sua resposta. Tente de novo.");
             setTurno("voce");
+            return false;
         }
     }
 
@@ -169,6 +177,8 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         }
         onFinishedRef.current?.(id, { respostas });
     }
+
+    useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
 
     useEffect(() => {
         if (iniciadoRef.current) return; 

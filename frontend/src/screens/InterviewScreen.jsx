@@ -111,6 +111,7 @@ function Entrevista({ publico, slug }) {
             className="ui-btn"
             style={{ ...ui.btnSecundario, opacity: podeAlternar ? 1 : 0.5 }}
             disabled={!podeAlternar}
+            aria-label={`${modoTexto ? "Prefiro falar" : "Prefiro escrever"}. Modo atual: ${modoTexto ? "escrever" : "falar"}`}
             onClick={() => setModo(modoTexto ? "voz" : "texto")}
         >
             {modoTexto ? <Mic size={16} aria-hidden="true" /> : <PenLine size={16} aria-hidden="true" />}

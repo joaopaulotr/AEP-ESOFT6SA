@@ -1,10 +1,9 @@
-import React, { useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Mic, PenLine } from "lucide-react";
 import PublicLayout from "../components/PublicLayout";
 import EstadoTela from "../components/EstadoTela";
-import { useApiResource } from "../hooks/useApiResource";
-import { api } from "../services/api";
+import { api, ApiError } from "../services/api";
 import { ui } from "../styles/ui";
 
 const FAIXAS = ["até 17", "18–29", "30–44", "45–59", "60+"];
@@ -12,7 +11,26 @@ const FAIXAS = ["até 17", "18–29", "30–44", "45–59", "60+"];
 export default function InviteScreen() {
     const { slug } = useParams();
     const navigate = useNavigate();
-    const { data: convite, carregando, erro, recarregar } = useApiResource(() => api.getPublicInvite(slug), [slug]);
+    const [convite, setConvite] = useState(null);
+    const [carregando, setCarregando] = useState(true);
+    const [erro, setErro] = useState("");
+    const [naoExiste, setNaoExiste] = useState(false);
+
+    const carregar = useCallback(async () => {
+        setCarregando(true);
+        setErro("");
+        setNaoExiste(false);
+        try {
+            setConvite(await api.getPublicInvite(slug));
+        } catch (e) {
+            if (e instanceof ApiError && e.status === 404) setNaoExiste(true);
+            else setErro(e?.detail || "Não consegui abrir o convite. Tente de novo.");
+        } finally {
+            setCarregando(false);
+        }
+    }, [slug]);
+
+    useEffect(() => { carregar(); }, [carregar]);
     const [canal, setCanal] = useState("voz");
     const [apelido, setApelido] = useState("");
     const [faixa, setFaixa] = useState("");
@@ -55,7 +73,12 @@ export default function InviteScreen() {
     return (
         <PublicLayout>
             <div style={{ ...ui.page, maxWidth: 640 }}>
-                <EstadoTela carregando={carregando} erro={erro} onRetry={recarregar} data={convite}>
+                {naoExiste && (
+                    <p role="alert" style={{ ...ui.card, textAlign: "center", fontSize: 16 }}>
+                        Esse convite não existe ou foi encerrado.
+                    </p>
+                )}
+                <EstadoTela carregando={carregando && !naoExiste} erro={erro} onRetry={carregar} data={convite}>
                     {convite && (
                         <div style={ui.card}>
                             <h1 style={ui.h1}>Oi, eu sou a {nome}.</h1>

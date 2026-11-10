@@ -18,10 +18,19 @@ export default function ChatComposer({ onSend, desabilitado = false, enviando = 
         el.style.height = `${Math.min(el.scrollHeight, linha * MAX_LINHAS + 24)}px`;
     }, [texto]);
 
-    function enviar() {
+    // Devolve o foco ao campo quando ele volta a ficar utilizável (depois de enviar).
+    const travadoAntes = useRef(travado);
+    useEffect(() => {
+        if (travadoAntes.current && !travado) ref.current?.focus();
+        travadoAntes.current = travado;
+    }, [travado]);
+
+    async function enviar() {
         if (travado || vazio) return;
-        onSend(texto.trim());
+        const original = texto;
         setTexto("");
+        const ok = await onSend(original.trim());
+        if (ok === false) setTexto((atual) => atual || original); // falhou: devolve o rascunho
     }
 
     return (
