@@ -180,3 +180,69 @@ def test_turn_is_saved_even_if_the_client_disconnects(client, fake_llm):
     session = client.portal.call(deps.get_session_repository().get_or_raise, sid)
     roles = [t.role for t in session.conversation]
     assert roles.count("participant") == 1 and roles.count("interviewer") == 2  # abertura + resposta
+
+
+def _disconnect_during_await(client, fake_llm, outcome):
+    """Cancela o consumo do stream enquanto take_turn ainda está rodando."""
+    import asyncio
+    import gc
+
+    from app.api.v1.endpoints import turns
+
+    sid = _abrir(client)
+    real = SessionService.take_turn
+    unhandled: list = []
+
+    async def run():
+        started_ev, release_ev = asyncio.Event(), asyncio.Event()
+
+        async def slow(self, session_id, text):
+            started_ev.set()
+            await release_ev.wait()
+            if outcome == "error":
+                raise RuntimeError("segredo-do-participante")
+            return await real(self, session_id, text)
+
+        SessionService.take_turn = slow
+        asyncio.get_running_loop().set_exception_handler(lambda loop, ctx: unhandled.append(ctx))
+        try:
+            sessions = app.dependency_overrides[deps.get_session_service]()
+            gen = turns._turn_events(sessions, sid, "segredo-do-participante")
+
+            async def consume():
+                async for _ in gen:
+                    pass
+
+            consumer = asyncio.ensure_future(consume())
+            await started_ev.wait()  # já dentro do await protegido
+            consumer.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await consumer
+            release_ev.set()
+            await asyncio.wait(set(turns._pending_turns))  # não recupera a exceção
+            await asyncio.sleep(0)
+            gc.collect()
+            await asyncio.sleep(0)
+        finally:
+            SessionService.take_turn = real
+
+    return sid, unhandled, run
+
+
+def test_turn_is_saved_when_client_disconnects_during_the_turn(client, fake_llm):
+    fake_llm.queue("deepen", "Me conta mais.")
+    sid, _, run = _disconnect_during_await(client, fake_llm, "ok")
+    client.portal.call(run)
+    session = client.portal.call(deps.get_session_repository().get_or_raise, sid)
+    roles = [t.role for t in session.conversation]
+    assert roles.count("participant") == 1 and roles.count("interviewer") == 2
+
+
+def test_task_exception_after_disconnect_is_retrieved_and_logged_without_text(
+    client, fake_llm, caplog
+):
+    sid, unhandled, run = _disconnect_during_await(client, fake_llm, "error")
+    with caplog.at_level("ERROR"):
+        client.portal.call(run)
+    assert unhandled == []  # nenhum "Task exception was never retrieved"
+    assert "RuntimeError" in caplog.text and "segredo-do-participante" not in caplog.text

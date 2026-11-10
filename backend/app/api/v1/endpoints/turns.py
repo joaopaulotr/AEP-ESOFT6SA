@@ -64,6 +64,14 @@ async def _turn_response(sessions: SessionService, session_id: str, texto: str) 
     )
 
 
+def _turn_done(task: asyncio.Task) -> None:
+    """Solta a task e recupera a exceção (evita "never retrieved" após desconexão),
+    logando só o tipo: nada de repr, traceback ou texto do participante."""
+    _pending_turns.discard(task)
+    if not task.cancelled() and (exc := task.exception()) is not None:
+        logger.error("Falha no turno após desconexão: %s", type(exc).__name__)
+
+
 async def _turn_events(
     sessions: SessionService, session_id: str, texto: str
 ) -> AsyncIterator[str]:
@@ -71,7 +79,7 @@ async def _turn_events(
     # a gravação (um LLM + save) termina, e a resposta dele não se perde.
     task = asyncio.ensure_future(_turn_response(sessions, session_id, texto))
     _pending_turns.add(task)
-    task.add_done_callback(_pending_turns.discard)
+    task.add_done_callback(_turn_done)
     yield _sse("pensando", {})
     try:
         response = await asyncio.shield(task)
