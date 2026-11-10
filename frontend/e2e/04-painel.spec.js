@@ -5,12 +5,12 @@ test("painel: cartões, gráficos, tabela de dados e relatório do roteiro", asy
     await page.getByRole("button", { name: "Painel do roteiro Transporte público na periferia" }).click();
 
     await expect(page.getByRole("heading", { name: "Painel: Transporte público na periferia" })).toBeVisible();
-    // Cada cartão: rótulo + valor numérico (o valor é o <strong> irmão do rótulo).
-    const valorDe = (rotulo) => page.locator("div:has(> span):has(> strong)").filter({ has: page.getByText(rotulo, { exact: true }) }).locator("> strong");
+    // Cada cartão é um grupo com o nome do rótulo; o valor é o <strong> dele.
+    const valorDe = (rotulo) => page.getByRole("group", { name: rotulo, exact: true }).locator("strong");
     await expect(valorDe("Entrevistas")).toHaveText(/^\d+$/);
     await expect(valorDe("Taxa de conclusão")).toHaveText(/^\d+\s?%$/);
     await expect(valorDe("Duração média")).toHaveText(/\d+([.,]\d+)?\s?min/);
-    await expect(valorDe("Custo médio")).toHaveText(/\d/);
+    await expect(valorDe("Custo médio")).toHaveText(/\d|—/); // "—" quando nenhuma entrevista teve custo medido
 
     for (const titulo of ["O que a entrevistadora fez", "Aprofundamentos por pergunta", "Temas mais citados", "Canais", "Entrevistas por dia"]) {
         await expect(page.getByRole("heading", { name: titulo, level: 3 })).toBeVisible();
@@ -29,5 +29,6 @@ test("painel: cartões, gráficos, tabela de dados e relatório do roteiro", asy
     await expect(gerar.or(gerarDeNovo)).toBeVisible();
     if (await gerar.isVisible()) await gerar.click();
     await expect(gerarDeNovo).toBeVisible();
-    await expect(relatorio.getByText(/Baseado em \d+ entrevistas/)).toBeVisible();
+    await expect(relatorio.getByText(/Baseado em \d+ entrevistas?/)).toBeVisible();
+    await expect(relatorio.getByRole("heading", { name: "Relatório do roteiro" })).toBeVisible();
 });

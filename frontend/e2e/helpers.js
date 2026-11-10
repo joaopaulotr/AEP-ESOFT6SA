@@ -1,6 +1,8 @@
 import { expect } from "@playwright/test";
 
-export const API = "http://127.0.0.1:8090/api/v1";
+import { API } from "./ambiente.js";
+
+export { API };
 
 /** Título único por execução/tentativa: um retry do CI nunca colide com dados de uma tentativa anterior. */
 export function tituloUnico(base) {
@@ -35,4 +37,27 @@ export async function responder(page, texto) {
     await campo.fill(texto);
     await page.getByRole("button", { name: "Enviar resposta" }).click();
     await expect(page.getByRole("log", { name: "Conversa da entrevista" })).toContainText(texto);
+}
+
+/**
+ * Junta erros de console e exceções da página; o teste termina com `expect(erros).toEqual([])`.
+ * `ignorar`: regex de mensagens esperadas (ex.: o 404 de um cenário negativo).
+ */
+export function vigiarConsole(page, ignorar = null) {
+    const erros = [];
+    page.on("console", (msg) => {
+        if (msg.type() === "error" && !(ignorar && ignorar.test(msg.text()))) erros.push(msg.text());
+    });
+    page.on("pageerror", (e) => erros.push(String(e)));
+    return erros;
+}
+
+/** Junta as mensagens de alert/confirm (e fecha cada um). */
+export function coletarDialogos(page) {
+    const dialogos = [];
+    page.on("dialog", async (d) => {
+        dialogos.push(d.message());
+        await d.dismiss();
+    });
+    return dialogos;
 }
