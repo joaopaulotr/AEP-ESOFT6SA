@@ -129,7 +129,7 @@ export default function InviteScreen() {
 const s = {
     h2: { margin: "22px 0 8px", fontSize: 17, color: "var(--color-heading)" },
     escolha: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-    opcao: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 96, borderRadius: 18, border: "2px solid var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)", fontSize: 17, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-sans)" },
+    opcao: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 96, borderRadius: 18, borderWidth: 2, borderStyle: "solid", borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)", fontSize: 17, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-sans)" },
     opcaoAtiva: { borderColor: "var(--color-primary)", background: "var(--color-accent-soft)", color: "var(--color-primary)" },
     label: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 12, fontSize: 14.5, fontWeight: 600, color: "var(--color-text)" },
     input: { minHeight: "var(--touch-target)", padding: "0 12px", borderRadius: 12, border: "1px solid var(--color-border-soft)", background: "var(--color-input-bg)", color: "var(--color-text)", fontSize: 16, fontFamily: "inherit", boxSizing: "border-box", width: "100%" },

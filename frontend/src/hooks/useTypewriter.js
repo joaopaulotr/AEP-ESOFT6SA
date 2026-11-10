@@ -94,6 +94,9 @@ export function useTypewriter() {
         });
     }
 
+    // Só na desmontagem: interrompe a frase em andamento sem tocar no estado. `parar` lê apenas
+    // refs (acabarRef), então a versão do 1º render serve; o exhaustive-deps não acusa este caso,
+    // por isso não há eslint-disable aqui (um disable sem uso viraria aviso e o lint falharia).
     useEffect(() => () => parar(false), []);
 
     return { texto, revelar, novoTurno, concluirAgora, parar, limpar };

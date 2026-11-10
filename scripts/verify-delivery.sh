@@ -44,23 +44,27 @@ verify_integration() {
 }
 
 verify_frontend() {
-  step "Frontend: instalar dependências, lint (se houver) e build (vite)"
+  step "Frontend: instalar dependências, lint (0 avisos), testes unitários (vitest) e build (vite)"
   (cd "$ROOT/frontend" && npm ci --no-audit --no-fund --silent \
-    && npm run lint --if-present --silent && npm run build --silent) \
-    || fail "lint ou build do frontend"
+    && npm run lint --silent && npm test --silent && npm run build --silent) \
+    || fail "lint, testes unitários ou build do frontend"
 }
 
 verify_e2e() {
   [ -f "$ROOT/frontend/playwright.config.js" ] \
     || fail "frontend/playwright.config.js não existe — E2E ainda não configurado"
-  step "Frontend: testes E2E (Playwright)"
-  (cd "$ROOT/frontend" && npm ci --no-audit --no-fund --silent && npx playwright test) \
+  local py
+  py="$(python_bin)"
+  step "Frontend: testes E2E (Playwright) com o backend em $("$py" --version 2>&1)"
+  (cd "$ROOT/frontend" && npm ci --no-audit --no-fund --silent \
+    && npx playwright install chromium \
+    && E2E_PYTHON="$py" npx playwright test) \
     || fail "testes E2E"
 }
 
 verify_hygiene() {
   step "Higiene: arquivos que nunca devem ser commitados"
-  if git -C "$ROOT" ls-files | grep -E '(^|/)\.env$|\.coverage$|(^|/)\.reviews/|(^|/)\.superpowers/' ; then
+  if git -C "$ROOT" ls-files | grep -E '(^|/)\.env$|\.coverage$|(^|/)coverage\.xml$|(^|/)htmlcov/|(^|/)playwright-report/|(^|/)test-results/|(^|/)\.reviews/|(^|/)\.superpowers/' ; then
     fail "arquivo proibido versionado (veja a lista acima)"
   fi
 }
