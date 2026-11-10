@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../services/api";
 import { agora } from "../utils/tempo";
 import { useAudioPlayer } from "./useAudioPlayer";
+import { useTurnStream } from "./useTurnStream";
 
 
 /**
@@ -18,18 +19,23 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     const [processando, setProcessandoState] = useState(false);
     const [finalizada, setFinalizada] = useState(false);
     const [transcricao, setTranscricao] = useState([]);
-    const [erro, setErro] = useState(null); 
+    const [erro, setErro] = useState(null);
     const [erroInicio, setErroInicio] = useState("");
     const [tituloRoteiro, setTituloRoteiro] = useState("");
+    const [legenda, setLegenda] = useState(""); // frase da IA que está tocando agora
 
     const player = useAudioPlayer();
+    const stream = useTurnStream();
 
-   
     const sessionIdRef = useRef(null);
     const processandoRef = useRef(false);
     const iniciadoRef = useRef(false);
     const timersRef = useRef([]);
     const respostasRef = useRef(0);
+    const montadoRef = useRef(true); // nada é agendado nem navega depois de desmontar
+    const tomRef = useRef(undefined); // tom da persona, usado na voz
+    const turnoPromiseRef = useRef(null); // turno em andamento (stream + áudio)
+    const interrompidoRef = useRef(false); // barge-in: as frases que ainda chegam não tocam
     const vozRef = useRef(voz);
     vozRef.current = voz;
     const onFinishedRef = useRef(onFinished);
@@ -41,7 +47,12 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     }
 
     function agendar(fn, ms) {
-        timersRef.current.push(setTimeout(fn, ms));
+        if (!montadoRef.current) return;
+        timersRef.current.push(
+            setTimeout(() => {
+                if (montadoRef.current) fn();
+            }, ms)
+        );
     }
 
     function falhar(mensagem) {
@@ -53,24 +64,34 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         setTranscricao((prev) => [...prev, { quem, texto, hora: agora() }]);
     }
 
-    async function falar(fala) {
-        if (!vozRef.current) return;
+    // Falha na síntese (null) = a frase segue só pela legenda.
+    const sintetizar = (texto) => api.synthesizeSpeech(texto, tomRef.current).catch(() => null);
+
+    /** Enfileira uma frase na fala; a legenda acompanha o áudio. */
+    function falarFrase(texto, { aoIniciar, naoAntesDe } = {}) {
+        if (!vozRef.current) return Promise.resolve();
+        return player.enfileirar(sintetizar(texto), {
+            naoAntesDe,
+            aoIniciar: () => {
+                setLegenda(texto);
+                aoIniciar?.();
+            },
+        });
+    }
+
+    async function carregarTom(id) {
         try {
-            const audio = await api.synthesizeSpeech(fala);
-            await player.play(audio);
+            const det = await api.getSessionDetails(id);
+            tomRef.current = det.script?.persona?.tom;
         } catch {
-            // Sem voz, a entrevista continua pelo texto.
+            // Sem o tom a voz usa o padrão do servidor.
         }
     }
 
-    async function apresentarFala(fala, indice, terminou) {
-        setPerguntaAtual(fala);
-        if (typeof indice === "number") setIndiceAtual(indice);
-        adicionarMensagem("ia", fala);
-        setTurno("interviewer");
-
-        await falar(fala);
-
+    async function concluirFala(terminou) {
+        await player.aguardarFila();
+        if (!montadoRef.current) return;
+        setLegenda("");
         if (terminou) {
             setFinalizada(true);
             agendar(() => onFinishedRef.current?.(sessionIdRef.current), 1200);
@@ -79,12 +100,22 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         }
     }
 
+    async function apresentarFala(fala, indice, terminou) {
+        setPerguntaAtual(fala);
+        if (typeof indice === "number") setIndiceAtual(indice);
+        adicionarMensagem("ia", fala);
+        setTurno("interviewer");
+        falarFrase(fala);
+        await concluirFala(terminou);
+    }
+
     async function retomar(id) {
         const det = await api.getSessionDetails(id);
         const sessao = det.session;
         sessionIdRef.current = id;
         setSessionId(id);
         setTituloRoteiro(det.script?.titulo || "");
+        tomRef.current = det.script?.persona?.tom;
         const turnos = sessao.conversation || [];
         respostasRef.current = turnos.filter((t) => t.role === "participant").length;
         setTranscricao(turnos.map((t) => ({ quem: t.role === "participant" ? "voce" : "ia", texto: t.text, hora: "" })));
@@ -98,7 +129,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         } else {
             setTurno("voce");
             // Sessão recém-criada (nenhuma resposta ainda): fala a primeira pergunta.
-            if (respostasRef.current === 0 && ultima) falar(ultima.text);
+            if (respostasRef.current === 0 && ultima) falarFrase(ultima.text);
         }
     }
 
@@ -114,16 +145,68 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             setTituloRoteiro(data.titulo || "");
             sessionIdRef.current = data.session_id;
             setSessionId(data.session_id);
+            if (vozRef.current) await carregarTom(data.session_id);
             await apresentarFala(data.pergunta, 0, false);
         } catch (e) {
             setErroInicio(e?.detail || "Não consegui iniciar a entrevista. O servidor está no ar?");
         }
     }
 
+    /** Barge-in / sair do modo voz: corta a fala da IA; o que ainda chegar do turno não toca. */
+    function interromper() {
+        interrompidoRef.current = true;
+        player.stop();
+        setLegenda("");
+        if (processandoRef.current) setProcessando(false);
+    }
+
+    /**
+     * Lê o turno em streaming. Resolve com {fim} ou {erro}. Em modo voz cada frase vai para a
+     * fila de áudio assim que chega (TTS em paralelo, toca em ordem).
+     */
+    async function lerTurno(id, msg) {
+        const vozAtiva = vozRef.current;
+        const frases = [];
+        let fim = null;
+        let detalheErro = "";
+        let falhou = false;
+        try {
+            await stream.enviar(id, msg, {
+                onFrase: ({ texto }) => {
+                    frases.push(texto);
+                    if (!vozAtiva || interrompidoRef.current) return;
+                    falarFrase(texto, { aoIniciar: () => setProcessando(false) });
+                },
+                onFim: (dados) => {
+                    fim = dados;
+                },
+                onErro: (dados) => {
+                    falhou = true;
+                    detalheErro = dados?.detail || "";
+                },
+            });
+        } catch {
+            falhou = true;
+        }
+        if (!montadoRef.current) return { erro: "" };
+        if (!fim || falhou) {
+            player.stop();
+            setLegenda("");
+            return { erro: detalheErro };
+        }
+        if (vozAtiva && !frases.length && !interrompidoRef.current) {
+            falarFrase(fim.fala, { aoIniciar: () => setProcessando(false) });
+        }
+        return { fim };
+    }
+
     async function enviarResposta(conteudo) {
         const msg = (conteudo ?? "").trim();
-        if (!msg || !sessionIdRef.current || processandoRef.current) return;
+        if (!msg || !sessionIdRef.current) return;
+        if (turnoPromiseRef.current) await turnoPromiseRef.current; // barge-in: espera o turno anterior fechar
+        if (!montadoRef.current || processandoRef.current) return;
 
+        interrompidoRef.current = false;
         adicionarMensagem("voce", msg);
         const desfazer = () => {
             respostasRef.current = Math.max(0, respostasRef.current - 1);
@@ -131,19 +214,31 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         };
         setProcessando(true);
         setTurno("interviewer");
+        setLegenda("");
 
-        try {
-            const data = await api.sendTurn(sessionIdRef.current, msg);
-            setProcessando(false);
-            apresentarFala(data.fala, data.indice_atual, data.finalizada);
-            return true;
-        } catch {
-            desfazer();
-            setProcessando(false);
-            falhar("Não consegui enviar sua resposta. Tente de novo.");
-            setTurno("voce");
-            return false;
-        }
+        const fase1 = lerTurno(sessionIdRef.current, msg);
+        turnoPromiseRef.current = fase1
+            .then(async (r) => {
+                if (!r.fim || !montadoRef.current) return;
+                const { fim } = r;
+                setProcessando(false);
+                setPerguntaAtual(fim.fala);
+                if (typeof fim.indice_atual === "number") setIndiceAtual(fim.indice_atual);
+                adicionarMensagem("ia", fim.fala);
+                await concluirFala(fim.finalizada);
+            })
+            .finally(() => {
+                turnoPromiseRef.current = null;
+            });
+
+        const r = await fase1;
+        if (!montadoRef.current) return false;
+        if (r.fim) return true;
+        desfazer();
+        setProcessando(false);
+        falhar(r.erro || "Não consegui enviar sua resposta. Tente de novo.");
+        setTurno("voce");
+        return false;
     }
 
     async function enviarAudio(blob) {
@@ -166,6 +261,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             ? "Você ainda não respondeu nada. Encerrar mesmo assim?"
             : "Encerrar a entrevista agora?";
         if (!window.confirm(aviso)) return;
+        stream.cancelar();
         player.stop();
         const id = sessionIdRef.current;
         if (id) {
@@ -175,16 +271,21 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
                 // Mesmo com erro, leva para o feedback.
             }
         }
-        onFinishedRef.current?.(id, { respostas });
+        if (montadoRef.current) onFinishedRef.current?.(id, { respostas });
     }
 
-    useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
+    useEffect(() => {
+        montadoRef.current = true;
+        return () => {
+            montadoRef.current = false;
+            timersRef.current.forEach(clearTimeout);
+        };
+    }, []);
 
     useEffect(() => {
-        if (iniciadoRef.current) return; 
+        if (iniciadoRef.current) return;
         iniciadoRef.current = true;
         iniciar();
-        
     }, []);
 
     return {
@@ -198,9 +299,10 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         transcricao,
         erro,
         erroInicio,
+        legenda,
         tentarDeNovo: iniciar,
-        audioTocando: player.tocando,
-        pararAudio: player.stop,
+        audioTocando: player.ocupado,
+        pararAudio: interromper,
         enviarResposta,
         enviarAudio,
         concluir,
