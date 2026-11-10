@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import DataTable from "./DataTable";
 
 const NUM = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
@@ -6,7 +6,7 @@ const NUM = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
 function resumo(titulo, dados, formatar) {
     if (!dados.length) return `${titulo}: sem dados.`;
     const top = [...dados].sort((a, b) => b.valor - a.valor).slice(0, 3)
-        .map((d) => `${d.rotulo} ${formatar(d.valor)}`).join("; ");
+        .map((d) => `${d.rotulo}: ${formatar(d.valor)}`).join("; ");
     return `${titulo}. ${dados.length} ${dados.length === 1 ? "item" : "itens"}. Maiores valores: ${top}.`;
 }
 
@@ -34,7 +34,27 @@ function Moldura({ titulo, dados, formatar, rotuloValor, children }) {
     );
 }
 
-/** Barras horizontais com valor ao lado de cada barra (rotulagem direta). */
+/** true quando o conteúdo do elemento é mais largo que ele (só então a área rolável entra no Tab). */
+function useTransborda() {
+    const ref = useRef(null);
+    const [transborda, setTransborda] = useState(false);
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return undefined;
+        const medir = () => setTransborda(el.scrollWidth > el.clientWidth + 1);
+        medir();
+        if (typeof ResizeObserver === "undefined") return undefined;
+        const obs = new ResizeObserver(medir);
+        obs.observe(el);
+        return () => obs.disconnect();
+    }, []);
+    return [ref, transborda];
+}
+
+/**
+ * Barras horizontais com valor ao lado de cada barra (rotulagem direta). O valor fica numa coluna
+ * própria, fora do SVG, para nunca ser cortado em telas estreitas.
+ */
 export function BarChart({ titulo, dados, formatar = (v) => NUM.format(v), cor = "var(--chart-1)", rotuloValor = "Valor" }) {
     const max = Math.max(...dados.map((d) => d.valor), 0) || 1;
     const alturaLinha = 34;
@@ -42,13 +62,13 @@ export function BarChart({ titulo, dados, formatar = (v) => NUM.format(v), cor =
         <Moldura titulo={titulo} dados={dados} formatar={formatar} rotuloValor={rotuloValor}>
             <div role="img" aria-label={resumo(titulo, dados, formatar)} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {dados.map((d, i) => (
-                    <div key={i} aria-hidden="true" style={{ display: "grid", gridTemplateColumns: "minmax(70px, 38%) 1fr", gap: 10, alignItems: "center" }}>
+                    <div key={i} aria-hidden="true" style={{ display: "grid", gridTemplateColumns: "minmax(70px, 38%) minmax(0, 1fr) auto", gap: 8, alignItems: "center" }}>
                         <span title={d.rotulo} style={{ fontSize: 13.5, color: "var(--color-text)", overflowWrap: "anywhere", lineHeight: 1.3 }}>{d.rotulo}</span>
-                        <svg width="100%" height={alturaLinha} style={{ display: "block" }}>
+                        <svg width="100%" height={alturaLinha} style={{ display: "block", minWidth: 0 }}>
                             <rect x="0" y="6" height={alturaLinha - 12} rx="4" fill={cor}
-                                width={`${Math.max((d.valor / max) * 80, d.valor > 0 ? 0.8 : 0)}%`} />
-                            <text y={alturaLinha / 2 + 5} x={`${Math.max((d.valor / max) * 80, d.valor > 0 ? 0.8 : 0)}%`} dx="6" fontSize="13" fontWeight="600" fill="var(--color-heading)">{formatar(d.valor)}</text>
+                                width={`${Math.max((d.valor / max) * 100, d.valor > 0 ? 1 : 0)}%`} />
                         </svg>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-heading)", whiteSpace: "nowrap" }}>{formatar(d.valor)}</span>
                     </div>
                 ))}
             </div>
@@ -64,9 +84,11 @@ export function ColumnChart({ titulo, dados: todos = [], formatar = (v) => NUM.f
     const altura = 150;
     const largura = Math.max(dados.length * 44, 240);
     const w = 28;
+    const [rolavel, transborda] = useTransborda();
     return (
-        <Moldura titulo={titulo} dados={dados} formatar={formatar} rotuloValor={rotuloValor}>
-            <div role="region" tabIndex={0} aria-label={`${titulo || "Gráfico"} — role para ver mais`} style={{ overflowX: "auto" }}>
+        <Moldura titulo={titulo} dados={todos} formatar={formatar} rotuloValor={rotuloValor}>
+            <div ref={rolavel} style={{ overflowX: "auto" }}
+                {...(transborda ? { role: "region", tabIndex: 0, "aria-label": `${titulo || "Gráfico"}: role para o lado para ver mais` } : {})}>
                 <svg role="img" aria-label={resumo(titulo, dados, formatar)} width={largura} height={altura + 40} viewBox={`0 0 ${largura} ${altura + 40}`} style={{ display: "block", maxWidth: "none" }}>
                     <line x1="0" x2={largura} y1={altura + 18} y2={altura + 18} stroke="var(--color-divider)" />
                     {dados.map((d, i) => {
@@ -82,7 +104,7 @@ export function ColumnChart({ titulo, dados: todos = [], formatar = (v) => NUM.f
                     })}
                 </svg>
             </div>
-            {cortou && <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--color-text-muted)" }}>Mostrando os últimos 30 dias com entrevistas</p>}
+            {cortou && <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--color-text-muted)" }}>Mostrando os 30 dias mais recentes que tiveram entrevistas (de {todos.length}). Todos estão em “Ver dados”.</p>}
         </Moldura>
     );
 }

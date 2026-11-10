@@ -6,6 +6,11 @@ class ProviderError(Exception):
     """Falha de provedor externo (rede, API, resposta inválida)."""
 
 
+class InvalidJSONError(ProviderError):
+    """O modelo respondeu, mas o conteúdo não é um objeto JSON (ex.: JSON truncado).
+    Quem pede saída estruturada trata como resposta inválida (retry/fallback), não como queda."""
+
+
 class LLMProvider(ABC):
     @property
     def model_name(self) -> str:

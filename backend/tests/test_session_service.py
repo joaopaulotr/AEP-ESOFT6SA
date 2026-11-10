@@ -45,7 +45,7 @@ class TestStart:
     async def test_without_script_uses_the_seed_from_the_database(self, sessions_service, session_repository):
         state, pergunta = await _start(sessions_service)
 
-        assert pergunta == CORE_QUESTIONS[0]
+        assert pergunta.endswith(CORE_QUESTIONS[0])
         stored = await session_repository.get(state.session_id)
         assert stored.script_id == DEFAULT_SCRIPT_ID
         assert stored.conversation[0].pergunta_ordem == 1
@@ -57,7 +57,7 @@ class TestStart:
 
         state, pergunta = await _start(sessions_service, custom_script.script_id, person.participant_id)
 
-        assert pergunta == "Como você vem?"
+        assert pergunta.endswith(" Como você vem?")
         stored = await session_repository.get(state.session_id)
         assert (stored.script_id, stored.participant_id) == (custom_script.script_id, person.participant_id)
 

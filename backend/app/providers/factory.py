@@ -17,4 +17,4 @@ def build_speech_provider(settings: Settings) -> SpeechProvider:
         case "fake":
             return FakeSpeechProvider()
         case "openai":
-            return OpenAISpeechProvider()
+            return OpenAISpeechProvider(speech_model=settings.speech_model)

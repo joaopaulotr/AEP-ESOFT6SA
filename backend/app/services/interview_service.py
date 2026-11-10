@@ -9,11 +9,19 @@ from app.services.interview_graph import (  # noqa: F401  (reexportados para que
     HISTORY_WINDOW,
     MAX_DECISION_ATTEMPTS,
     build_interview_graph,
+    ended_in_welcome,
     deepenings_so_far,
     format_full_conversation,
     format_questions,
     format_recent_history,
 )
+
+OPENING = (
+    "Oi, aqui é {nome}. Vou te fazer algumas perguntas, uma de cada vez — "
+    "não existe resposta certa ou errada. Leva uns {minutos} minutos."
+)
+MIN_OPENING_MINUTES = 5
+MINUTES_PER_QUESTION = 2
 
 
 class InterviewService:
@@ -22,13 +30,20 @@ class InterviewService:
         self._graph = build_interview_graph(llm)
 
     @staticmethod
-    def start(interview_state: InterviewState, script: InterviewScript) -> str:
-        """Registra a pergunta de abertura do roteiro na conversa e a devolve."""
+    def opening(script: InterviewScript) -> str:
+        """Abertura humana (EV-21): apresentação da persona, combinado e duração, sem gênero."""
+        minutos = max(MIN_OPENING_MINUTES, len(script.perguntas) * MINUTES_PER_QUESTION)
+        return OPENING.format(nome=script.persona.nome, minutos=minutos)
+
+    @classmethod
+    def start(cls, interview_state: InterviewState, script: InterviewScript) -> str:
+        """Registra a abertura + a 1ª pergunta do roteiro na conversa e devolve a fala."""
         pergunta = script.perguntas[0]
+        fala = f"{cls.opening(script)} {pergunta.texto}"
         interview_state.conversation.append(
-            Turn(role="interviewer", text=pergunta.texto, pergunta_ordem=pergunta.ordem)
+            Turn(role="interviewer", text=fala, pergunta_ordem=pergunta.ordem)
         )
-        return pergunta.texto
+        return fala
 
     def finish(self, interview_state: InterviewState) -> InterviewState:
         if not interview_state.finished:

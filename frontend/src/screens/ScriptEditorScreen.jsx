@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, AlertTriangle, Info } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Info, Lock, Unlock } from "lucide-react";
 import SideBar from "../components/SideBar";
 import EstadoTela from "../components/EstadoTela";
 import QuestionListEditor, { campo, rotulo, novoId, perguntaVazia } from "../components/QuestionListEditor";
@@ -60,6 +60,13 @@ function mesmasPerguntas(a, b) {
     return JSON.stringify(a) === JSON.stringify(b);
 }
 
+const CONFIRMA_DESCARTE = "Sair sem salvar? As alterações feitas aqui serão perdidas.";
+
+/** Formulário em forma comparável (ignora os ids internos das perguntas). */
+function assinatura(form) {
+    return JSON.stringify({ ...form, perguntas: form.perguntas.map(({ id: _id, ...p }) => p) });
+}
+
 export default function ScriptEditorScreen() {
     const { scriptId } = useParams();
     const edicao = Boolean(scriptId);
@@ -68,29 +75,32 @@ export default function ScriptEditorScreen() {
         [scriptId],
     );
 
+    // O formulário registra aqui o seu "sair" (que pede confirmação se houver alterações).
+    const sairRef = useRef(null);
+
     if (edicao) {
         return (
-            <Moldura titulo="Editar roteiro">
+            <Moldura titulo="Editar roteiro" sairRef={sairRef}>
                 <EstadoTela carregando={carregando} erro={erroCarga} onRetry={recarregar} data={carregado}>
-                    {carregado && <Formulario key={carregado.script_id} script={carregado} />}
+                    {carregado && <Formulario key={carregado.script_id} script={carregado} sairRef={sairRef} />}
                 </EstadoTela>
             </Moldura>
         );
     }
     return (
-        <Moldura titulo="Novo roteiro">
-            <Formulario />
+        <Moldura titulo="Novo roteiro" sairRef={sairRef}>
+            <Formulario sairRef={sairRef} />
         </Moldura>
     );
 }
 
-function Moldura({ titulo, children }) {
+function Moldura({ titulo, sairRef, children }) {
     const navigate = useNavigate();
     return (
         <SideBar>
             <div style={ui.page}>
                 <style>{CSS}</style>
-                <button className="ui-btn" style={ui.voltar} onClick={() => navigate("/entrevistas")}>
+                <button className="ui-btn" style={ui.voltar} onClick={() => (sairRef.current ? sairRef.current() : navigate("/entrevistas"))}>
                     <ArrowLeft size={16} aria-hidden="true" /> Voltar
                 </button>
                 <h1 style={{ ...ui.h1, marginBottom: 18 }}>{titulo}</h1>
@@ -100,15 +110,87 @@ function Moldura({ titulo, children }) {
     );
 }
 
-function Formulario({ script }) {
+/** Abre/encerra o convite do roteiro (`ativo`). Encerrado: o link e o QR param de abrir a entrevista. */
+function ControleConvite({ script }) {
+    const [ativo, setAtivo] = useState(script.ativo !== false);
+    const [mudando, setMudando] = useState(false);
+    const [mensagem, setMensagem] = useState("");
+
+    async function alternar() {
+        if (ativo && !window.confirm("Encerrar o convite? O link e o QR Code deixam de abrir a entrevista.")) return;
+        setMudando(true);
+        setMensagem("");
+        try {
+            await api.updateScript(script.script_id, { ativo: !ativo });
+            setAtivo(!ativo);
+            setMensagem(ativo
+                ? "Convite encerrado. O roteiro sai da lista de entrevistas até ser reaberto aqui."
+                : "Convite reaberto. O link e o QR Code voltaram a funcionar.");
+        } catch (err) {
+            setMensagem(err instanceof ApiError && err.detail ? err.detail : "Não consegui mudar o convite. Tente de novo.");
+        } finally {
+            setMudando(false);
+        }
+    }
+
+    return (
+        <section style={{ ...ui.card, display: "flex", flexDirection: "column", gap: 10 }} aria-labelledby="convite-estado">
+            <h2 id="convite-estado" style={{ margin: 0, fontSize: 17, color: "var(--color-heading)", fontFamily: "var(--font-heading)" }}>
+                Convite {ativo ? "aberto" : "encerrado"}
+            </h2>
+            <p style={{ margin: 0, fontSize: 14.5, color: "var(--color-text-2)" }}>
+                {ativo ? "Quem tiver o link ou o QR Code pode responder." : "O link e o QR Code não abrem a entrevista."}
+            </p>
+            <div>
+                <button type="button" className="ui-btn" style={{ ...(ativo ? ui.btnSecundario : ui.btnPrimario), opacity: mudando ? 0.6 : 1 }}
+                    disabled={mudando} onClick={alternar}>
+                    {ativo ? <Lock size={16} aria-hidden="true" /> : <Unlock size={16} aria-hidden="true" />}
+                    {ativo ? "Encerrar convite" : "Reabrir convite"}
+                </button>
+            </div>
+            <p role="status" style={{ margin: 0, minHeight: 18, fontSize: 14, color: "var(--color-text)" }}>{mensagem}</p>
+        </section>
+    );
+}
+
+function Formulario({ script, sairRef }) {
     const navigate = useNavigate();
     const location = useLocation();
     const [rascunho] = useState(() => (script ? null : location.state?.rascunho ?? lerRascunho()));
     const [form, setForm] = useState(() => (script ? formDe(script) : rascunho ? formDe(rascunho) : formVazio()));
     const [salvando, setSalvando] = useState(false);
     const [erro, setErro] = useState("");
+    const [inicial] = useState(() => assinatura(form));
+    const alterado = !salvando && assinatura(form) !== inicial;
 
-    useEffect(() => { if (!rascunho && !script) limparRascunho(); }, [rascunho, script]);
+    // O rascunho importado vale enquanto esta tela está aberta (sobrevive ao recarregar); ao sair
+    // dela, some: "Novo roteiro" depois não traz de volta um questionário antigo.
+    useEffect(() => {
+        if (script) return undefined;
+        if (rascunho) guardarRascunho(rascunho);
+        else limparRascunho();
+        return () => limparRascunho();
+    }, [rascunho, script]);
+
+    // Fechar/recarregar a aba com alterações: o navegador pede confirmação.
+    useEffect(() => {
+        if (!alterado) return undefined;
+        const aviso = (e) => {
+            e.preventDefault();
+            e.returnValue = "";
+        };
+        window.addEventListener("beforeunload", aviso);
+        return () => window.removeEventListener("beforeunload", aviso);
+    }, [alterado]);
+
+    function sair() {
+        if (alterado && !window.confirm(CONFIRMA_DESCARTE)) return;
+        navigate("/entrevistas");
+    }
+    useEffect(() => {
+        sairRef.current = sair;
+        return () => { sairRef.current = null; };
+    });
 
     const avisos = rascunho?.avisos ?? [];
     const set = (parcial) => setForm((f) => ({ ...f, ...parcial }));
@@ -216,10 +298,12 @@ function Formulario({ script }) {
                 <button type="submit" className="ui-btn" style={ui.btnPrimario} disabled={salvando}>
                     {salvando ? "Salvando…" : script ? "Salvar" : "Publicar"}
                 </button>
-                <button type="button" className="ui-btn" style={ui.btnSecundario} onClick={() => navigate("/entrevistas")}>
+                <button type="button" className="ui-btn" style={ui.btnSecundario} onClick={sair}>
                     Cancelar
                 </button>
+                {alterado && <span style={{ ...ui.meta, alignSelf: "center" }}>Alterações não salvas</span>}
             </div>
+            {script && <ControleConvite script={script} />}
         </form>
     );
 }

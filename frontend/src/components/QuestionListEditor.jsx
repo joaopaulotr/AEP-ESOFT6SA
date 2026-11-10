@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
 import { ui } from "../styles/ui";
 
@@ -20,9 +21,24 @@ export const campo = {
     color: "var(--color-text)", fontSize: 15, fontFamily: "var(--font-sans)",
 };
 export const rotulo = { display: "block", fontSize: 13.5, fontWeight: 600, color: "var(--color-text-2)", marginBottom: 4 };
+const SO_LEITOR = { position: "absolute", width: 1, height: 1, margin: -1, padding: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 };
 
 /** Lista editável de perguntas: adicionar, remover, subir/descer. Cada item tem `id` estável (chave do React). */
 export default function QuestionListEditor({ perguntas, onChange }) {
+    const listaRef = useRef(null);
+    const [movida, setMovida] = useState(null); // { id, delta }: devolve o foco ao botão depois de mover
+    const [aviso, setAviso] = useState("");
+
+    useEffect(() => {
+        if (!movida || !listaRef.current) return;
+        const { id, delta } = movida;
+        const seletor = (d) => listaRef.current.querySelector(`[data-mover="${CSS.escape(id)}:${d}"]`);
+        // Chegou na ponta (botão desabilitado): o foco vai para o botão do sentido contrário.
+        const alvo = seletor(delta);
+        (alvo && !alvo.disabled ? alvo : seletor(-delta))?.focus();
+        setMovida(null);
+    }, [movida]);
+
     function atualizar(id, parcial) {
         onChange(perguntas.map((p) => (p.id === id ? { ...p, ...parcial } : p)));
     }
@@ -32,6 +48,8 @@ export default function QuestionListEditor({ perguntas, onChange }) {
         const copia = [...perguntas];
         [copia[i], copia[j]] = [copia[j], copia[i]];
         onChange(copia);
+        setMovida({ id: copia[j].id, delta });
+        setAviso(`Pergunta movida para a posição ${j + 1}.`);
     }
     function remover(p, i) {
         if (p.texto.trim() && !window.confirm(`Remover a pergunta ${i + 1}?`)) return;
@@ -40,17 +58,20 @@ export default function QuestionListEditor({ perguntas, onChange }) {
 
     return (
         <div>
-            <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+            <p role="status" style={SO_LEITOR}>{aviso}</p>
+            <ol ref={listaRef} style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 14 }}>
                 {perguntas.map((p, i) => (
                     <li key={p.id} style={{ ...ui.card, display: "flex", flexDirection: "column", gap: 10 }}>
                         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                             <strong style={{ color: "var(--color-heading)" }}>Pergunta {i + 1}</strong>
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                                 <button type="button" className="ui-btn" style={ui.btnSecundario} disabled={i === 0}
+                                    data-mover={`${p.id}:-1`}
                                     aria-label={`Mover pergunta ${i + 1} para cima`} onClick={() => mover(i, -1)}>
                                     <ArrowUp size={16} aria-hidden="true" /> Subir
                                 </button>
                                 <button type="button" className="ui-btn" style={ui.btnSecundario} disabled={i === perguntas.length - 1}
+                                    data-mover={`${p.id}:1`}
                                     aria-label={`Mover pergunta ${i + 1} para baixo`} onClick={() => mover(i, 1)}>
                                     <ArrowDown size={16} aria-hidden="true" /> Descer
                                 </button>

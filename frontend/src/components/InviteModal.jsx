@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Copy, ExternalLink, X } from "lucide-react";
+import { AlertTriangle, Copy, ExternalLink, X } from "lucide-react";
 import { api } from "../services/api";
 import { ui, CSS } from "../styles/ui";
 
@@ -27,6 +27,18 @@ async function copiarTexto(texto) {
 }
 
 const FOCAVEIS = 'button, a[href], input, [tabindex]:not([tabindex="-1"])';
+
+/** Link montado com FRONTEND_URL padrão (localhost): só abre neste computador. */
+export function linkSoLocal(link) {
+    try {
+        const { hostname } = new URL(link);
+        return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+    } catch {
+        return false;
+    }
+}
+
+const AVISO = { margin: 0, display: "flex", gap: 8, alignItems: "flex-start", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--color-error)", color: "var(--color-text)", fontSize: 14, lineHeight: 1.45 };
 
 /** Diálogo com o link do convite, botão de copiar, QR Code e atalho para abrir. */
 export default function InviteModal({ roteiro, onClose }) {
@@ -81,6 +93,18 @@ export default function InviteModal({ roteiro, onClose }) {
                 <p style={{ margin: 0, fontSize: 14, color: "var(--color-text-2)" }}>
                     Quem receber este link pode responder sem criar conta.
                 </p>
+                {roteiro.ativo === false && (
+                    <p style={AVISO}>
+                        <AlertTriangle size={17} aria-hidden="true" style={{ flexShrink: 0, color: "var(--color-error)" }} />
+                        Este convite está encerrado: o link e o QR Code não abrem a entrevista. Reabra em Editar roteiro.
+                    </p>
+                )}
+                {linkSoLocal(link) && (
+                    <p style={AVISO}>
+                        <AlertTriangle size={17} aria-hidden="true" style={{ flexShrink: 0, color: "var(--color-error)" }} />
+                        Este link aponta para este computador (localhost) e não abre no celular de outra pessoa. Configure FRONTEND_URL no servidor.
+                    </p>
+                )}
                 <p style={{ margin: 0, padding: "10px 12px", borderRadius: 12, border: "1px solid var(--color-border)", backgroundColor: "var(--color-input-bg)", color: "var(--color-text)", fontSize: 14, wordBreak: "break-all" }}>
                     {link}
                 </p>

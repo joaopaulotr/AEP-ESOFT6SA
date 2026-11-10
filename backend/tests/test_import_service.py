@@ -81,9 +81,30 @@ def test_heuristic_bullets_numbering_dedupe():
     assert [p.texto for p in draft.perguntas] == [
         "Você usa ônibus?",
         "Quanto paga?",
-        "Descreva seu dia",
         "Outra coisa?",
     ]
+
+
+def test_heuristic_numbered_without_question_mark_needs_an_interrogative_word():
+    text = "1. Introdução\n2. Qual é o seu bairro\n3) Como você chega ao trabalho\n4. Dados pessoais"
+    draft = heuristic_parse(text, "x.txt")
+    assert [p.texto for p in draft.perguntas] == ["Qual é o seu bairro", "Como você chega ao trabalho"]
+
+
+async def test_unexpected_llm_exception_falls_back_and_logs_only_the_type(fake_llm, caplog):
+    fake_llm.queue_error(KeyError("segredo"))
+    with caplog.at_level("WARNING"):
+        draft = await QuestionnaireParser(fake_llm).parse("Qual seu bairro?", "q.txt")
+    assert [p.texto for p in draft.perguntas] == ["Qual seu bairro?"]
+    assert FALLBACK in draft.avisos
+    assert "KeyError" in caplog.text and "segredo" not in caplog.text
+
+
+def test_megabytes_are_formatted_in_portuguese():
+    from app.services.import_service import format_megabytes
+
+    assert format_megabytes(2 * 1024 * 1024) == "2 MB"
+    assert format_megabytes(512 * 1024) == "0,5 MB"
 
 
 def test_heuristic_caps_20():

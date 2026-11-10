@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import time
@@ -5,11 +6,14 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import deps
+from app.api.v1.endpoints import turns
 from app.api.v1.router import api_router
+from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.errors import (
     ConflictError,
@@ -36,11 +40,37 @@ async def prepare_database() -> None:
         logger.info("Sessões da v0.1.0 migradas para o modelo multi-coleção: %d", migrated)
 
 
+SHUTDOWN_DRAIN_SECONDS = 15.0
+
+
+async def drain_pending_turns(timeout: float = SHUTDOWN_DRAIN_SECONDS) -> int:
+    """No desligamento, espera os turnos em andamento gravarem (um restart não pode perder a
+    resposta de quem já falou). Devolve quantos ainda não tinham terminado no prazo."""
+    pending = set(turns._pending_turns)
+    if not pending:
+        return 0
+    _, still_running = await asyncio.wait(pending, timeout=timeout)
+    if still_running:
+        logger.warning("Turnos ainda em andamento no desligamento: %d", len(still_running))
+    return len(still_running)
+
+
+def warn_default_frontend_url() -> None:
+    """Sem FRONTEND_URL, o link do convite e o QR Code apontam para localhost."""
+    if "localhost" in settings.frontend_url or "127.0.0.1" in settings.frontend_url:
+        logger.warning(
+            "FRONTEND_URL aponta para %s: links de convite e QR Code só funcionam nesta máquina.",
+            settings.frontend_url,
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
+    warn_default_frontend_url()
     await prepare_database()
     yield
+    await drain_pending_turns()
 
 
 app = FastAPI(title="API - ESOFT6SA", lifespan=lifespan)
@@ -88,6 +118,29 @@ async def log_requests(request: Request, call_next):
 
 
 app.include_router(api_router)
+
+
+_LOCATIONS = {"body", "query", "path", "header", "cookie"}
+
+
+def invalid_fields(errors) -> list[str]:
+    """Nomes dos campos com erro (sem a origem "body"/"query"), na ordem, sem repetir."""
+    fields: list[str] = []
+    for error in errors:
+        loc = [str(part) for part in error.get("loc", ()) if str(part) not in _LOCATIONS]
+        # JSON malformado: o loc traz a posição do byte, que não diz nada a quem lê.
+        name = "corpo da requisição" if error.get("type") == "json_invalid" else ".".join(loc)
+        name = name or "corpo da requisição"
+        if name not in fields:
+            fields.append(name)
+    return fields
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(request: Request, exc: RequestValidationError):
+    """422 em pt-BR com só os nomes dos campos: nunca devolve nem loga o valor enviado."""
+    campos = ", ".join(invalid_fields(exc.errors()))
+    return JSONResponse(status_code=422, content={"detail": f"Dados inválidos: confira {campos}."})
 
 
 @app.exception_handler(ValueError)

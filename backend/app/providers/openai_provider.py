@@ -5,7 +5,7 @@ from openai import AsyncOpenAI, OpenAIError
 
 from app.core.config import settings
 from app.core.usage import current_meter
-from app.providers.base import LLMProvider, ProviderError, SpeechProvider, Tom
+from app.providers.base import InvalidJSONError, LLMProvider, ProviderError, SpeechProvider, Tom
 
 
 TOM_INSTRUCTIONS: dict[str, str] = {
@@ -66,9 +66,9 @@ class OpenAILLMProvider(LLMProvider):
         try:
             payload = json.loads(content)
         except json.JSONDecodeError as exc:
-            raise ProviderError(f"Falha no provedor de LLM: {exc}") from exc
+            raise InvalidJSONError(f"Falha no provedor de LLM: {exc}") from exc
         if not isinstance(payload, dict):
-            raise ProviderError("O provedor de LLM não devolveu um objeto JSON.")
+            raise InvalidJSONError("O provedor de LLM não devolveu um objeto JSON.")
         return payload
 
     async def complete_text(self, prompt: str) -> str:
@@ -91,13 +91,19 @@ class OpenAISpeechProvider(SpeechProvider):
         self,
         client: AsyncOpenAI | None = None,
         transcription_model: str = "whisper-1",
-        speech_model: str = "gpt-4o-mini-tts",
+        speech_model: str = settings.speech_model,
         voice: str = "alloy",
     ) -> None:
         self._client = client or _build_client()
         self._transcription_model = transcription_model
         self._speech_model = speech_model
         self._voice = voice
+
+    @property
+    def supports_instructions(self) -> bool:
+        """Só os modelos gpt-4o*-tts aceitam `instructions` (tts-1/tts-1-hd recusam)."""
+        model = self._speech_model.lower()
+        return "gpt-4o" in model and "tts" in model
 
     async def transcribe(self, audio: bytes, filename: str = "audio.webm") -> str:
         buffer = io.BytesIO(audio)
@@ -118,7 +124,9 @@ class OpenAISpeechProvider(SpeechProvider):
             raise ProviderError(f"Falha na transcrição de áudio: {exc}") from exc
 
     async def synthesize(self, text: str, tom: Tom | None = None) -> bytes:
-        options = {"instructions": TOM_INSTRUCTIONS[tom]} if tom else {}
+        options = (
+            {"instructions": TOM_INSTRUCTIONS[tom]} if tom and self.supports_instructions else {}
+        )
         try:
             response = await self._client.audio.speech.create(
                 model=self._speech_model,

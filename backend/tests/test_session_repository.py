@@ -177,48 +177,6 @@ class TestGetDetails:
         assert await repository.get_details("x") is None
 
 
-class TestScriptStats:
-    async def test_empty_script_has_zeroed_stats(self, repository):
-        stats = await repository.script_stats("vazio")
-
-        assert stats.total_sessoes == 0 and stats.taxa_conclusao == 0.0
-        assert stats.acoes == [] and stats.aprofundamentos_por_pergunta == []
-
-    async def test_aggregates_sessions_actions_and_deepenings(self, repository):
-        # Sessão 1 (concluída): pergunta 1 com 2 aprofundamentos, pergunta 2 com 0.
-        one = InterviewState(
-            script_id="s",
-            finished=True,
-            conversation=[
-                interviewer(None, 1), participant(1),
-                interviewer("deepen", 1), participant(1),
-                interviewer("deepen", 1), participant(1),
-                interviewer("advance", 2), participant(2),
-                interviewer("finish", 2),
-            ],
-        )
-        # Sessão 2 (em andamento): pergunta 1 sem aprofundamento.
-        two = InterviewState(
-            script_id="s",
-            conversation=[interviewer(None, 1), participant(1), interviewer("advance", 2)],
-        )
-        other = InterviewState(script_id="outro", finished=True, conversation=[interviewer("deepen", 1)])
-        for state in (one, two, other):
-            await repository.create(state)
-
-        stats = await repository.script_stats("s")
-
-        assert stats.total_sessoes == 2
-        assert stats.concluidas == 1
-        assert stats.taxa_conclusao == 0.5
-        assert stats.media_respostas == 2.5  # (4 + 1) / 2
-        assert [(a.acao, a.total) for a in stats.acoes] == [("advance", 2), ("deepen", 2), ("finish", 1)]
-        assert [(q.pergunta_ordem, q.media_aprofundamentos) for q in stats.aprofundamentos_por_pergunta] == [
-            (1, 1.0),  # (2 + 0) / 2 sessões
-            (2, 0.0),
-        ]
-
-
 def v010_document(session_id: str, finished: bool, synthesis=None) -> dict:
     now = datetime.now(timezone.utc)
     return {
@@ -301,7 +259,8 @@ class TestBackfillLegacy:
         await repository.backfill_legacy(ignore)
 
         assert (await repository.get_details("antiga")).script.titulo == "Entrevista generalista"
-        stats = await repository.script_stats("entrevista-generalista")
+        script = await script_repository.get_or_raise("entrevista-generalista")
+        stats = await repository.script_dashboard(script)
         assert (stats.total_sessoes, stats.concluidas) == (1, 1)
         assert [s.session_id for s in await repository.list_by_script("entrevista-generalista")] == ["antiga"]
 

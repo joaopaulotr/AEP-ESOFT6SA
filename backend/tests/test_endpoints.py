@@ -23,7 +23,8 @@ def client(fake_llm):
         syntheses=deps.get_synthesis_repository(),
     )
     app.dependency_overrides[deps.get_synthesis_service] = lambda: SynthesisService(
-        deps.get_session_repository(), deps.get_synthesis_repository(), fake_llm
+        deps.get_session_repository(), deps.get_synthesis_repository(), fake_llm,
+        deps.get_script_repository(),
     )
 
     with TestClient(app) as test_client:
@@ -52,7 +53,7 @@ def test_create_session_returns_id_and_opening_question(client):
     assert response.status_code == 200
     body = response.json()
     assert set(body) == {"session_id", "pergunta", "script_id", "titulo", "perguntas_total"}
-    assert body["pergunta"] == CORE_QUESTIONS[0]
+    assert body["pergunta"].startswith("Oi, aqui é ") and body["pergunta"].endswith(CORE_QUESTIONS[0])
 
 
 def test_session_document_references_the_seed_script(client):
@@ -76,7 +77,7 @@ def test_turn_advances_the_interview_and_persists(client, fake_llm):
     assert response.json() == {
         "fala": "Pode detalhar?", "finalizada": False, "indice_atual": 0,
         "acao": "deepen", "pergunta_ordem": 1, "perguntas_total": 4,
-        "aprofundamentos_restantes": 1,
+        "aprofundamentos_restantes": 1, "acolhimento": False,
     }
 
     conversa = client.get(f"/api/v1/session/{session_id}").json()["conversation"]
@@ -301,3 +302,42 @@ def test_startup_survives_a_v010_session_outside_the_model(fake_db, monkeypatch)
     with TestClient(app) as client:  # não pode falhar no startup
         assert client.get("/health").status_code == 200
         assert client.get("/api/v1/session/quebrada").status_code == 500
+
+
+def test_startup_warns_when_frontend_url_is_localhost(monkeypatch, caplog):
+    from app.core.config import settings
+    from app.main import warn_default_frontend_url
+
+    monkeypatch.setattr(settings, "frontend_url", "http://localhost:5173")
+    with caplog.at_level("WARNING"):
+        warn_default_frontend_url()
+    assert "FRONTEND_URL" in caplog.text
+
+    caplog.clear()
+    monkeypatch.setattr(settings, "frontend_url", "https://entrevista.exemplo.org")
+    with caplog.at_level("WARNING"):
+        warn_default_frontend_url()
+    assert "FRONTEND_URL" not in caplog.text
+
+
+def test_validation_errors_are_422_in_portuguese_without_the_input(client):
+    response = client.post("/api/v1/participants", json={"canal": "telepatia", "apelido": 5})
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail.startswith("Dados inválidos: confira ") and "canal" in detail
+    assert "telepatia" not in detail
+
+
+def test_validation_error_without_field_names_the_body(client):
+    response = client.post(
+        "/api/v1/participants", content="{", headers={"content-type": "application/json"}
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Dados inválidos: confira corpo da requisição."
+
+
+def test_invalid_fields_skips_locations_and_repeats():
+    from app.main import invalid_fields
+
+    errors = [{"loc": ("body", "perguntas", 0, "texto")}, {"loc": ("query", "limit")}, {"loc": ("query", "limit")}, {"loc": ("body",)}]
+    assert invalid_fields(errors) == ["perguntas.0.texto", "limit", "corpo da requisição"]

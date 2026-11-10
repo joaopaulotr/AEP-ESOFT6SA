@@ -131,6 +131,29 @@ class InvitePublic(BaseModel):
     link: str
 
 
+class PublicTurn(BaseModel):
+    role: Literal["interviewer", "participant"]
+    text: str
+
+
+class InviteSession(BaseModel):
+    """Estado mínimo da sessão para a tela pública do convite: sem objetivos das perguntas,
+    perfil, participante, métricas nem id do roteiro."""
+
+    session_id: str
+    titulo: str
+    perguntas_total: int
+    current_index: int
+    finished: bool
+    acolhimento: bool = False
+    persona: Persona
+    conversation: list[PublicTurn] = Field(default_factory=list)
+
+
+class InviteChannel(BaseModel):
+    canal: Literal["voz", "texto"]
+
+
 class InviteLink(BaseModel):
     slug: str
     link: str
@@ -187,12 +210,13 @@ class ScriptDashboard(BaseModel):
     concluidas: int = 0
     em_andamento: int = 0
     taxa_conclusao: float = 0.0
-    duracao_media_min: float = 0.0
+    duracao_media_min: float | None = None  # None sem entrevista concluída
     media_respostas: float = 0.0
     acoes: list[ActionTotal] = Field(default_factory=list)
     aprofundamentos_por_pergunta: list[QuestionDeepeningAvg] = Field(default_factory=list)
     custo_total_usd: float = 0.0
-    custo_medio_usd: float = 0.0
+    custo_medio_usd: float | None = None  # média entre entrevistas com custo medido; None sem base
     temas_mais_citados: list[ThemeCount] = Field(default_factory=list)
     sessoes_por_dia: list[DayCount] = Field(default_factory=list)
     canais: list[ChannelCount] = Field(default_factory=list)
+    sinteses_sessao: int = 0  # sessões com síntese: base do relatório cruzado

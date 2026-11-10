@@ -1,6 +1,8 @@
 from functools import lru_cache
 from typing import Any
 
+from fastapi import Depends
+
 from app.core.config import settings
 from app.db import mongodb
 from app.importing.questionnaire_parser import QuestionnaireParser
@@ -18,6 +20,7 @@ from app.services.participant_service import ParticipantService
 from app.services.script_service import ScriptService
 from app.services.session_service import SessionService
 from app.services.synthesis_service import SynthesisService
+from app.services.voice_service import VoiceService
 
 
 @lru_cache(maxsize=1)
@@ -63,6 +66,14 @@ def get_llm_provider() -> LLMProvider:
 @lru_cache(maxsize=1)
 def get_speech_provider() -> SpeechProvider:
     return build_speech_provider(settings)
+
+
+def get_voice_service(
+    speech: SpeechProvider = Depends(get_speech_provider),
+    sessions: SessionRepository = Depends(get_session_repository),
+) -> VoiceService:
+    """Sem cache: monta por requisição para respeitar overrides de get_speech_provider."""
+    return VoiceService(speech, sessions)
 
 
 @lru_cache(maxsize=1)

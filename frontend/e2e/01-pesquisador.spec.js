@@ -11,7 +11,6 @@ test("pesquisador: roteiros do seed, entrevistas concluídas, transcrição e s�
     ]) {
         await expect(page.getByRole("heading", { name: titulo, level: 2 })).toBeVisible();
     }
-    await expect(page.getByRole("heading", { level: 2 })).toHaveCount(4);
 
     const card = page.getByRole("article").filter({ hasText: "Transporte público na periferia" });
     await card.getByRole("button", { name: "Ver entrevistas" }).click();

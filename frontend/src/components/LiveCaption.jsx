@@ -1,10 +1,10 @@
 /**
- * Legenda ao vivo da fala da IA: mostra a frase que está tocando. `aria-live="polite"` para
- * leitor de tela acompanhar sem interromper; `aria-atomic` para ler a frase inteira.
+ * Legenda da fala da IA: mostra a frase que está tocando. Não é região ao vivo: no modo voz o
+ * anúncio para leitor de tela sai de uma única região (ver InterviewScreen), para não ler duas vezes.
  */
 export default function LiveCaption({ texto, vazio = "Conectando à entrevista…" }) {
     return (
-        <p style={s.texto} aria-live="polite" aria-atomic="true">
+        <p style={s.texto}>
             {texto ? `"${texto}"` : vazio}
         </p>
     );

@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from app.schemas.synthesis import Citation
 
 MIN_CITATION_CHARS = 8
+MIN_CITATION_WORDS = 3  # "ônibus lota" sozinho não diz nada; trecho curto casa em qualquer fala
 _QUOTES = "\"'“”‘’«»`"
 _MARKER_TAGS = re.compile(r"</?\s*(?:transcricao|sinteses)\s*>", re.IGNORECASE)
 
@@ -34,7 +35,9 @@ def _original_slice(quote: str, texts: list[str]) -> str | None:
     words = quote.split()
     if not words:
         return None
-    pattern = re.compile(r"\s+".join(re.escape(word) for word in words), re.IGNORECASE)
+    # Fronteira de palavra nas pontas: "nibus lota" não casa dentro de "ônibus lota".
+    body = r"\s+".join(re.escape(word) for word in words)
+    pattern = re.compile(rf"(?<!\w){body}(?!\w)", re.IGNORECASE)
     for text in texts:
         if match := pattern.search(text):
             return match.group(0)
@@ -43,14 +46,15 @@ def _original_slice(quote: str, texts: list[str]) -> str | None:
 
 def filter_literal_citations(citacoes: Iterable[str], participant_texts: Iterable[str]) -> list[str]:
     """Mantém só as citações que são trecho literal de UMA fala do participante (espaços e
-    caixa normalizados) e têm ao menos 8 caracteres. Devolve o trecho original da fala."""
+    caixa normalizados, palavras inteiras) e têm ao menos 8 caracteres e 3 palavras.
+    Devolve o trecho original da fala."""
     texts = list(participant_texts)
     kept: list[str] = []
     for raw in citacoes:
         if not isinstance(raw, str):
             continue
         quote = strip_quotes(raw)
-        if len(normalize(quote)) < MIN_CITATION_CHARS:
+        if len(normalize(quote)) < MIN_CITATION_CHARS or len(quote.split()) < MIN_CITATION_WORDS:
             continue
         if (original := _original_slice(quote, texts)) is not None:
             kept.append(original)

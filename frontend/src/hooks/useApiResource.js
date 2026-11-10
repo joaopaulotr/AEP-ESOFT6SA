@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 /**
  * Carrega um recurso da API: { data, carregando, erro, recarregar }.
  * `recarregar()` mantém o dado atual até a nova resposta; mudar `deps` limpa o dado.
+ * `definir(valor)` troca o dado por um já obtido (ex.: a resposta de um POST), sem nova busca.
  * `carregar` deve ser estável por `deps`; refaz a busca quando as deps mudam.
  */
 export function useApiResource(carregar, deps = []) {
@@ -37,5 +38,12 @@ export function useApiResource(carregar, deps = []) {
 
     const recarregar = useCallback(() => carregarDados(false), [carregarDados]);
 
-    return { data, carregando, erro, recarregar };
+    const definir = useCallback((valor) => {
+        versaoRef.current++; // descarta qualquer busca em voo
+        setData(valor);
+        setErro("");
+        setCarregando(false);
+    }, []);
+
+    return { data, carregando, erro, recarregar, definir };
 }

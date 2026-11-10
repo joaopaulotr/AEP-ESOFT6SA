@@ -11,13 +11,17 @@ from app.api.deps import get_session_service
 from app.core.errors import ConflictError, NotFoundError
 from app.providers.base import ProviderError
 from app.schemas.interview import TurnRequest, TurnResponse
+from app.services.safety import check_safety
 from app.services.session_service import SessionService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Referência forte aos turnos em andamento: o loop só guarda referência fraca às tasks.
+# O lifespan espera por eles no desligamento (main.py), para um restart não perder resposta.
 _pending_turns: set[asyncio.Task] = set()
+# Turnos cujo cliente saiu antes de ler o resultado: só eles logam a falha no callback.
+_orphaned_turns: set[asyncio.Task] = set()
 
 _PROVIDER_ERROR_DETAIL = "Falha ao se comunicar com o provedor de IA."
 _UNEXPECTED_DETAIL = "Não consegui processar sua resposta. Tente de novo."
@@ -55,21 +59,33 @@ async def handle_turn(
 
 
 async def _turn_response(sessions: SessionService, session_id: str, texto: str) -> TurnResponse:
-    session, fala = await sessions.take_turn(session_id, texto)
-    return TurnResponse(
-        fala=fala,
-        finalizada=session.finished,
-        indice_atual=session.current_index,
-        **await sessions.turn_meta(session),
-    )
+    return await sessions.turn(session_id, texto)
+
+
+def _log_orphan_failure(task: asyncio.Task) -> None:
+    """Recupera a exceção (evita "never retrieved") logando só o tipo: nada de repr,
+    traceback ou texto do participante."""
+    if not task.cancelled() and (exc := task.exception()) is not None:
+        logger.error("Falha no turno após desconexão: %s", type(exc).__name__)
 
 
 def _turn_done(task: asyncio.Task) -> None:
-    """Solta a task e recupera a exceção (evita "never retrieved" após desconexão),
-    logando só o tipo: nada de repr, traceback ou texto do participante."""
+    """Solta a task. A exceção é sempre recuperada, mas só é logada como "após
+    desconexão" se o cliente de fato saiu; conectado, o stream já trata e loga."""
     _pending_turns.discard(task)
-    if not task.cancelled() and (exc := task.exception()) is not None:
-        logger.error("Falha no turno após desconexão: %s", type(exc).__name__)
+    if task in _orphaned_turns:
+        _orphaned_turns.discard(task)
+        _log_orphan_failure(task)
+    elif not task.cancelled():
+        task.exception()
+
+
+def _orphan(task: asyncio.Task) -> None:
+    """O cliente saiu antes de ler o turno: a falha (se houver) é logada por aqui ou no callback."""
+    if task.done():
+        _log_orphan_failure(task)
+    else:
+        _orphaned_turns.add(task)
 
 
 async def _turn_events(
@@ -80,9 +96,13 @@ async def _turn_events(
     task = asyncio.ensure_future(_turn_response(sessions, session_id, texto))
     _pending_turns.add(task)
     task.add_done_callback(_turn_done)
-    yield _sse("pensando", {})
     try:
+        # Risco determinístico (sem LLM): o front não toca filler antes de um acolhimento/parada.
+        yield _sse("pensando", {"risco": check_safety(texto)})
         response = await asyncio.shield(task)
+    except (GeneratorExit, asyncio.CancelledError):
+        _orphan(task)
+        raise
     except ProviderError:
         yield _sse("erro", {"detail": _PROVIDER_ERROR_DETAIL})
         return
@@ -93,9 +113,18 @@ async def _turn_events(
         logger.error("Falha inesperada no turno em streaming: %s", type(exc).__name__)
         yield _sse("erro", {"detail": _UNEXPECTED_DETAIL})
         return
-    # `finalizada` já é conhecida aqui: o front bloqueia a interrupção desde a 1ª frase da despedida.
+    # `finalizada` e `acolhimento` já são conhecidos aqui: o front bloqueia a interrupção
+    # desde a 1ª frase da despedida e mantém o CVV na tela.
     for indice, frase in enumerate(split_sentences(response.fala)):
-        yield _sse("frase", {"texto": frase, "indice": indice, "finalizada": response.finalizada})
+        yield _sse(
+            "frase",
+            {
+                "texto": frase,
+                "indice": indice,
+                "finalizada": response.finalizada,
+                "acolhimento": response.acolhimento,
+            },
+        )
     yield _sse("fim", response.model_dump(mode="json"))
 
 

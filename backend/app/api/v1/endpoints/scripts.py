@@ -1,8 +1,9 @@
-from io import BytesIO
-from typing import Literal
+from collections.abc import Callable, Coroutine
+from typing import Any, Literal
 
-import segno
-from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile, status
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 
 from app.api.deps import (
     get_import_service,
@@ -15,13 +16,40 @@ from app.core.config import settings
 from app.schemas.api import InviteLink, ScriptCreate, ScriptDashboard, ScriptDraft, ScriptSummary, ScriptUpdate, SessionSummary
 from app.schemas.script import InterviewScript
 from app.schemas.synthesis import Synthesis
-from app.services.import_service import ImportService
+from app.services.import_service import ImportService, too_large_message
 from app.services.invite_service import InviteService
 from app.services.script_service import ScriptService
 from app.services.session_service import SessionService
 from app.services.synthesis_service import SynthesisService
 
+# Folga para os cabeçalhos do multipart (nome do campo, nome do arquivo, boundary).
+MULTIPART_OVERHEAD_BYTES = 64 * 1024
+LENGTH_REQUIRED_MESSAGE = "Envie o arquivo com o tamanho informado."
+
+
+class UploadLimitRoute(APIRoute):
+    """Confere o Content-Length ANTES do parse do multipart: sem tamanho numérico (upload
+    chunked) -> 411; maior que o limite + 64 KB -> 413. O navegador sempre informa o tamanho
+    de um FormData. Uma dependência não serve: o FastAPI lê o formulário (e o Starlette grava
+    em disco) antes de resolvê-las. O servidor (h11) não aceita corpo maior que o declarado."""
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
+
+        async def limited(request: Request) -> Response:
+            length = request.headers.get("content-length", "")
+            if not length.isdigit():
+                return JSONResponse(status_code=411, content={"detail": LENGTH_REQUIRED_MESSAGE})
+            limit = settings.max_upload_bytes + MULTIPART_OVERHEAD_BYTES
+            if int(length) > limit:
+                return JSONResponse(status_code=413, content={"detail": too_large_message()})
+            return await handler(request)
+
+        return limited
+
+
 router = APIRouter(prefix="/scripts")
+upload_router = APIRouter(prefix="/scripts", route_class=UploadLimitRoute)
 
 
 @router.get("", response_model=list[ScriptSummary])
@@ -34,11 +62,14 @@ async def create_script(payload: ScriptCreate, scripts: ScriptService = Depends(
     return await scripts.create(payload)
 
 
-@router.post("/upload", response_model=ScriptDraft)
+@upload_router.post("/upload", response_model=ScriptDraft)
 async def upload_script(
     file: UploadFile = File(...), imports: ImportService = Depends(get_import_service)
 ):
-    """Lê o questionário enviado e devolve um rascunho; não salva nada."""
+    """Lê o questionário enviado e devolve um rascunho; não salva nada.
+
+    Corpo maior que o limite + 64 KB é recusado antes do parse (UploadLimitRoute); o
+    arquivo em si é conferido de novo aqui, sem nunca ler mais que o limite + 1 byte."""
     data = await file.read(settings.max_upload_bytes + 1)  # nunca lê o arquivo inteiro
     return await imports.build_draft(file.filename or "", data)
 
@@ -83,10 +114,7 @@ async def get_script_invite(script_id: str, invites: InviteService = Depends(get
 
 @router.get("/{script_id}/qrcode.svg")
 async def get_script_qrcode(script_id: str, invites: InviteService = Depends(get_invite_service)):
-    invite = await invites.link_for_script(script_id)
-    buffer = BytesIO()
-    segno.make(invite.link, error="m").save(buffer, kind="svg", scale=6, border=2)
-    return Response(content=buffer.getvalue(), media_type="image/svg+xml")
+    return Response(content=await invites.qrcode_svg(script_id), media_type="image/svg+xml")
 
 
 @router.post("/{script_id}/sintese", response_model=Synthesis)

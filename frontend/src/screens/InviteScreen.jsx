@@ -5,6 +5,8 @@ import PublicLayout from "../components/PublicLayout";
 import EstadoTela from "../components/EstadoTela";
 import { api, ApiError } from "../services/api";
 import { ui } from "../styles/ui";
+import { estimativaMinutos } from "../utils/tempo";
+import { guardarSessaoPublica } from "../utils/sessaoPublica";
 
 const FAIXAS = ["até 17", "18–29", "30–44", "45–59", "60+"];
 
@@ -39,12 +41,6 @@ export default function InviteScreen() {
     const [erroInicio, setErroInicio] = useState("");
     const travaRef = useRef(false);
 
-    function pular() {
-        setApelido("");
-        setFaixa("");
-        setRegiao("");
-    }
-
     async function comecar() {
         if (travaRef.current) return;
         travaRef.current = true;
@@ -57,9 +53,11 @@ export default function InviteScreen() {
                 faixa_etaria: faixa || undefined,
                 regiao: regiao.trim() || undefined,
             });
-            const url = `/e/${encodeURIComponent(slug)}/entrevista?sessao=${encodeURIComponent(dados.session_id)}&canal=${canal === "texto" ? "texto" : "voz"}`;
-            navigate(url, {
-                state: { sessionId: dados.session_id, perguntaInicial: dados.pergunta, titulo: dados.titulo },
+            // O id da sessão fica no sessionStorage (por slug), nunca na URL.
+            guardarSessaoPublica(slug, { sessionId: dados.session_id, canal: canal === "texto" ? "texto" : "voz" });
+            // O state leva o mesmo dado: sem sessionStorage (modo privado restrito) a entrevista abre igual.
+            navigate(`/e/${encodeURIComponent(slug)}/entrevista`, {
+                state: { sessionId: dados.session_id, canal: canal === "texto" ? "texto" : "voz" },
             });
         } catch (e) {
             setErroInicio(e?.detail || "Não consegui começar agora. Tente de novo em instantes.");
@@ -88,7 +86,7 @@ export default function InviteScreen() {
                             {convite.tema && <p style={ui.sub}>Tema: {convite.tema}</p>}
                             {convite.descricao && <p style={ui.sub}>{convite.descricao}</p>}
                             <p style={{ ...ui.sub, color: "var(--color-text)" }}>
-                                Leva uns 10 minutos. Não há resposta certa ou errada: só conte o que você pensa.
+                                Leva uns {estimativaMinutos(convite.perguntas_total)} minutos. Não há resposta certa ou errada: só conte o que você pensa.
                             </p>
 
                             <h2 style={s.h2} id="como-responder">Como você prefere responder?</h2>
@@ -102,7 +100,7 @@ export default function InviteScreen() {
                             </div>
 
                             <h2 style={s.h2}>Se quiser, conte um pouco sobre você</h2>
-                            <p style={{ ...ui.meta, margin: "0 0 10px" }}>É opcional. Você pode pular.</p>
+                            <p style={{ ...ui.meta, margin: "0 0 10px" }}>É opcional: pode deixar em branco.</p>
                             <label style={s.label}>
                                 Como prefere ser chamado(a)?
                                 <input style={s.input} value={apelido} maxLength={40} onChange={(e) => setApelido(e.target.value)} autoComplete="off" />
@@ -118,7 +116,6 @@ export default function InviteScreen() {
                                 Cidade ou bairro
                                 <input style={s.input} value={regiao} maxLength={60} onChange={(e) => setRegiao(e.target.value)} autoComplete="off" />
                             </label>
-                            <button type="button" className="ui-btn" style={{ ...ui.voltar, marginBottom: 8 }} onClick={pular}>Pular</button>
 
                             {erroInicio && <p role="alert" style={{ color: "var(--color-error)", margin: "8px 0" }}>{erroInicio}</p>}
                             <button type="button" className="ui-btn" style={{ ...ui.btnPrimario, width: "100%", fontSize: 17, opacity: enviando ? 0.6 : 1 }} disabled={enviando} onClick={comecar}>
@@ -135,7 +132,7 @@ export default function InviteScreen() {
 const s = {
     h2: { margin: "22px 0 8px", fontSize: 17, color: "var(--color-heading)" },
     escolha: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-    opcao: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 96, borderRadius: 18, border: "2px solid var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)", fontSize: 17, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-sans)" },
+    opcao: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 96, borderRadius: 18, borderWidth: 2, borderStyle: "solid", borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)", fontSize: 17, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-sans)" },
     opcaoAtiva: { borderColor: "var(--color-primary)", background: "var(--color-accent-soft)", color: "var(--color-primary)" },
     label: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 12, fontSize: 14.5, fontWeight: 600, color: "var(--color-text)" },
     input: { minHeight: "var(--touch-target)", padding: "0 12px", borderRadius: 12, border: "1px solid var(--color-border-soft)", background: "var(--color-input-bg)", color: "var(--color-text)", fontSize: 16, fontFamily: "inherit", boxSizing: "border-box", width: "100%" },

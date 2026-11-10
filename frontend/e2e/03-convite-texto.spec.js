@@ -1,8 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { tituloUnico, criarRoteiro, entrarPorTexto, responder } from "./helpers";
+import { tituloUnico, criarRoteiro, entrarPorTexto, responder, vigiarConsole } from "./helpers";
 
 // Cria o próprio roteiro (título único) pela API: independe dos outros cenários e de tentativas anteriores.
 test("convite + modo texto: responde tudo, agradecimento, entrevista concluída e síntese", async ({ page, request }) => {
+    // 404 esperado: a tela da sessão pergunta pela síntese antes de ela existir (vira "Gerar síntese").
+    const erros = vigiarConsole(page, /status of 404/);
     const titulo = tituloUnico("Roteiro do convite (E2E)");
     await criarRoteiro(request, titulo, [
         "Como é o seu dia a dia no bairro onde você mora?",
@@ -23,6 +25,7 @@ test("convite + modo texto: responde tudo, agradecimento, entrevista concluída 
     await modal.getByRole("button", { name: "Fechar" }).click();
 
     await entrarPorTexto(page, link, { apelido: "Marta" });
+    expect(new URL(page.url()).search).toBe(""); // id da sessão fica fora da URL
     const respostas = [
         "Acordo cedo e pego ônibus lotado todos os dias.",
         "Fui ao posto de saúde mês passado e esperei muito tempo.",
@@ -45,4 +48,5 @@ test("convite + modo texto: responde tudo, agradecimento, entrevista concluída 
     await page.getByRole("button", { name: "Gerar síntese" }).click();
     const sintese = page.getByRole("region", { name: "Síntese" });
     await expect(sintese.locator("blockquote").first()).toContainText(respostas[0]);
+    expect(erros).toEqual([]);
 });

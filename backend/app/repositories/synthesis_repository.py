@@ -1,5 +1,6 @@
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
+from app.core.usage import UsageMeter
 from app.db import collections
 from app.repositories.base import BaseRepository
 from app.schemas.script import DEFAULT_SCRIPT_ID
@@ -54,6 +55,7 @@ class SynthesisRepository(BaseRepository[Synthesis]):
         document = self._to_document(synthesis)
         created_at = document.pop("created_at")
         document.pop("synthesis_id")
+        document.pop("metricas")  # só muda por add_metrics ($inc): regerar não zera o custo
         await self._collection.update_one(
             {self.id_field: synthesis_id},
             {"$set": document, "$setOnInsert": {self.id_field: synthesis_id, "created_at": created_at}},
@@ -61,20 +63,39 @@ class SynthesisRepository(BaseRepository[Synthesis]):
         )
         return await self.get_or_raise(synthesis_id)
 
-    async def pull_citations_of_session(self, session_id: str) -> int:
-        """Tira as citações da sessão de todos os relatórios de roteiro (cascata da exclusão).
-        Devolve quantos relatórios foram alterados."""
-        return await self._atomic_pull_citations(session_id)
+    async def add_metrics(self, synthesis_id: str, meter: UsageMeter, cost: float) -> bool:
+        """Soma o consumo da geração no relatório com $inc atômico (mesma assinatura do
+        SessionRepository, para `record_usage_safely`). False se o relatório não existe."""
+        if meter.is_empty:
+            return await self.exists(synthesis_id)
+        increments = {
+            "metricas.llm_input_tokens": meter.llm_input_tokens,
+            "metricas.llm_output_tokens": meter.llm_output_tokens,
+            "metricas.tokens": meter.llm_input_tokens + meter.llm_output_tokens,
+            "metricas.custo_usd": cost,
+        }
+        result = await self._collection.update_one({self.id_field: synthesis_id}, {"$inc": increments})
+        return result.matched_count > 0
 
-    async def _atomic_pull_citations(self, session_id: str) -> int:
-        """`$pull` atômico em todos os temas de todos os relatórios de roteiro (uma operação
-        no servidor, sem ler-e-gravar). O mongomock dos testes ignora `$[]`; lá o conftest
-        troca este método por um equivalente em Python."""
-        result = await self._collection.update_many(
-            {"escopo": "roteiro"},
-            {"$pull": {"temas.$[].citacoes": {"session_id": session_id}}},
-        )
-        return result.modified_count
+    async def delete_script_reports_with_session(
+        self, session_id: str, script_id: str | None = None
+    ) -> int:
+        """Cascata da exclusão da sessão (RK-11): apaga o relatório de roteiro que usou a
+        sessão (entre as entradas ou numa citação). Resumo, pontos e divergências derivam
+        dela, então tirar só as citações não basta: o relatório precisa ser regerado.
+
+        Com `script_id` (a sessão ainda existia), a busca fica no relatório daquele roteiro e
+        também apaga relatório antigo sem `sessoes_ids` (não dá para saber o que ele usou)."""
+        used = [{"sessoes_ids": session_id}, {"temas.citacoes.session_id": session_id}]
+        query: dict = {"escopo": "roteiro", "$or": used}
+        if script_id is not None:
+            query = {
+                "escopo": "roteiro",
+                "script_id": script_id,
+                "$or": [*used, {"sessoes_ids": {"$exists": False}}],
+            }
+        result = await self._collection.delete_many(query)
+        return result.deleted_count
 
     @staticmethod
     def session_synthesis_id(session_id: str) -> str:

@@ -56,8 +56,27 @@ def test_plain_text_decodes_utf8_and_latin1():
 
 
 def test_csv_joins_non_empty_cells_one_per_line():
-    data = b"Pergunta 1;Pergunta 2\n,\nA?,B?\n"
-    assert CsvExtractor().extract(data).splitlines() == ["Pergunta 1;Pergunta 2", "A?", "B?"]
+    data = b"Pergunta 1,Pergunta 2\n,\nA?,B?\n"
+    assert CsvExtractor().extract(data).splitlines() == ["Pergunta 1", "Pergunta 2", "A?", "B?"]
+
+
+def test_csv_with_semicolon_is_split_by_semicolon():
+    data = "Pergunta;Objetivo\nQual seu bairro?;Mapear, região\nQuanto paga?;Custo\n".encode()
+    assert CsvExtractor().extract(data).splitlines() == [
+        "Pergunta", "Objetivo", "Qual seu bairro?", "Mapear, região", "Quanto paga?", "Custo",
+    ]
+
+
+def test_csv_with_unknown_separator_keeps_each_line_whole():
+    data = b"Qual seu bairro?\nQuanto paga?\n"
+    assert CsvExtractor().extract(data).splitlines() == ["Qual seu bairro?", "Quanto paga?"]
+
+
+def test_encrypted_docx_is_422():
+    from tests.test_import_api import _encrypted_zip
+
+    with pytest.raises(ImportFileError):
+        DocxExtractor().extract(_encrypted_zip())
 
 
 def test_docx_reads_paragraphs_and_table_cells():

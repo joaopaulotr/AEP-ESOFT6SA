@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Mic, List, User, Plus, Upload, Pencil, UserPlus, BarChart3 } from "lucide-react";
+import { Mic, List, User, Plus, Upload, Pencil, UserPlus, BarChart3, Lock } from "lucide-react";
 import SideBar from "../components/SideBar";
 import InviteModal from "../components/InviteModal";
 import EstadoTela from "../components/EstadoTela";
@@ -43,6 +43,11 @@ export default function ScriptsScreen() {
                             {roteiros.map((r) => (
                                 <article key={r.script_id} style={{ ...ui.card, display: "flex", flexDirection: "column", gap: 10 }}>
                                     <h2 style={{ margin: 0, fontSize: 18, color: "var(--color-heading)", fontFamily: "var(--font-heading)" }}>{r.titulo}</h2>
+                                    {r.ativo === false && (
+                                        <p style={{ ...ui.meta, margin: 0, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                                            <Lock size={14} aria-hidden="true" /> Convite encerrado
+                                        </p>
+                                    )}
                                     {r.tema && <p style={{ margin: 0, fontSize: 14, color: "var(--color-text-2)" }}>{r.tema}</p>}
                                     <p style={{ ...ui.meta, margin: 0 }}>
                                         {r.perguntas_total} {r.perguntas_total === 1 ? "pergunta" : "perguntas"}
@@ -54,7 +59,8 @@ export default function ScriptsScreen() {
                                         <User size={14} aria-hidden="true" /> Entrevistadora: {r.persona?.nome}
                                     </p>
                                     <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: "auto", paddingTop: 8 }}>
-                                        <button className="ui-btn" style={ui.btnPrimario}
+                                        <button className="ui-btn" style={{ ...ui.btnPrimario, ...(r.ativo === false ? { opacity: 0.5, cursor: "not-allowed" } : null) }}
+                                            disabled={r.ativo === false}
                                             onClick={() => navigate(`/entrevista?roteiro=${encodeURIComponent(r.script_id)}`)}>
                                             <Mic size={17} aria-hidden="true" /> Iniciar entrevista
                                         </button>

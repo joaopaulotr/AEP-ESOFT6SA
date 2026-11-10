@@ -91,6 +91,8 @@ async def test_numbers_match_manual_computation(seeded, script_id):
     themes = Counter(tema for temas in per_session.values() for tema in temas)
     ranked = sorted(themes.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
     assert [(_norm(t.tema), t.sessoes) for t in dash.temas_mais_citados] == ranked
+    existing = {s.session_id for s in sessions}
+    assert dash.sinteses_sessao == len(set(per_session) & existing)
 
 
 async def test_window_keeps_only_last_30_days(seeded):
@@ -153,8 +155,10 @@ async def test_empty_script_is_all_zeros(fake_db):
     script = await scripts.get_or_raise("entrevista-generalista")
     dash = await SessionRepository(fake_db).script_dashboard(script, now=NOW)
     assert dash.total_sessoes == dash.concluidas == dash.em_andamento == 0
-    assert dash.taxa_conclusao == dash.duracao_media_min == dash.media_respostas == 0
-    assert dash.custo_total_usd == dash.custo_medio_usd == 0
+    assert dash.taxa_conclusao == dash.media_respostas == dash.custo_total_usd == 0
+    # Sem base, a média é None (o painel mostra "—"), não um 0 enganoso.
+    assert dash.duracao_media_min is None and dash.custo_medio_usd is None
+    assert dash.sinteses_sessao == 0
     assert dash.acoes == dash.temas_mais_citados == dash.sessoes_por_dia == dash.canais == []
     assert len(dash.aprofundamentos_por_pergunta) == len(script.perguntas)
     assert all(q.media == 0 for q in dash.aprofundamentos_por_pergunta)
@@ -174,7 +178,61 @@ async def test_sessions_without_cost_keep_average_at_zero(fake_db):
     )
     dash = await sessions.script_dashboard(script)
     assert dash.custo_total_usd == 0.5 and dash.custo_medio_usd == 0.5
+    assert dash.duracao_media_min is None  # nenhuma concluída
     assert dash.canais[0].canal == "desconhecido" and dash.canais[0].total == 2
+
+
+async def test_only_sessions_without_cost_have_no_average(fake_db):
+    scripts = ScriptRepository(fake_db)
+    await scripts.ensure_seed()
+    script = await scripts.get_or_raise("entrevista-generalista")
+    sessions = SessionRepository(fake_db)
+    await sessions.create(InterviewState(session_id="a", script_id=script.script_id, finished=True))
+    dash = await sessions.script_dashboard(script)
+    assert dash.custo_total_usd == 0 and dash.custo_medio_usd is None
+    assert dash.duracao_media_min is not None
+
+
+async def test_session_syntheses_count_ignores_orphans_and_script_reports(fake_db):
+    from app.repositories.synthesis_repository import SynthesisRepository
+    from app.schemas.synthesis import Synthesis
+
+    scripts = ScriptRepository(fake_db)
+    await scripts.ensure_seed()
+    script = await scripts.get_or_raise("entrevista-generalista")
+    sessions, syntheses = SessionRepository(fake_db), SynthesisRepository(fake_db)
+    for sid in ("a", "b"):
+        await sessions.create(InterviewState(session_id=sid, script_id=script.script_id, finished=True))
+    await syntheses.save_for_session(Synthesis(escopo="sessao", session_id="a", script_id=script.script_id, resumo="r"))
+    await syntheses.save_for_session(Synthesis(escopo="sessao", session_id="orfa", script_id=script.script_id, resumo="r"))
+    await syntheses.save_for_script(Synthesis(escopo="roteiro", script_id=script.script_id, resumo="r"))
+    dash = await sessions.script_dashboard(script)
+    assert dash.sinteses_sessao == 1
+
+
+async def test_total_cost_includes_the_script_report_generations(fake_db):
+    from app.core.usage import UsageMeter
+    from app.repositories.participant_repository import ParticipantRepository
+    from app.repositories.synthesis_repository import SynthesisRepository
+    from app.schemas.synthesis import Synthesis
+    from app.services.interview_service import InterviewService
+    from app.services.session_service import SessionService
+    from tests.conftest import FakeLLM
+
+    scripts = ScriptRepository(fake_db)
+    await scripts.ensure_seed()
+    sessions, syntheses = SessionRepository(fake_db), SynthesisRepository(fake_db)
+    await sessions.create(
+        InterviewState(session_id="a", script_id="entrevista-generalista", metricas=SessionMetrics(custo_usd=0.5))
+    )
+    await syntheses.save_for_script(Synthesis(escopo="roteiro", script_id="entrevista-generalista", resumo="r"))
+    await syntheses.add_metrics("roteiro:entrevista-generalista", UsageMeter(llm_input_tokens=1), 0.25)
+    service = SessionService(sessions, scripts, ParticipantRepository(fake_db), InterviewService(FakeLLM()), syntheses)
+
+    dash = await service.dashboard("entrevista-generalista")
+
+    assert dash.custo_total_usd == 0.75
+    assert dash.custo_medio_usd == 0.5  # média por entrevista: o relatório não entra
 
 
 class TestRoute:
@@ -197,7 +255,9 @@ class TestRoute:
             "script_id", "titulo", "total_sessoes", "concluidas", "em_andamento", "taxa_conclusao",
             "duracao_media_min", "media_respostas", "acoes", "aprofundamentos_por_pergunta",
             "custo_total_usd", "custo_medio_usd", "temas_mais_citados", "sessoes_por_dia", "canais",
+            "sinteses_sessao",
         }
+        assert body["duracao_media_min"] is None and body["custo_medio_usd"] is None
 
     async def test_seeded_script_over_http(self, seeded):
         transport = httpx.ASGITransport(app=app)

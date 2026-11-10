@@ -1,7 +1,6 @@
 import pytest
 
 from app.schemas.synthesis import Synthesis
-from tests.conftest import REAL_ATOMIC_PULL
 
 pytestmark = pytest.mark.anyio
 
@@ -76,19 +75,58 @@ def test_declares_reference_indexes(synthesis_repository):
     assert names == {"synthesis_id_unico", "session_id", "script_id_escopo"}
 
 
-async def test_pull_uses_one_atomic_pull_on_script_reports_without_touching_updated_at(synthesis_repository):
-    calls = []
+def script_report(script_id="r1", sessoes_ids=None, cited=None) -> Synthesis:
+    from app.schemas.synthesis import Citation, Theme
 
-    class Stub:
-        async def update_many(self, flt, update):
-            calls.append((flt, update))
-            return type("R", (), {"modified_count": 2})()
+    citacoes = [Citation(texto="fala citada aqui", session_id=c) for c in (cited or [])]
+    return Synthesis(
+        escopo="roteiro",
+        script_id=script_id,
+        resumo="Resumo derivado das falas.",
+        temas=[Theme(tema="t", pontos=["ponto"], citacoes=citacoes)],
+        divergencias=["divergência"],
+        sessoes_ids=sessoes_ids or [],
+    )
 
-    synthesis_repository._collection = Stub()
 
-    changed = await REAL_ATOMIC_PULL(synthesis_repository, "s1")
+async def test_report_that_used_the_session_is_deleted_entirely(synthesis_repository):
+    await synthesis_repository.save_for_script(script_report("r1", sessoes_ids=["a", "b"]))
+    await synthesis_repository.save_for_script(script_report("r2", sessoes_ids=["c", "d"]))
 
-    assert changed == 2
-    assert calls == [
-        ({"escopo": "roteiro"}, {"$pull": {"temas.$[].citacoes": {"session_id": "s1"}}})
-    ]
+    assert await synthesis_repository.delete_script_reports_with_session("a") == 1
+
+    assert await synthesis_repository.get_for_script("r1") is None
+    assert await synthesis_repository.get_for_script("r2") is not None
+
+
+async def test_report_that_only_cites_the_session_is_deleted(synthesis_repository):
+    await synthesis_repository.save_for_script(script_report("r1", cited=["a"]))
+    assert await synthesis_repository.delete_script_reports_with_session("a", "r1") == 1
+
+
+async def test_legacy_report_without_inputs_is_deleted_only_when_the_script_is_known(
+    synthesis_repository, fake_db
+):
+    await synthesis_repository.save_for_script(script_report("r1"))
+    await fake_db["syntheses"].update_one({"script_id": "r1"}, {"$unset": {"sessoes_ids": ""}})
+
+    assert await synthesis_repository.delete_script_reports_with_session("a") == 0
+    assert await synthesis_repository.delete_script_reports_with_session("a", "r2") == 0
+    assert await synthesis_repository.delete_script_reports_with_session("a", "r1") == 1
+
+
+async def test_report_metrics_are_incremented_and_survive_regeneration(synthesis_repository):
+    from app.core.usage import UsageMeter
+
+    await synthesis_repository.save_for_script(script_report("r1", sessoes_ids=["a"]))
+    meter = UsageMeter(llm_input_tokens=100, llm_output_tokens=30)
+    report_id = synthesis_repository.script_synthesis_id("r1")
+
+    assert await synthesis_repository.add_metrics(report_id, meter, 0.5)
+    await synthesis_repository.save_for_script(script_report("r1", sessoes_ids=["a"]))
+    assert await synthesis_repository.add_metrics(report_id, meter, 0.25)
+
+    saved = await synthesis_repository.get_for_script("r1")
+    assert saved.metricas.custo_usd == 0.75 and saved.metricas.tokens == 260
+    assert await synthesis_repository.add_metrics("roteiro:nao-existe", meter, 0.1) is False
+    assert await synthesis_repository.add_metrics(report_id, UsageMeter(), 0.0) is True

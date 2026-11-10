@@ -81,6 +81,7 @@ Fonte: *AEP 2026.2 6S — Engenharia de Software*, seções 6, 7, 8 (2º semestr
 | RK-12 | **Upload de questionário malformado** (PDF escaneado, formato inesperado) | Roteiro errado ou vazio | Média | EV-30: revisão humana obrigatória antes de publicar; limite de tamanho/tipo. |
 | RK-13 | **Deploy público instável perto da apresentação** | Demo indisponível | Baixa | EV-71 cedo (não no último dia); docker-compose local como plano B. |
 | RK-14 | **Branch de trabalho divergente da `main`** (hoje `devjoao` vs `main`) | Conflitos e versão final confusa | Média | Fluxo por PR curto para `main`; tag final só na `main`. |
+| RK-15 | **`POST /convite/{slug}/sessao` público, sem limite de requisições** (nem captcha) | Quem tem o link pode criar sessões e participantes em volume, gastando custo e enchendo o banco | Baixa na PoC, alta em produção | Aceito na PoC (rota pública por desenho). Antes do deploy público: limite por IP/slug no proxy ou na API (junto com RK-11). |
 
 ---
 
@@ -274,11 +275,15 @@ Pesquisa resumida (fontes na seção 13):
 
 - Nome, tom (acolhedor/neutro/formal) e voz TTS por roteiro (`interview_scripts.persona`).
 - Apresentação inicial humana: quem é, quanto tempo leva, que não existe resposta certa.
+- Entregue (correção do /entregar): `start()` abre com "Oi, aqui é {nome}. Vou te fazer algumas perguntas, uma de cada vez — não existe resposta certa ou errada. Leva uns {minutos} minutos." e a 1ª pergunta; `{minutos}` = `max(5, perguntas*2)` (`MIN_OPENING_MINUTES`, `MINUTES_PER_QUESTION` em `interview_service.py`). A tela de entrada mostra o mesmo cálculo.
+- Desvio: o texto da abertura é fixo no código ("Oi, aqui é {nome}"), não gerado pelo LLM, e o mínimo de 5 minutos é aceito.
+- Não feito: **voz TTS por roteiro** (só o tom muda as instruções; a voz é única).
 
 ### EV-22 — Ritmo humano (timing) `DONE`
 
 - Entregue: modo texto com "digitando…" e texto revelado em ritmo humano (`useTypewriter`, pausas leves e fortes), sem erros simulados; modo voz com instruções de entonação por tom.
 - Desvio: o ritmo vem das frases do stream (EV-60), não de token a token.
+- Desvio: o atraso de "pensar" usa só o tamanho da resposta do participante (não o da próxima fala), e o texto enviado ao TTS não é moldado com pontuação para pausas; o tom só entra pelas instruções de entonação.
 
 - **Atraso dinâmico**: tempo de "pensar" proporcional ao tamanho da resposta do participante e da próxima fala,
   com jitter aleatório (ex.: 600 ms–2,5 s), nunca resposta instantânea.
@@ -302,12 +307,11 @@ Pesquisa resumida (fontes na seção 13):
 - Entregue: VAD no navegador (`useVoiceActivity`) com calibração de ruído e eco, barge-in e incentivo após silêncio longo.
 - Barge-in só atua com cancelamento de eco ativo na trilha do microfone (`useRecorder`); sem isso a IA não é interrompida.
 - A despedida e o acolhimento não podem ser interrompidos.
+- Desvio: o barge-in não tem pré-roll — o começo da fala que interrompe pode ser cortado, porque a gravação só começa depois da detecção.
 
 - **Detecção de fim de fala (VAD)** no navegador: para de gravar após silêncio (~1,2 s) em vez de exigir clique.
 - **Barge-in**: se o participante começa a falar enquanto a IA fala, o áudio da IA para.
 - Silêncio longo do participante → incentivo gentil ("pode ficar à vontade, sem pressa").
-- Pendência vinda do EV-17: o `useRecorder` ainda não tem VAD (grava e envia por clique) e o `useAudioPlayer` não
-  tem barge-in (só `play`/`stop`).
 
 ### EV-25 — Memória e coerência `DONE`
 
@@ -323,8 +327,12 @@ Pesquisa resumida (fontes na seção 13):
 - Sofrimento: nó `acolher` encerra a sessão, cita o CVV (188, cvv.org.br) e marca `profile.alerta` sem guardar o texto da pessoa.
 - Desvio: a parada determinística é conservadora (frases claras e curtas); pergunta nunca encerra, e o restante fica a cargo do LLM. O pedido claro de parar encerra com `STOP_CLOSING`.
 
-- Nó `safety_check` (EV-40) detecta sofrimento, risco ou pedido para parar → responde com acolhimento,
-  oferece pausar/encerrar e (se for o caso) indica canal de ajuda (ex.: CVV 188).
+- Entregue (correção do /entregar): o atalho determinístico de sofrimento só pega frases inequívocas em 1ª pessoa ("quero morrer", "quero me matar", "penso em suicídio"...), com fronteira de palavra; "me matar de trabalhar" e "prevenção ao suicídio" não disparam. "Não quero mais"/"não quero continuar"/"chega" sozinhos não encerram: ficam para o LLM.
+- Decisão (B3): o acolhimento **encerra a sessão** e indica o CVV, sem oferecer escolha entre pausar e encerrar — segurança primeiro. No participante, a tela não sai sozinha: cartão fixo do CVV (188, cvv.org.br) e botão "Continuar"; o evento `pensando` traz `risco` determinístico para o front não tocar filler antes do acolhimento. Custo aceito: um falso acolhimento raro encerra a sessão.
+- Decisão: a **negação** ("não quero morrer") continua disparando o acolhimento — preferimos acolher a mais a deixar passar. Custo: falso acolhimento raro.
+- Decisão: o **fallback amplo de parada** (`_BROAD_STOP_PHRASES`) só vale quando o LLM falha (duas tentativas) e pode parar em frase comum ("o ônibus chega às 7h"). Aceito: com o LLM fora, respeitar um pedido real de parar pesa mais que um falso encerramento raro (modo degradado).
+- Nó `safety_check` (EV-40) detecta sofrimento, risco ou pedido para parar → responde com acolhimento
+  e indica canal de ajuda (CVV 188). A spec previa oferecer pausar/encerrar; o desvio está acima (B3).
 - Pedido explícito de parar encerra sempre.
 
 ---
@@ -344,11 +352,15 @@ O pesquisador **sobe o questionário que já tem** e a plataforma transforma em 
 - Arquivo original referenciado em `interview_scripts.origem`.
 - Limites de segurança entregues: arquivo de até 2 MB (`MAX_UPLOAD_BYTES`), `.docx` descompactado até 20 MB, PDF até 50 páginas e extração de texto fora do event loop.
 
+- Entregue (correção do /entregar): upload sem `Content-Length` é recusado com **411** ("Envie o arquivo com o tamanho informado."); acima do limite + 64 KB é **413** antes de o servidor gravar o multipart; CSV com `;` e `.docx` criptografado (422) tratados.
+
 ### EV-31 — Link de convite por roteiro `DONE`
 
 - Cada roteiro publicado gera `/e/{slug}` + QR code.
 - Participante entra direto, sem login, escolhe voz ou texto e começa.
 - O participante é criado ao iniciar o convite, com todos os campos opcionais (`apelido`, `faixa_etaria`, `regiao`).
+- Entregue (correção do /entregar): o fluxo público usa só rotas do convite — `GET /convite/{slug}/sessao/{session_id}` (estado mínimo) e `POST /convite/{slug}/sessao/{session_id}/canal` (troca voz/texto) —, e o `session_id` fica em `sessionStorage`, fora da URL. Roteiro com convite encerrado continua na lista, com o aviso "Convite encerrado" e a entrevista bloqueada.
+- Limite (B23, RK-15): `POST /convite/{slug}/sessao` é público e **sem limite de requisições**; aceito na PoC.
 
 ### EV-32 — Dashboard do pesquisador `DONE`
 
@@ -366,8 +378,7 @@ O pesquisador **sobe o questionário que já tem** e a plataforma transforma em 
   literais com link para a sessão de origem, lacunas.
 - Salvo em `syntheses` com `escopo: roteiro`. Map-reduce: usa as sínteses individuais já salvas como entrada.
 - Síntese individual passa a ser estruturada (JSON → `temas[]`, `citacoes[]`) e cacheada (EV-13).
-- Resolvido: excluir sessão remove suas citações das sínteses de roteiro (`$pull` atômico em `temas.$[].citacoes`),
-  coberto por um teste `-m mongo` no MongoDB real (o mongomock ignora esse `$pull`).
+- Resolvido (revisado no /entregar, B30): excluir sessão **apaga** o relatório do roteiro que a usou (`sessoes_ids` gravado no relatório, ou citação dela); só tirar a citação não bastava, porque resumo, pontos e divergências derivam da sessão. O relatório precisa ser regerado; coberto por teste `-m mongo`.
 - Entregue: `GET/POST /scripts/{id}/sintese` (`?refresh=true`); relatório de no máximo 30 sínteses de sessão e 12 mil
   caracteres no prompt, salvo com id `roteiro:{id}`; `divergencias` e `sessoes_usadas` no modelo.
 - Desvio: citações conferidas como trecho literal da fala e guardadas como o trecho original (caixa e espaços), não o
@@ -389,10 +400,13 @@ O pesquisador **sobe o questionário que já tem** e a plataforma transforma em 
 - Desvio: a extração de perfil não é um nó; vem do mesmo JSON do `decide` (`profile_updates`), mantendo uma chamada ao LLM por turno. `finish` antes da última pergunta vira `advance`.
 
 ```
-START → extract_profile → safety_check ─┬─ risco → acolher_e_encerrar → END
-                                        └─ ok → decide ─┬─ deepen  → gerar_probe   → END
-                                                        ├─ advance → transicionar  → END
-                                                        └─ finish  → encerrar      → END
+START → safety_check ─┬─ pedido_parar → encerrar_a_pedido → END
+                      ├─ sofrimento   → acolher           → END
+                      └─ ok → decide ─┬─ aprofundar   → END
+                                      ├─ transicionar → END
+                                      ├─ encerrar     → END
+                                      ├─ acolher            (risco sinalizado pelo LLM) → END
+                                      └─ encerrar_a_pedido  (parada sinalizada pelo LLM) → END
 ```
 
 - Arestas condicionais; cada nó com responsabilidade única e testável isoladamente.
@@ -424,6 +438,8 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 - Entregue: log JSON por requisição (sem conteúdo), medidor de uso por operação (`$inc` atômico em `metricas`) e
   `?session_id=` em `/voice/*` para atribuir STT/TTS à sessão.
 - Desvio: os preços (`PRICE_*` em `Settings`) são estimativas de referência configuráveis, não faturamento real.
+- Desvio (B40): o log é uma linha por requisição; **não há latência por etapa (STT/LLM/TTS) nem nó do grafo** no log.
+- Limite: o custo médio do painel é a média entre as entrevistas **com custo medido** (sem nenhuma, "—"). O relatório cruzado do roteiro grava o próprio custo, somado ao total do painel; apagar o relatório (ao excluir uma sessão citada, EV-33/RK-11) **perde esse custo** do total — aceito.
 
 ---
 
@@ -501,6 +517,15 @@ Decisões da implementação:
 
 - Workflow `frontend-ci.yml`: `npm ci`, ESLint, `vite build` (e E2E do EV-70).
 - ✅ Feito: jobs `lint-build` e `e2e` em `.github/workflows/frontend-ci.yml`.
+
+### Entrega /entregar
+
+As fases 2 a 5 desta entrega (importação e convite, voz e realismo, painel e síntese, testes e documentação) foram
+revisadas por 3 revisores cada (spec/AEP, código e interface). Os achados foram corrigidos na branch
+`feat/entregar-correcoes`; o que não foi corrigido está registrado como decisão ou limite nos itens acima
+(EV-21, EV-22, EV-24, EV-26, EV-30, EV-31, EV-62 e RK-15).
+
+---
 
 ---
 

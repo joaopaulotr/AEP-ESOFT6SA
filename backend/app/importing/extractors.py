@@ -45,9 +45,10 @@ class CsvExtractor(TextExtractor):
     def extract(self, data: bytes) -> str:
         text = _decode(data)
         try:
-            dialect = csv.Sniffer().sniff(text[:2048], delimiters=",\t")
+            dialect = csv.Sniffer().sniff(text[:2048], delimiters=",;\t")
         except csv.Error:
-            dialect = csv.excel
+            # Separador não reconhecido: cada linha inteira vira uma célula (nada se perde).
+            return "\n".join(line.strip() for line in text.splitlines() if line.strip())
         try:
             cells = [cell.strip() for row in csv.reader(io.StringIO(text), dialect) for cell in row]
         except csv.Error as exc:
@@ -80,7 +81,8 @@ def _check_zip_size(data: bytes) -> None:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             _check_zip_headers(archive.infolist())
             _check_zip_real_size(archive)
-    except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError) as exc:
+    # RuntimeError/ValueError: entrada criptografada (pede senha) ou cabeçalho inválido.
+    except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError, RuntimeError, ValueError) as exc:
         raise ImportFileError(UNREADABLE_MESSAGE) from exc
 
 

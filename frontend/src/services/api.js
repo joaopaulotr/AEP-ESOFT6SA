@@ -35,6 +35,20 @@ async function request(path, options = {}) {
     return res;
 }
 
+/** Sinal que aborta sozinho depois de `ms` (pedido travado não segura a tela). */
+function sinalComPrazo(ms) {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+}
+
+/** `?session_id=` opcional: atribui o custo de voz à sessão. */
+function qsSessao(sessionId) {
+    return sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+}
+
+export const PRAZO_TTS_MS = 8000;
+
 function postJson(body) {
     return {
         method: "POST",
@@ -53,8 +67,9 @@ export const api = {
         return res.json();
     },
 
+    /** `ativos=false` lista todos os roteiros, inclusive os com convite encerrado. */
     async listScripts() {
-        const res = await request("/scripts");
+        const res = await request("/scripts?ativos=false");
         return res.json();
     },
 
@@ -107,6 +122,23 @@ export const api = {
         return res.json();
     },
 
+    /**
+     * Estado mínimo da sessão pública (sem objetivos nem perfil): título, persona, conversa,
+     * índice, `finished` e `acolhimento`. 404 se a sessão não é deste convite.
+     */
+    async getPublicSession(slug, sessionId) {
+        const res = await request(`/convite/${encodeURIComponent(slug)}/sessao/${encodeURIComponent(sessionId)}`);
+        return res.json();
+    },
+
+    /** Troca de canal (voz/texto) no meio da entrevista pública. */
+    async setPublicChannel(slug, sessionId, canal) {
+        await request(
+            `/convite/${encodeURIComponent(slug)}/sessao/${encodeURIComponent(sessionId)}/canal`,
+            postJson({ canal }),
+        );
+    },
+
     async listScriptSessions(scriptId, { status } = {}) {
         const qs = status ? `?status=${encodeURIComponent(status)}` : "";
         const res = await request(`/scripts/${encodeURIComponent(scriptId)}/sessions${qs}`);
@@ -151,16 +183,22 @@ export const api = {
         await request(`/session/${sessionId}/finish`, { method: "POST" });
     },
 
-    /** `tom`: "acolhedor" | "neutro" | "formal" (tom da persona do roteiro); omitido = padrão do servidor. */
-    async synthesizeSpeech(texto, tom) {
-        const res = await request("/voice/fala", postJson(tom ? { texto, tom } : { texto }));
+    /**
+     * `tom`: "acolhedor" | "neutro" | "formal" (tom da persona do roteiro); omitido = padrão do servidor.
+     * `sessionId`: atribui o custo à sessão. Desiste em 8 s (a legenda segue sem áudio).
+     */
+    async synthesizeSpeech(texto, tom, sessionId) {
+        const res = await request(`/voice/fala${qsSessao(sessionId)}`, {
+            ...postJson(tom ? { texto, tom } : { texto }),
+            signal: sinalComPrazo(PRAZO_TTS_MS),
+        });
         return res.blob();
     },
 
-    async transcribeAudio(blob) {
+    async transcribeAudio(blob, sessionId) {
         const form = new FormData();
         form.append("file", blob, "audio.webm");
-        const res = await request("/voice/transcricao", { method: "POST", body: form });
+        const res = await request(`/voice/transcricao${qsSessao(sessionId)}`, { method: "POST", body: form });
         return res.json();
     },
 

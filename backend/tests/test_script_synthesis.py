@@ -211,36 +211,44 @@ class TestGenerate:
 
 
 class TestCascade:
-    def test_deleting_a_session_removes_its_citations_from_script_reports(self, client, fake_llm, two):
+    def test_deleting_a_session_deletes_the_whole_report_that_used_it(self, client, fake_llm, two):
         script_id, a, b = two
         fake_llm.queue_payload(llm_report(a, b))
         client.post(f"{API}/scripts/{script_id}/sintese")
 
         assert client.delete(f"{API}/session/{a}").status_code == 204
 
-        cites = client.get(f"{API}/scripts/{script_id}/sintese").json()["temas"][0]["citacoes"]
-        assert [(c["texto"], c["session_id"]) for c in cites] == [("perco muito tempo", b)]
+        response = client.get(f"{API}/scripts/{script_id}/sintese")
+        assert response.status_code == 404
+        # Nada do texto derivado sobrevive em lugar nenhum da coleção (RK-11).
+        raw = run(client, deps.get_synthesis_repository().list_for_script, script_id)
+        assert [item.escopo for item in raw] == ["sessao"]  # só a síntese da sessão b
+        dumped = " ".join(item.model_dump_json() for item in raw)
+        for derived in ("Cruzado.", "Todos demoram", "A prefere ônibus", "demoro duas horas"):
+            assert derived not in dumped
 
-    def test_pull_only_touches_citations_of_that_session(self, client, fake_llm, two):
+    def test_report_stores_its_input_sessions(self, client, fake_llm, two):
+        script_id, a, b = two
+        fake_llm.queue_payload(llm_report(a, b))
+
+        body = client.post(f"{API}/scripts/{script_id}/sintese").json()
+
+        assert sorted(body["sessoes_ids"]) == sorted([a, b])
+
+    def test_report_of_another_script_is_kept(self, client, fake_llm, two):
         script_id, a, b = two
         other = make_script(client)
         run(
             client,
-            deps.get_synthesis_repository().create,
-            Synthesis(
-                escopo="roteiro",
-                script_id=other,
-                resumo="x",
-                temas=[Theme(tema="t", citacoes=[Citation(texto="k", session_id="outra")])],
-            ),
+            deps.get_synthesis_repository().save_for_script,
+            Synthesis(escopo="roteiro", script_id=other, resumo="x", sessoes_ids=["outra", "mais"]),
         )
 
         client.delete(f"{API}/session/{a}")
 
-        kept = run(client, deps.get_synthesis_repository().list_for_script, other)[0]
-        assert len(kept.temas[0].citacoes) == 1
+        assert run(client, deps.get_synthesis_repository().get_for_script, other) is not None
 
-    def test_session_deleted_while_llm_runs_leaves_no_orphan_citation(self, client, fake_llm, two):
+    def test_session_deleted_while_llm_runs_leaves_no_report(self, client, fake_llm, two):
         script_id, a, b = two
         sessions = deps.get_session_repository()
         original = fake_llm.complete_json
@@ -252,9 +260,11 @@ class TestCascade:
         fake_llm.complete_json = delete_then_answer
         fake_llm.queue_payload(llm_report(a, b))
 
-        body = client.post(f"{API}/scripts/{script_id}/sintese").json()
+        response = client.post(f"{API}/scripts/{script_id}/sintese")
 
-        assert [c["session_id"] for c in body["temas"][0]["citacoes"]] == [b]
+        assert response.status_code == 409
+        assert "apagada durante a geração" in response.json()["detail"]
+        assert client.get(f"{API}/scripts/{script_id}/sintese").status_code == 404
 
 
 class TestInjectionAndCap:
@@ -285,9 +295,7 @@ class TestInjectionAndCap:
 
 
 class TestConcurrentDelete:
-    def test_delete_between_llm_call_and_save_leaves_no_citation_of_the_deleted_session(
-        self, client, fake_llm, two
-    ):
+    def test_delete_between_llm_call_and_save_leaves_no_report(self, client, fake_llm, two):
         script_id, a, b = two
         original = fake_llm.complete_json
 
@@ -298,12 +306,10 @@ class TestConcurrentDelete:
         fake_llm.complete_json = delete_through_service_then_answer
         fake_llm.queue_payload(llm_report(a, b))
 
-        client.post(f"{API}/scripts/{script_id}/sintese")
+        assert client.post(f"{API}/scripts/{script_id}/sintese").status_code == 409
+        assert client.get(f"{API}/scripts/{script_id}/sintese").status_code == 404
 
-        saved = client.get(f"{API}/scripts/{script_id}/sintese").json()
-        assert all(c["session_id"] != a for t in saved["temas"] for c in t["citacoes"])
-
-    def test_session_is_deleted_before_its_synthesis_and_citations(self, client, two, monkeypatch):
+    def test_session_is_deleted_before_its_synthesis_and_reports(self, client, two, monkeypatch):
         script_id, a, b = two
         order = []
         sessions = deps.get_session_repository()
@@ -314,21 +320,21 @@ class TestConcurrentDelete:
             order.append("sessao")
             return await real_delete(self, session_id)
 
-        async def spy_pull(session_id):
-            order.append("pull")
+        async def spy_reports(session_id, script_id=None):
+            order.append(("relatorio", script_id))
             return 0
 
         monkeypatch.setattr(type(sessions), "delete", spy_session_delete)
-        monkeypatch.setattr(syntheses, "pull_citations_of_session", spy_pull)
+        monkeypatch.setattr(syntheses, "delete_script_reports_with_session", spy_reports)
 
         client.delete(f"{API}/session/{a}")
 
-        assert order == ["sessao", "pull"]
+        assert order == ["sessao", ("relatorio", script_id)]
 
 
 class TestIdempotentDelete:
     def _orphan_synthesis(self, client, script_id):
-        """Sessão já apagada, mas síntese dela e citação em relatório ainda lá (cleanup falhou antes)."""
+        """Sessão já apagada, mas síntese dela e relatório que a usou ainda lá (cleanup falhou antes)."""
         sid = add_session_synthesis(client, script_id, ["fala orfa qualquer"])
         run(client, deps.get_session_repository().delete, sid)
         return sid
@@ -338,11 +344,12 @@ class TestIdempotentDelete:
         sid = self._orphan_synthesis(client, script_id)
         run(
             client,
-            deps.get_synthesis_repository().create,
+            deps.get_synthesis_repository().save_for_script,
             Synthesis(
                 escopo="roteiro",
                 script_id=script_id,
                 resumo="x",
+                sessoes_ids=[sid, "outra"],
                 temas=[Theme(tema="t", citacoes=[Citation(texto="fala orfa qualquer", session_id=sid)])],
             ),
         )
@@ -351,8 +358,7 @@ class TestIdempotentDelete:
 
         syntheses = deps.get_synthesis_repository()
         assert run(client, syntheses.get_for_session, sid) is None
-        report = run(client, syntheses.list_for_script, script_id)[0]
-        assert report.temas[0].citacoes == []
+        assert run(client, syntheses.get_for_script, script_id) is None
 
     def test_nothing_to_clean_is_404(self, client):
         response = client.delete(f"{API}/session/nao-existe")
@@ -368,24 +374,25 @@ class TestIdempotentDelete:
         syntheses = deps.get_synthesis_repository()
         run(
             client,
-            syntheses.create,
+            syntheses.save_for_script,
             Synthesis(
                 escopo="roteiro",
                 script_id=script_id,
                 resumo="x",
+                sessoes_ids=[sid],
                 temas=[Theme(tema="t", citacoes=[Citation(texto="fala secreta do participante", session_id=sid)])],
             ),
         )
         calls = {"n": 0}
-        real_pull = syntheses.pull_citations_of_session
+        real_cleanup = syntheses.delete_script_reports_with_session
 
-        async def flaky_pull(session_id):
+        async def flaky_cleanup(session_id, script_id=None):
             calls["n"] += 1
             if calls["n"] == 1:
                 raise RuntimeError("banco caiu")
-            return await real_pull(session_id)
+            return await real_cleanup(session_id, script_id)
 
-        monkeypatch.setattr(syntheses, "pull_citations_of_session", flaky_pull)
+        monkeypatch.setattr(syntheses, "delete_script_reports_with_session", flaky_cleanup)
         import logging
 
         with caplog.at_level(logging.ERROR):
@@ -397,4 +404,38 @@ class TestIdempotentDelete:
 
         assert client.delete(f"{API}/session/{sid}").status_code == 204
         assert run(client, syntheses.get_for_session, sid) is None
-        assert run(client, syntheses.list_for_script, script_id)[0].temas[0].citacoes == []
+        assert run(client, syntheses.get_for_script, script_id) is None
+
+
+class TestReportCost:
+    def test_generation_cost_is_recorded_on_the_report_and_summed_on_regeneration(
+        self, client, fake_async_openai, two
+    ):
+        from app.providers.openai_provider import OpenAILLMProvider
+
+        script_id, a, b = two
+        llm = OpenAILLMProvider(client=fake_async_openai)
+        app.dependency_overrides[deps.get_synthesis_service] = lambda: SynthesisService(
+            deps.get_session_repository(), deps.get_synthesis_repository(), llm, deps.get_script_repository()
+        )
+        import json
+
+        fake_async_openai.queue_raw(json.dumps(llm_report(a, b))).queue_raw(json.dumps(llm_report(a, b)))
+
+        first = client.post(f"{API}/scripts/{script_id}/sintese").json()
+        second = client.post(f"{API}/scripts/{script_id}/sintese?refresh=true").json()
+
+        assert first["metricas"]["tokens"] == 130 and first["metricas"]["custo_usd"] > 0
+        assert second["metricas"]["tokens"] == 260
+        assert second["metricas"]["custo_usd"] == pytest.approx(2 * first["metricas"]["custo_usd"])
+        painel = client.get(f"{API}/scripts/{script_id}/painel").json()
+        assert painel["custo_total_usd"] == pytest.approx(second["metricas"]["custo_usd"], abs=1e-6)
+
+    def test_cost_of_a_failed_regeneration_is_still_recorded(self, client, fake_llm, two):
+        script_id, a, b = two
+        fake_llm.queue_payload(llm_report(a, b))
+        client.post(f"{API}/scripts/{script_id}/sintese")
+        fake_llm.queue_payload("lixo").queue_payload({"x": 1})
+
+        assert client.post(f"{API}/scripts/{script_id}/sintese?refresh=true").status_code == 502
+        assert client.get(f"{API}/scripts/{script_id}/sintese").status_code == 200

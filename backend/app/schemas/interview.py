@@ -55,6 +55,7 @@ class TurnResponse(BaseModel):
     pergunta_ordem: int | None = None
     perguntas_total: int = 0
     aprofundamentos_restantes: int | None = None
+    acolhimento: bool = False  # a fala é o acolhimento (CVV): o front não navega sozinho
 
 
 class SynthesisResponse(BaseModel):
@@ -100,25 +101,3 @@ class SessionDetails(BaseModel):
     session: InterviewState
     script: InterviewScript | None
     participant: Participant | None
-
-
-class ActionCount(BaseModel):
-    acao: Action
-    total: int
-
-
-class QuestionDeepening(BaseModel):
-    pergunta_ordem: int
-    media_aprofundamentos: float
-
-
-class ScriptStats(BaseModel):
-    """Indicadores agregados das sessões de um roteiro (base do dashboard, EV-32)."""
-
-    script_id: str
-    total_sessoes: int = 0
-    concluidas: int = 0
-    taxa_conclusao: float = 0.0
-    media_respostas: float = 0.0
-    acoes: list[ActionCount] = Field(default_factory=list)
-    aprofundamentos_por_pergunta: list[QuestionDeepening] = Field(default_factory=list)

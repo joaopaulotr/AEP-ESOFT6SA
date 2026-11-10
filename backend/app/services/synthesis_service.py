@@ -9,7 +9,7 @@ from app.prompts.synthesis_prompts import (
     SYNTHESIS_FALLBACK_PROMPT,
     SYNTHESIS_PROMPT,
 )
-from app.providers.base import LLMProvider, ProviderError
+from app.providers.base import InvalidJSONError, LLMProvider, ProviderError
 from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.synthesis_repository import SynthesisRepository
@@ -26,6 +26,9 @@ MIN_SESSIONS_MESSAGE = (
     "Gere a síntese de pelo menos 2 entrevistas concluídas antes do relatório do roteiro."
 )
 SCRIPT_REPORT_NOT_READY = "Relatório do roteiro ainda não gerado."
+SESSION_DELETED_DURING_REPORT = (
+    "Uma entrevista usada no relatório foi apagada durante a geração. Gere o relatório de novo."
+)
 MIN_SESSIONS_FOR_SCRIPT = 2
 MAX_SESSIONS_FOR_SCRIPT = 30
 MAX_SCRIPT_PROMPT_CHARS = 12_000  # entradas das sínteses no prompt do roteiro
@@ -107,7 +110,7 @@ class SynthesisService:
         session_repository: SessionRepository,
         synthesis_repository: SynthesisRepository,
         llm: LLMProvider,
-        script_repository: ScriptRepository | None = None,
+        script_repository: ScriptRepository,
     ) -> None:
         self._sessions = session_repository
         self._syntheses = synthesis_repository
@@ -217,10 +220,16 @@ class SynthesisService:
             for item in inputs
         ]
         prompt = SCRIPT_SYNTHESIS_PROMPT.format(syntheses=json.dumps(payload, ensure_ascii=False))
-        # Sem sessão para atribuir o custo: o medidor só isola a operação, nada é gravado.
-        with track_usage():
-            parsed = await self._complete_structured(prompt, _LLMScriptSynthesis)
+        report_id = SynthesisRepository.script_synthesis_id(script_id)
+        # O custo vai para o próprio relatório ($inc), somado no painel do roteiro (EV-62).
+        with track_usage() as meter:
+            try:
+                parsed = await self._complete_structured(prompt, _LLMScriptSynthesis)
+            except BaseException:
+                await record_usage_safely(self._syntheses, report_id, meter)  # se já existe
+                raise
         if parsed is None:
+            await record_usage_safely(self._syntheses, report_id, meter)
             raise ProviderError("O modelo não devolveu um relatório cruzado válido.")
 
         known = [c for item in inputs for theme in item.temas for c in theme.citacoes]
@@ -233,7 +242,7 @@ class SynthesisService:
             for theme in parsed.temas
             if theme.tema.strip()
         ]
-        saved = await self._syntheses.save_for_script(
+        await self._syntheses.save_for_script(
             Synthesis(
                 escopo="roteiro",
                 script_id=script_id,
@@ -242,16 +251,17 @@ class SynthesisService:
                 divergencias=parsed.divergencias,
                 lacunas=parsed.lacunas,
                 sessoes_usadas=len(inputs),
+                sessoes_ids=[item.session_id for item in inputs if item.session_id],
                 modelo=self._llm.model_name,
             )
         )
-        # Sessão apagada enquanto o LLM gerava: tira as citações dela (RK-11).
-        removed = False
+        await record_usage_safely(self._syntheses, report_id, meter)
+        # Sessão apagada enquanto o LLM gerava: o relatório deriva dela e é apagado (RK-11).
         for item in inputs:
             if item.session_id and not await self._sessions.exists(item.session_id):
-                pulled = await self._syntheses.pull_citations_of_session(item.session_id)
-                removed = removed or pulled > 0
-        return await self._syntheses.get_for_script(script_id) if removed else saved
+                await self._syntheses.delete_script_reports_with_session(item.session_id, script_id)
+                raise ConflictError(SESSION_DELETED_DURING_REPORT)
+        return await self._syntheses.get_or_raise(report_id)
 
     @staticmethod
     def _fit_to_prompt_cap(inputs: list[Synthesis]) -> list[Synthesis]:
@@ -268,17 +278,16 @@ class SynthesisService:
         return kept
 
     async def _require_script(self, script_id: str) -> None:
-        if self._scripts is not None:
-            await self._scripts.get_or_raise(script_id)
+        await self._scripts.get_or_raise(script_id)
 
     async def _complete_structured(self, prompt: str, model: type[BaseModel]):
-        """JSON validado pelo Pydantic; inválido → tenta de novo uma vez → None.
-        ProviderError não é capturado: segue como 502."""
+        """JSON validado pelo Pydantic; inválido (fora do contrato ou JSON truncado) → tenta de
+        novo uma vez → None. Outro ProviderError (queda, timeout) não é capturado: segue como 502."""
         for _ in range(STRUCTURED_ATTEMPTS):
-            payload = await self._llm.complete_json(prompt)
             try:
+                payload = await self._llm.complete_json(prompt)
                 return model.model_validate(payload)
-            except ValidationError:
+            except (ValidationError, InvalidJSONError):
                 continue
         return None
 

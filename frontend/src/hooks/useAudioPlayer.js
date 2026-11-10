@@ -99,7 +99,7 @@ export function useAudioPlayer() {
                 }
                 if (geracao !== geracaoRef.current) return;
                 aoIniciar?.();
-                if (blob) await play(blob);
+                if (blob && blob.size > 0) await play(blob); // áudio vazio: só a legenda (evita erro do <audio>)
             });
             cadeiaRef.current = item.finally(() => {
                 if (geracao !== geracaoRef.current) return;

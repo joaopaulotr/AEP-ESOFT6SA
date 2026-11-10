@@ -11,8 +11,8 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-def synthesis(session_repository, synthesis_repository, fake_llm) -> SynthesisService:
-    return SynthesisService(session_repository, synthesis_repository, fake_llm)
+def synthesis(session_repository, synthesis_repository, fake_llm, script_repository) -> SynthesisService:
+    return SynthesisService(session_repository, synthesis_repository, fake_llm, script_repository)
 
 
 @pytest.fixture
@@ -57,9 +57,9 @@ class TestFilterLiteralCitations:
         assert filter_literal_citations(["Eu odeio o metrô"], ["Pego dois ônibus."]) == []
 
     def test_strips_surrounding_quotes_before_checking(self):
-        assert filter_literal_citations(['"dois ônibus"', "“dois ônibus”"], ["Pego dois ônibus."]) == [
-            "dois ônibus",
-            "dois ônibus",
+        assert filter_literal_citations(['"pego dois ônibus"', "“pego dois ônibus”"], ["Pego dois ônibus."]) == [
+            "Pego dois ônibus",
+            "Pego dois ônibus",
         ]
 
     def test_original_slice_keeps_participant_casing_and_spacing(self):
@@ -67,8 +67,14 @@ class TestFilterLiteralCitations:
 
         assert result == ["Pego Dois   Ônibus"]
 
-    def test_drops_quotes_shorter_than_8_chars(self):
-        assert filter_literal_citations(["ônibus", "dois ônibus"], ["Pego dois ônibus."]) == ["dois ônibus"]
+    def test_drops_quotes_shorter_than_8_chars_or_3_words(self):
+        assert filter_literal_citations(["ônibus", "dois ônibus"], ["Pego dois ônibus."]) == []
+        assert filter_literal_citations(["pego dois ônibus"], ["Pego dois ônibus."]) == ["Pego dois ônibus"]
+
+    def test_must_match_whole_words_at_the_edges(self):
+        fala = ["Os trens lotados atrasam todo dia."]
+        assert filter_literal_citations(["s trens lotados atrasa"], fala) == []
+        assert filter_literal_citations(["trens lotados atrasam"], fala) == ["trens lotados atrasam"]
 
     def test_drops_empty_and_quote_only(self):
         assert filter_literal_citations(["", "   ", '""'], ["algo"]) == []
@@ -134,6 +140,22 @@ class TestStructuredSynthesis:
         assert resumo == "Resumo em texto livre." and len(fake_llm.prompts) == 3
         saved = await synthesis_repository.get_for_session(finished_state.session_id)
         assert saved.resumo == resumo and saved.temas == [] and saved.lacunas == []
+
+    async def test_truncated_json_from_openai_is_retried_then_falls_back_to_text(
+        self, session_repository, synthesis_repository, script_repository, fake_async_openai, finished_state
+    ):
+        from app.providers.openai_provider import OpenAILLMProvider
+
+        await session_repository.create(finished_state)
+        fake_async_openai.queue_raw('{"resumo": "x').queue_raw('{"resumo": "x').queue_raw("Resumo livre.")
+        service = SynthesisService(
+            session_repository, synthesis_repository, OpenAILLMProvider(client=fake_async_openai),
+            script_repository,
+        )
+
+        resumo = await service.synthesize(finished_state.session_id)
+
+        assert resumo == "Resumo livre." and len(fake_async_openai.calls) == 3
 
     async def test_provider_error_is_not_retried(
         self, synthesis, session_repository, fake_llm, finished_state
