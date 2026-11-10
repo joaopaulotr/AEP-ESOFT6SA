@@ -348,21 +348,28 @@ O pesquisador **sobe o questionário que já tem** e a plataforma transforma em 
 - Participante entra direto, sem login, escolhe voz ou texto e começa.
 - O participante é criado ao iniciar o convite, com todos os campos opcionais (`apelido`, `faixa_etaria`, `regiao`).
 
-### EV-32 — Dashboard do pesquisador `TODO`
+### EV-32 — Dashboard do pesquisador `DONE`
 
 - Por roteiro: nº de sessões, taxa de conclusão, duração média, nº médio de aprofundamentos por pergunta,
   distribuição de ações (`deepen/advance/finish`), custo médio por entrevista (EV-62), temas mais citados.
 - Implementado com **aggregation pipelines** do MongoDB (`$group`, `$unwind`, `$lookup`) — reforça R2.
 - Lista de sessões com acesso à transcrição e à síntese individual.
+- Entregue: `GET /scripts/{id}/painel` e tela `/entrevistas/:scriptId/painel` (tiles, barras, colunas por dia).
+  Um `$facet` por grupo de números; o dia é agrupado em Python no fuso America/Sao_Paulo (`tzdata`).
+- Limite conhecido: o `$facet` devolve um único documento de até 16 MB; em escala muito grande exigiria pré-agregação.
 
-### EV-33 — Síntese cruzada por roteiro `TODO`
+### EV-33 — Síntese cruzada por roteiro `DONE`
 
 - Relatório agregado de todas as sessões concluídas de um roteiro: padrões, divergências, temas, citações
   literais com link para a sessão de origem, lacunas.
 - Salvo em `syntheses` com `escopo: roteiro`. Map-reduce: usa as sínteses individuais já salvas como entrada.
 - Síntese individual passa a ser estruturada (JSON → `temas[]`, `citacoes[]`) e cacheada (EV-13).
-- Pendência: excluir sessão deve remover suas citações das sínteses de roteiro (hoje a cascata só apaga a síntese
-  da própria sessão).
+- Resolvido: excluir sessão remove suas citações das sínteses de roteiro (`$pull` atômico em `temas.$[].citacoes`),
+  coberto por um teste `-m mongo` no MongoDB real (o mongomock ignora esse `$pull`).
+- Entregue: `GET/POST /scripts/{id}/sintese` (`?refresh=true`); relatório de no máximo 30 sínteses de sessão e 12 mil
+  caracteres no prompt, salvo com id `roteiro:{id}`; `divergencias` e `sessoes_usadas` no modelo.
+- Desvio: citações conferidas como trecho literal da fala e guardadas como o trecho original (caixa e espaços), não o
+  texto devolvido pelo LLM; as que não batem são descartadas.
 
 ### EV-34 — Modo texto `DONE`
 
@@ -407,11 +414,14 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 - Base para o efeito de digitação do modo texto (EV-22).
 - Inclui o hook `useTurnStream` no front (consumo do SSE), que não existe ainda.
 
-### EV-62 — Logs estruturados e métricas de custo `TODO`
+### EV-62 — Logs estruturados e métricas de custo `DONE`
 
 - Log JSON por request (session_id, nó do grafo, latência por etapa STT/LLM/TTS).
 - Tokens e segundos de áudio por turno → `interview_sessions.metricas`, custo estimado em USD.
 - Alimenta o dashboard e o argumento de "custo marginal perto de zero" no vídeo com números reais.
+- Entregue: log JSON por requisição (sem conteúdo), medidor de uso por operação (`$inc` atômico em `metricas`) e
+  `?session_id=` em `/voice/*` para atribuir STT/TTS à sessão.
+- Desvio: os preços (`PRICE_*` em `Settings`) são estimativas de referência configuráveis, não faturamento real.
 
 ---
 

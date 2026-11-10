@@ -125,6 +125,9 @@ Todas as rotas abaixo ficam sob `/api/v1`, exceto `GET /health` (raiz, usado pel
 | `PUT` | `/scripts/{script_id}` | Edita campos, perguntas e persona | `404`; `409` roteiro padrão (não pode ser desativado nem ter perguntas alteradas), perguntas de roteiro que já tem entrevistas (concluídas ou não; crie um novo roteiro) ou versão velha |
 | `DELETE` | `/scripts/{script_id}` | Sem sessões, apaga; com sessões, só desativa (`204`) | `404`; `409` roteiro padrão |
 | `GET` | `/scripts/{script_id}/sessions?status=&limit=` | Resumo das sessões do roteiro (`status`: `em_andamento` ou `concluida`; `limit` 1 a 200, padrão 50) | `404` roteiro |
+| `GET` | `/scripts/{script_id}/painel` | Painel do roteiro: sessões, taxa de conclusão, duração média, ações, aprofundamentos por pergunta, custo, temas mais citados, entrevistas por dia (fuso de São Paulo) e canais | `404` |
+| `GET` | `/scripts/{script_id}/sintese` | Relatório cruzado já salvo do roteiro (`escopo: roteiro`) | `404` roteiro ou relatório ainda não gerado |
+| `POST` | `/scripts/{script_id}/sintese?refresh=false` | Devolve o relatório salvo; sem ele (ou com `refresh=true`) gera pelo LLM a partir das sínteses de sessão (no máximo 30, com teto de 12 mil caracteres no prompt) e grava | `404`; `409` menos de 2 sínteses de sessão; `502` LLM |
 | `GET` | `/scripts/{script_id}/convite` | Slug e link público de convite do roteiro | `404` |
 | `GET` | `/scripts/{script_id}/qrcode.svg` | QR code (SVG) do link de convite | `404` |
 | `GET` | `/participants` | Lista participantes | — |
@@ -143,8 +146,8 @@ Todas as rotas abaixo ficam sob `/api/v1`, exceto `GET /health` (raiz, usado pel
 | `GET` | `/session/{id}/synthesis` | Síntese já salva (completa, com `temas`, `lacunas`, `modelo`) | `404` sessão ou síntese ainda não gerada |
 | `POST` | `/turn/{id}` | Processa a resposta (`texto`) e devolve `fala`, `finalizada`, `indice_atual` | `404`; `409` entrevista encerrada ou sessão alterada por outra ação |
 | `POST` | `/turn/{id}/stream` | Mesmo turno, em SSE (`text/event-stream`): `pensando` (na hora), `frase` (`texto`, `indice`, `finalizada`, uma por frase da fala decidida), `fim` (mesmo corpo de `POST /turn/{id}`) e `erro` (`detail`, após o início do stream). O LLM é chamado uma vez; o turno é gravado antes da 1ª frase e sobrevive à desconexão do cliente | `404` e `409` antes de abrir o stream |
-| `POST` | `/voice/transcricao` | Áudio (multipart `file`) para texto | `400` áudio vazio ou ininteligível; `413` acima de `MAX_AUDIO_BYTES`; `502` |
-| `POST` | `/voice/fala` | Texto para áudio `audio/mpeg` | `502` |
+| `POST` | `/voice/transcricao?session_id=` | Áudio (multipart `file`) para texto; `session_id` (opcional) atribui os segundos de áudio à sessão nas métricas | `400` áudio vazio ou ininteligível; `413` acima de `MAX_AUDIO_BYTES`; `502` |
+| `POST` | `/voice/fala?session_id=` | Texto para áudio `audio/mpeg`; `session_id` (opcional) atribui os caracteres de TTS à sessão | `502` |
 | `GET` | `/health` (raiz) | Verificação de saúde | — |
 
 Códigos: `400` regra de estado violada (`ValueError`) ou áudio inválido, `404` recurso inexistente,
@@ -308,7 +311,7 @@ seção 13 de `docs/EVOLUCOES.md`.
 
 | Camada | Stack |
 |---|---|
-| Backend | Python 3.11+, FastAPI, Pydantic, LangGraph; `python-docx` e `pypdf` (leitura de questionários), `segno` (QR code) |
+| Backend | Python 3.11+, FastAPI, Pydantic, LangGraph; `python-docx` e `pypdf` (leitura de questionários), `segno` (QR code), `tzdata` (fuso de São Paulo no painel, também no Windows) |
 | IA | OpenAI — `whisper-1` (transcrição), `gpt-4o-mini-tts` (voz), modelo de texto (`LLM_MODEL`, padrão `gpt-4o-mini`) para condução e síntese; provider `fake` offline |
 | Banco de dados | MongoDB 7 (NoSQL), acesso assíncrono via Motor |
 | Frontend | React 18, Vite, React Router, `fetch` (cliente único em `services/api.js`), tokens de design em CSS com modo claro e escuro |
@@ -398,8 +401,8 @@ Os testes automatizados do backend rodam sem chamadas reais à OpenAI (providers
 dublês ou pelo `fake`) e sem MongoDB instalado: o banco é simulado em memória com
 `mongomock-motor`, que executa filtros, índices únicos e pipelines de agregação.
 
-Estado atual: **506 testes passando, 9 pulados** (os de integração, que exigem `MONGO_TEST_URI`),
-**cobertura de 98,8%** (mínimo exigido: 70%, com medição de branches).
+Estado atual: **587 testes passando, 10 pulados** (os de integração `-m mongo`, que exigem `MONGO_TEST_URI`),
+**cobertura de 98,3%** (mínimo exigido: 70%, com medição de branches).
 
 Verificação completa da entrega (pytest com cobertura mínima + build do frontend + higiene de
 arquivos proibidos):
@@ -416,8 +419,8 @@ Só os testes do backend:
 cd backend && .venv/bin/python -m pytest        # Windows: .venv/Scripts/python
 ```
 
-Os testes de integração (`-m mongo`) repetem índices, `$lookup` e agregações num **MongoDB real**.
-Sem `MONGO_TEST_URI` eles são pulados (são os 9 acima); na CI, um container `mongo:7` os executa:
+Os testes de integração (`-m mongo`) repetem índices, `$lookup`, agregações do painel e o `$pull` das citações (que o mongomock ignora) num **MongoDB real**.
+Sem `MONGO_TEST_URI` eles são pulados (são os 10 acima); na CI, um container `mongo:7` os executa:
 
 ```bash
 docker compose up -d mongo
@@ -436,6 +439,22 @@ O relatório em HTML é gerado em `backend/htmlcov/` com:
 cd backend && .venv/bin/python -m pytest --cov-report=html
 ```
 
+## Métricas e custo
+
+Cada chamada à IA soma o consumo num medidor da requisição: tokens de entrada e saída do LLM, segundos
+de áudio transcrito (STT) e caracteres sintetizados (TTS). Ao final, o consumo é gravado em
+`interview_sessions.metricas` com `$inc` atômico (campos acima) e o custo em USD é estimado com preços
+de referência configuráveis (`PRICE_LLM_INPUT_PER_1M` 0,15, `PRICE_LLM_OUTPUT_PER_1M` 0,60,
+`PRICE_STT_PER_MINUTE` 0,006, `PRICE_TTS_PER_1M_CHARS` 15,0). São **estimativas**, não a fatura da
+OpenAI. O painel do roteiro mostra o custo total e o custo médio por entrevista.
+
+### Logs estruturados
+
+Uma linha JSON por requisição, em stdout, com `ts`, `level`, `logger`, `msg` e, quando existem,
+`request_id` (também devolvido no cabeçalho `X-Request-ID`), `method`, `path` (modelo da rota, sem ids),
+`status`, `duration_ms`, `session_id`, `stage` e `error_type`. Nunca há conteúdo: nem fala do
+participante, nem corpo ou query da requisição.
+
 ## 7. Telas
 
 | Rota | Tela | O que faz |
@@ -444,6 +463,7 @@ cd backend && .venv/bin/python -m pytest --cov-report=html
 | `/welcome` | Boas-vindas | Convite para iniciar e atalho para a lista de roteiros |
 | `/entrevistas` | Roteiros | Cards dos roteiros ativos com contagens; "iniciar entrevista" ou "ver entrevistas" do roteiro |
 | `/entrevistas/:scriptId` | Entrevistas do roteiro | Dados do roteiro (tema, perguntas, entrevistadora), lista de sessões com filtro por status e botão para nova entrevista |
+| `/entrevistas/:scriptId/painel` | Painel do roteiro | Números do roteiro (entrevistas, conclusão, duração, custo médio), gráficos de ações, aprofundamentos, temas, canais e entrevistas por dia, e o relatório cruzado do roteiro com citações ligadas à sessão de origem |
 | `/sessao/:sessionId` | Detalhe da entrevista | Conversa transcrita, participante, síntese salva (ou botão para gerá-la, se ainda não existe) e exclusão da sessão |
 | `/entrevista?roteiro=` | Entrevista | Conduz a entrevista por voz no roteiro indicado (sem `roteiro`, usa o padrão); ao concluir, vai para a devolutiva |
 | `/roteiros/novo` | Novo roteiro | Editor para criar roteiro do zero: tema, perguntas (reordenar, editar, remover, adicionar) e entrevistadora |
@@ -513,11 +533,12 @@ interview_scripts ◄── script_id ── interview_sessions ── participa
 |---|---|---|---|
 | `interview_scripts` | Roteiros: `titulo`, `tema`, `descricao`, `slug_convite`, `ativo`, `versao` (o seed "Entrevista generalista" é criado no startup) | `perguntas[]` (`ordem`, `texto`, `objetivo`, `max_aprofundamentos`), `origem{}` (`tipo`, `arquivo`), `persona{}` (`nome`, `tom`) | `script_id` único, `slug_convite` único, `ativo` |
 | `participants` | Participante, sem identificação obrigatória: `apelido`, `faixa_etaria`, `regiao`, `canal` (`voz`/`texto`) | — | `participant_id` único |
-| `interview_sessions` | Estado de uma entrevista; referencia roteiro (`script_id`) e participante (`participant_id`, opcional) | `conversation[]` (turnos com `pergunta_ordem`, `acao`, `latencia_ms`), `profile{}`, `metricas{}` | `session_id` único, (`script_id`, `created_at`), `participant_id` |
-| `syntheses` | Síntese por sessão (`escopo: sessao`, com `session_id`) ou por roteiro (`escopo: roteiro`, sem `session_id`); `resumo`, `lacunas[]`, `modelo` | `temas[]` (`tema`, `pontos[]`, `citacoes[]` com `texto` e `session_id`) | `synthesis_id` único, `session_id`, (`script_id`, `escopo`) |
+| `interview_sessions` | Estado de uma entrevista; referencia roteiro (`script_id`) e participante (`participant_id`, opcional) | `conversation[]` (turnos com `pergunta_ordem`, `acao`, `latencia_ms`), `profile{}`, `metricas{}` (`llm_input_tokens`, `llm_output_tokens`, `stt_seconds`, `tts_chars`, `tokens`, `segundos_audio`, `custo_usd`) | `session_id` único, (`script_id`, `created_at`), `participant_id` |
+| `syntheses` | Síntese por sessão (`escopo: sessao`, com `session_id`) ou por roteiro (`escopo: roteiro`, sem `session_id`); `resumo`, `lacunas[]`, `modelo`; no relatório do roteiro também `divergencias[]` e `sessoes_usadas`. Ids fixos: `sessao:{session_id}` e `roteiro:{script_id}` | `temas[]` (`tema`, `pontos[]`, `citacoes[]` com `texto` e `session_id`) | `synthesis_id` único, `session_id`, (`script_id`, `escopo`) |
 
-No momento só a síntese de sessão é gerada pela API; o escopo `roteiro` existe no modelo e nos
-dados de demonstração, e a geração cruzada por roteiro é evolução futura (EV-33).
+A síntese de sessão e o relatório cruzado por roteiro (EV-33) são gerados pela API. As citações só
+entram se forem trecho literal da fala do participante e são guardadas como o trecho original; ao
+apagar uma sessão, suas citações saem dos relatórios de roteiro (`$pull` atômico).
 
 Documento de `interview_sessions`:
 
@@ -532,7 +553,7 @@ Documento de `interview_sessions`:
   "status": "em_andamento",
   "versao": 3,
   "profile": { "ocupacao": "agente comunitária de saúde" },
-  "metricas": { "tokens": 0, "segundos_audio": 0, "custo_usd": 0 },
+  "metricas": { "llm_input_tokens": 0, "llm_output_tokens": 0, "stt_seconds": 0, "tts_chars": 0, "tokens": 0, "segundos_audio": 0, "custo_usd": 0 },
   "conversation": [
     { "role": "interviewer", "text": "Para começar...", "timestamp": "2026-11-09T19:37:32Z", "pergunta_ordem": 1, "acao": null, "latencia_ms": null },
     { "role": "participant", "text": "Eu trabalho...", "timestamp": "2026-11-09T19:37:50Z", "pergunta_ordem": 1, "acao": null, "latencia_ms": null },
@@ -552,9 +573,10 @@ Consultas que usam os relacionamentos (`app/repositories/session_repository.py`)
 - `get_details`: `$lookup` sessão → roteiro → participante, numa única consulta.
 - `list_summaries` e `count_by_script`: resumo das sessões e contagens por roteiro (total e
   concluídas) usados nas telas de roteiros.
-- `script_stats`: pipelines com `$group`, `$unwind`, `$filter` e `$cond` — total de sessões, taxa de
-  conclusão, média de respostas, distribuição de ações (`deepen`/`advance`/`finish`) e média de
-  aprofundamentos por pergunta. Ainda não há rota nem tela que o exponha (base do dashboard, EV-32).
+- `script_dashboard`: um `$facet` com `$group`, `$unwind`, `$filter` e `$cond` — total de sessões,
+  taxa de conclusão, duração e respostas médias, distribuição de ações (`deepen`/`advance`/`finish`),
+  aprofundamentos por pergunta, custo, temas e canais; os dias são agrupados em Python no fuso
+  America/Sao_Paulo. É a base de `GET /scripts/{id}/painel`.
 
 Sessões gravadas pela v0.1.0 são migradas no startup, de forma idempotente: ganham `script_id`
 do roteiro generalista (que tem as mesmas quatro perguntas), `status` e `versao`, e a síntese
@@ -579,13 +601,13 @@ Toda entrega segue a rotina `/entregar` (`.claude/skills/entregar/SKILL.md`):
 - **Rotas do pesquisador sem autenticação** — `/scripts`, `/participants` e as rotas de sessão
   (inclusive apagar sessão e ler a transcrição) são abertas, e o CORS aceita qualquer origem.
   Resolver antes do deploy público (RK-11).
-- Só a síntese por sessão é gerada; síntese cruzada por roteiro e dashboard são fases seguintes
-  (`docs/EVOLUCOES.md`).
+- O painel usa um `$facet`, que devolve um único documento de até 16 MB: em escala muito grande seria
+  preciso pré-agregar. O relatório do roteiro usa no máximo as 30 sínteses de sessão mais recentes.
 - **Rotas de convite públicas por desenho** — `/convite/{slug}` e `/convite/{slug}/sessao` não têm login
   (o participante entra só pelo link); quem tem o link inicia entrevistas no roteiro. As rotas do
   pesquisador (inclusive upload e QR) continuam sem autenticação (RK-11).
 - A tela de login não autentica: apenas navega para as boas-vindas.
-- `metricas` da sessão (tokens, áudio, custo) existem no modelo, mas ficam zeradas (EV-62).
+- O custo em `metricas` é **estimado** com preços configuráveis de referência, não é faturamento real.
 - A detecção de sofrimento e de pedido de parar é por regras e pelo LLM, não um classificador clínico:
   pode errar; o acolhimento apenas indica o CVV e encerra, não substitui atendimento humano.
 - Vale o que está na seção 2: transcrição, viés do modelo e dependência de microfone e conexão.
