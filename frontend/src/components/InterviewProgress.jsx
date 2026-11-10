@@ -1,4 +1,3 @@
-
 /** "Pergunta 2 de 5 · aprofundando". Some se a ordem ou o total ainda não são conhecidos. */
 export function textoProgresso({ ordem, total, acao }) {
     if (!ordem || !total) return "";

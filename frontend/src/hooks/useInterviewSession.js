@@ -389,7 +389,8 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             instantaneoRef.current = true;
             digitador.concluirAgora();
         }
-    }, [voz]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reage só à troca para voz; `digitador` muda a cada render e reexecutaria o efeito
+    }, [voz]);
 
     useEffect(() => {
         montadoRef.current = true;

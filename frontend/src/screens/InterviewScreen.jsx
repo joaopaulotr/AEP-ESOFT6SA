@@ -87,10 +87,12 @@ function Entrevista({ publico, slug }) {
             descartarPendente();
             liberarMicrofone();
         }
-    }, [modoTexto]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dispara só ao entrar no modo texto; as funções de áudio são recriadas a cada render
+    }, [modoTexto]);
     useEffect(() => {
         if (finalizada) liberarMicrofone();
-    }, [finalizada]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dispara só ao finalizar; `liberarMicrofone` não precisa reiniciar o efeito
+    }, [finalizada]);
 
     useEffect(() => {
         const el = msgsRef.current;
@@ -118,7 +120,8 @@ function Entrevista({ publico, slug }) {
             falarAviso(INCENTIVO);
         }, SILENCIO_INCENTIVO_MS);
         return () => clearTimeout(t);
-    }, [aguardando, ordemAtual, digitou]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `digitou` só reinicia a espera; `falarAviso` é recriada a cada render e não deve zerar o timer
+    }, [aguardando, ordemAtual, digitou]);
 
     const podeResponder = turno === "voce" && !processando && !finalizada && !pendente;
     const ouvindo = recorder.gravando; // inclui a gravação iniciada por barge-in (turno ainda é da IA)

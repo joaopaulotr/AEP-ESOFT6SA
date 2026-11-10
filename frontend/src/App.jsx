@@ -1,4 +1,3 @@
-
 import LoginScreen from "./screens/LoginScreen";
 import WelcomeScreen from "./screens/WelcomeScreen";
 import InterviewScreen from "./screens/InterviewScreen";

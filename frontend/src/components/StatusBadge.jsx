@@ -1,4 +1,3 @@
-
 const ROTULOS = {
     concluida: { texto: "Concluída", cor: "var(--color-primary)", fundo: "var(--color-accent-soft)", borda: "var(--color-accent-soft-border)" },
     em_andamento: { texto: "Em andamento", cor: "var(--color-thinking)", fundo: "var(--color-surface-2)", borda: "var(--color-border)" },

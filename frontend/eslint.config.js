@@ -19,8 +19,8 @@ export default [
     rules: {
       ...react.configs.recommended.rules,
       ...react.configs["jsx-runtime"].rules,
-      // Só as regras clássicas dos hooks; as regras do React Compiler (refs, immutability,
-      // set-state-in-effect) pedem reescrita de código que funciona e ficam de fora.
+      // regras do React Compiler (react-hooks v7: refs, immutability, set-state-in-effect) adiadas —
+      // padrões atuais funcionam; revisar se adotar o Compiler.
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
