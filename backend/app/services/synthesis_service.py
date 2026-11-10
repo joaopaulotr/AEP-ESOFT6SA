@@ -1,4 +1,5 @@
 from app.core.errors import NotFoundError
+from app.core.usage import estimate_cost, track_usage
 from app.prompts.synthesis_prompts import SYNTHESIS_PROMPT
 from app.providers.base import LLMProvider
 from app.repositories.session_repository import SessionRepository
@@ -45,7 +46,11 @@ class SynthesisService:
             conversation=format_full_conversation(interview_state.conversation),
             profile=interview_state.profile,
         )
-        resumo = await self._llm.complete_text(prompt)
+        with track_usage() as meter:
+            try:
+                resumo = await self._llm.complete_text(prompt)
+            finally:
+                await self._sessions.add_metrics(session_id, meter, estimate_cost(meter))
         await self._syntheses.save_for_session(
             Synthesis(
                 escopo="sessao",

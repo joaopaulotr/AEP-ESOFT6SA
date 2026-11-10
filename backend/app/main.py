@@ -1,4 +1,7 @@
 import logging
+import re
+import time
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -7,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import deps
 from app.api.v1.router import api_router
+from app.core.logging import configure_logging
 from app.core.errors import (
     ConflictError,
     CorruptDocumentError,
@@ -34,6 +38,7 @@ async def prepare_database() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    configure_logging()
     await prepare_database()
     yield
 
@@ -46,6 +51,41 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# session_id só é extraído de /session/{id} e /turn/{id}; nenhum outro valor de URL vai pro log.
+_SESSION_PATH = re.compile(r"^/api/v1/(?:session|turn)/([^/]+)")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Uma linha de log por requisição: método, rota, status, duração e ids. Sem corpo/query."""
+    started = time.perf_counter()
+    match = _SESSION_PATH.match(request.url.path)
+    extra = {
+        "request_id": uuid.uuid4().hex[:12],
+        "method": request.method,
+        "session_id": match.group(1) if match else None,
+    }
+
+    def line(status: int, error_type: str | None = None) -> dict:
+        route = request.scope.get("route")  # modelo da rota: ids/tokens do path não vazam
+        return {
+            **extra,
+            "path": getattr(route, "path", "desconhecida"),
+            "status": status,
+            "error_type": error_type,
+            "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+        }
+
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        logger.error("requisicao", extra=line(500, type(exc).__name__))
+        raise
+    logger.info("requisicao", extra=line(response.status_code))
+    response.headers["X-Request-ID"] = extra["request_id"]
+    return response
+
 
 app.include_router(api_router)
 

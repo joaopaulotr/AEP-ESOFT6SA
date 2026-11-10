@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable
 
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
+from app.core.usage import UsageMeter
 from app.db import collections
 from app.repositories.base import BaseRepository
 from app.schemas.api import SessionSummary
@@ -26,11 +27,29 @@ class SessionRepository(BaseRepository[InterviewState]):
     not_found_message = "Sessão não encontrada."
     duplicate_message = "Sessão já existe."
     stale_message = "A sessão foi alterada por outra ação. Tente de novo."
+    save_exclude = ("metricas",)  # só muda por add_metrics ($inc), nunca por cópia velha
     extra_indexes = (
         IndexModel([("script_id", ASCENDING), ("created_at", DESCENDING)], name="script_id_data"),
         IndexModel([("script_id", ASCENDING), ("updated_at", DESCENDING)], name="script_id_atualizada"),
         IndexModel([("participant_id", ASCENDING)], name="participant_id"),
     )
+
+    async def add_metrics(self, session_id: str, meter: UsageMeter, cost: float) -> bool:
+        """Soma o consumo da operação nas métricas com $inc atômico (sem tocar em `versao`).
+        Devolve False se a sessão não existe (apagada no meio)."""
+        if meter.is_empty:
+            return await self.exists(session_id)
+        increments = {
+            "metricas.llm_input_tokens": meter.llm_input_tokens,
+            "metricas.llm_output_tokens": meter.llm_output_tokens,
+            "metricas.stt_seconds": meter.stt_seconds,
+            "metricas.tts_chars": meter.tts_chars,
+            "metricas.tokens": meter.llm_input_tokens + meter.llm_output_tokens,
+            "metricas.segundos_audio": meter.stt_seconds,
+            "metricas.custo_usd": cost,
+        }
+        result = await self._collection.update_one({self.id_field: session_id}, {"$inc": increments})
+        return result.matched_count > 0
 
     async def list_by_script(self, script_id: str, *, limit: int = 100) -> list[InterviewState]:
         return await self.list({"script_id": script_id}, limit=limit)

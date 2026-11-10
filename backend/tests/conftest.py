@@ -105,6 +105,8 @@ class _AsyncFakeCompletions:
         self._owner = owner
         self.responses: list[str] = []
         self.calls: list[dict] = []
+        self.prompt_tokens = 100
+        self.completion_tokens = 30
 
     async def create(self, **kwargs) -> SimpleNamespace:
         self.calls.append(kwargs)
@@ -112,7 +114,12 @@ class _AsyncFakeCompletions:
         if not self.responses:
             raise _UnexpectedCall("Chamada inesperada à OpenAI: nenhuma resposta enfileirada.")
         content = self.responses.pop(0)
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+            usage=SimpleNamespace(
+                prompt_tokens=self.prompt_tokens, completion_tokens=self.completion_tokens
+            ),
+        )
 
 
 class _AsyncFakeTranscriptions:
@@ -120,13 +127,14 @@ class _AsyncFakeTranscriptions:
         self._owner = owner
         self.responses: list[str] = []
         self.calls: list[dict] = []
+        self.duration = 3.5
 
     async def create(self, **kwargs) -> SimpleNamespace:
         self.calls.append(kwargs)
         self._owner._raise_if_failing()
         if not self.responses:
             raise _UnexpectedCall("Chamada inesperada à transcrição: nada enfileirado.")
-        return SimpleNamespace(text=self.responses.pop(0))
+        return SimpleNamespace(text=self.responses.pop(0), duration=self.duration)
 
 
 class _AsyncFakeSpeech:

@@ -1,4 +1,5 @@
 from app.core.errors import ConflictError, NotFoundError
+from app.core.usage import estimate_cost, track_usage
 from app.repositories.participant_repository import ParticipantRepository
 from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
@@ -89,12 +90,18 @@ class SessionService:
         if session.finished:
             raise ConflictError("A entrevista já foi encerrada.")
         script = await self._scripts.get(session.script_id)
-        if script is None:
-            # Roteiro apagado com a sessão em andamento: guarda a resposta e encerra.
-            session, fala = self._interview.close_with_answer(session, text)
-        else:
-            session, fala = await self._interview.run_turn(session, script, text)
-        await self._persist(session)
+        # O medidor nasce aqui (e não no endpoint) para valer também na task protegida do SSE.
+        # Soma mesmo se o turno falhar: chamadas que já custaram (retries) entram na conta.
+        with track_usage() as meter:
+            try:
+                if script is None:
+                    # Roteiro apagado com a sessão em andamento: guarda a resposta e encerra.
+                    session, fala = self._interview.close_with_answer(session, text)
+                else:
+                    session, fala = await self._interview.run_turn(session, script, text)
+                await self._persist(session)
+            finally:
+                await self._sessions.add_metrics(session_id, meter, estimate_cost(meter))
         return session, fala
 
     async def turn_meta(self, session: InterviewState) -> dict:

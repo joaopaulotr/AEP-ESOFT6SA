@@ -4,6 +4,7 @@ import json
 from openai import AsyncOpenAI, OpenAIError
 
 from app.core.config import settings
+from app.core.usage import current_meter
 from app.providers.base import LLMProvider, ProviderError, SpeechProvider, Tom
 
 
@@ -15,6 +16,13 @@ TOM_INSTRUCTIONS: dict[str, str] = {
     "neutro": "Fale em português do Brasil, de forma clara e tranquila, em ritmo de conversa.",
     "formal": "Fale em português do Brasil, de forma cordial e profissional, com ritmo pausado.",
 }
+
+
+def _report_llm_usage(response) -> None:
+    meter = current_meter()
+    usage = getattr(response, "usage", None)
+    if meter is not None and usage is not None:
+        meter.add_llm(getattr(usage, "prompt_tokens", 0), getattr(usage, "completion_tokens", 0))
 
 
 def _build_client() -> AsyncOpenAI:
@@ -49,6 +57,7 @@ class OpenAILLMProvider(LLMProvider):
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
             )
+            _report_llm_usage(response)
             content = response.choices[0].message.content
         except OpenAIError as exc:
             raise ProviderError(f"Falha no provedor de LLM: {exc}") from exc
@@ -68,6 +77,7 @@ class OpenAILLMProvider(LLMProvider):
                 model=self._model,
                 messages=[{"role": "user", "content": prompt}],
             )
+            _report_llm_usage(response)
             content = response.choices[0].message.content
         except OpenAIError as exc:
             raise ProviderError(f"Falha no provedor de LLM: {exc}") from exc
@@ -99,7 +109,10 @@ class OpenAISpeechProvider(SpeechProvider):
                 language="pt",
                 temperature=0,
                 prompt="Entrevista qualitativa em português sobre o dia a dia de trabalho.",
+                response_format="verbose_json",
             )
+            if (meter := current_meter()) is not None:
+                meter.add_stt(getattr(transcription, "duration", 0))
             return transcription.text
         except OpenAIError as exc:
             raise ProviderError(f"Falha na transcrição de áudio: {exc}") from exc
@@ -113,6 +126,8 @@ class OpenAISpeechProvider(SpeechProvider):
                 input=text,
                 **options,
             )
+            if (meter := current_meter()) is not None:
+                meter.add_tts(len(text))
             return response.content
         except OpenAIError as exc:
             raise ProviderError(f"Falha na síntese de voz: {exc}") from exc
