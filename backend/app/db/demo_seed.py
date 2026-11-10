@@ -254,13 +254,17 @@ def _syntheses(sessions: list[InterviewState]) -> list[Synthesis]:
         )
     script_id, resumo, temas, lacunas = SYNTHESIS_SPECS["roteiro"]
     created = _at(21, 9, 0)
+    themes = _themes(temas)
+    cited = sorted({c.session_id for t in themes for c in t.citacoes})
     result.append(
         Synthesis(
             synthesis_id=SynthesisRepository.script_synthesis_id(script_id),
             escopo="roteiro",
             script_id=script_id,
             resumo=resumo,
-            temas=_themes(temas),
+            sessoes_usadas=len(cited),
+            sessoes_ids=cited,
+            temas=themes,
             lacunas=lacunas,
             modelo=MODEL,
             created_at=created,

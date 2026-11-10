@@ -62,7 +62,9 @@ def test_citations_are_literal_participant_quotes(data):
             ]
             assert any(citation.texto in text for text in participant_text), citation.texto
     roteiro = next(s for s in data.syntheses if s.escopo == "roteiro")
-    assert len({c.session_id for t in roteiro.temas for c in t.citacoes}) >= 3
+    cited = {c.session_id for t in roteiro.temas for c in t.citacoes}
+    assert len(cited) >= 3
+    assert roteiro.sessoes_usadas == len(cited) and set(roteiro.sessoes_ids) == cited
 
 
 def test_conversations_are_consistent(data):
