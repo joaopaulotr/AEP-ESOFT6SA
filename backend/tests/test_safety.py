@@ -12,8 +12,11 @@ from app.services.safety import check_safety
         "pode parar por favor",
         "vamos parar aqui",
         "chega!",
+        "chega",
+        "não quero mais, obrigado",
         "para a entrevista",
         "quero encerrar a entrevista",
+        "pode parar a entrevista, por favor eu tenho que sair agora e não dá mais",
     ],
 )
 def test_stop_requests(text):
@@ -45,6 +48,11 @@ def test_distress_terms(text):
         "a chegada atrasa",
         "o ônibus mata o tempo da gente",
         "gosto de continuar a conversa",
+        "o ônibus chega às 7h",
+        "a gente chega lá",
+        "não quero mais ônibus lotado",
+        "não quero parar de usar o ônibus",
+        "eu quero parar de pegar dois ônibus todo dia",
         "",
     ],
 )

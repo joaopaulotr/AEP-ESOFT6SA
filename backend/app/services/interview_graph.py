@@ -30,7 +30,7 @@ def default_closing(nome: str) -> str:
 
 STOP_CLOSING = "Tudo bem, vamos parar por aqui. Obrigado por ter conversado comigo."
 ACOLHIMENTO = (
-    "{nome} aqui. Obrigada por me contar isso. O que você está sentindo importa. "
+    "{nome} aqui. Agradeço por me contar isso. O que você está sentindo importa. "
     "Se estiver passando por um momento difícil, você pode conversar agora com o CVV, "
     "de graça e a qualquer hora, pelo telefone 188 ou pelo site cvv.org.br. "
     "Vou encerrar nossa conversa por aqui para você poder cuidar de si. "
@@ -49,6 +49,19 @@ FALLBACK_DECISION = DecisionResult(action="advance")  # decisão documentada no 
 def format_recent_history(conversation: list[Turn]) -> str:
     recent = conversation[-HISTORY_WINDOW:]
     return "\n".join(f"{turn.role}: {turn.text}" for turn in recent) or "(sem histórico ainda)"
+
+
+def _history_for_prompt(conversation: list[Turn]) -> str:
+    """Histórico sem a resposta atual (já vai no bloco delimitado) e com a fala da
+    pessoa higienizada, para o texto dela não escapar dos delimitadores."""
+    past = list(conversation)
+    if past and past[-1].role == "participant":
+        past = past[:-1]
+    recent = past[-HISTORY_WINDOW:]
+    lines = [
+        f"{t.role}: {_clean(t.text) if t.role == 'participant' else t.text}" for t in recent
+    ]
+    return "\n".join(lines) or "(sem histórico ainda)"
 
 
 def format_full_conversation(conversation: list[Turn]) -> str:
@@ -162,7 +175,7 @@ class InterviewGraphBuilder:
             remaining_questions=format_questions(remaining),
             profile=_format_profile(interview_state.profile),
             said_before=_said_before(interview_state.conversation),
-            history=format_recent_history(interview_state.conversation),
+            history=_history_for_prompt(interview_state.conversation),
             last_utterances=_last_utterances(interview_state.conversation),
             last_answer=_clean(state["last_answer"]),
         )
