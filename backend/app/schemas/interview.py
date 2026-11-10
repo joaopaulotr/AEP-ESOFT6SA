@@ -47,6 +47,10 @@ class TurnResponse(BaseModel):
     fala: str
     finalizada: bool
     indice_atual: int
+    acao: Action | None = None
+    pergunta_ordem: int | None = None
+    perguntas_total: int = 0
+    aprofundamentos_restantes: int | None = None
 
 
 class SynthesisResponse(BaseModel):

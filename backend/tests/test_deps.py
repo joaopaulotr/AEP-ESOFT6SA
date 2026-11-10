@@ -5,7 +5,7 @@ from app.api import deps
 from app.main import app
 from app.providers.fake import FakeLLMProvider, FakeSpeechProvider
 from app.db.seed import CORE_QUESTIONS
-from app.services.interview_service import DEFAULT_CLOSING
+from app.services.interview_graph import default_closing
 
 
 @pytest.fixture(autouse=True)
@@ -72,5 +72,5 @@ def test_full_interview_runs_offline_with_fake_providers():
         ]
         sintese = client.post(f"/api/v1/session/{session_id}/synthesis").json()
     assert [r["finalizada"] for r in replies] == [False, False, False, True]
-    assert replies[-1]["fala"] == DEFAULT_CLOSING
+    assert replies[-1]["fala"] == default_closing("Ana")
     assert sintese == {"sintese": "Síntese gerada em modo offline (provider fake)."}

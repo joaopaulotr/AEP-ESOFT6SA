@@ -6,6 +6,7 @@ from app.repositories.synthesis_repository import SynthesisRepository
 from app.schemas.api import SessionSummary
 from app.schemas.interview import InterviewState, SessionDetails, SessionResponse
 from app.schemas.script import InterviewScript
+from app.services.interview_graph import deepenings_so_far
 from app.services.interview_service import InterviewService
 
 
@@ -95,6 +96,27 @@ class SessionService:
             session, fala = await self._interview.run_turn(session, script, text)
         await self._persist(session)
         return session, fala
+
+    async def turn_meta(self, session: InterviewState) -> dict:
+        """Metadados do último turno para a resposta de /turn (progresso e aprofundamentos)."""
+        last = session.conversation[-1] if session.conversation else None
+        script = await self._scripts.get(session.script_id)
+        total = len(script.perguntas) if script else 0
+        restantes = None
+        if script and last and last.pergunta_ordem is not None:
+            current = next((q for q in script.perguntas if q.ordem == last.pergunta_ordem), None)
+            if current:
+                restantes = max(
+                    0,
+                    current.max_aprofundamentos
+                    - deepenings_so_far(session.conversation, current.ordem),
+                )
+        return {
+            "acao": last.acao if last else None,
+            "pergunta_ordem": last.pergunta_ordem if last else None,
+            "perguntas_total": total,
+            "aprofundamentos_restantes": restantes,
+        }
 
     async def finish(self, session_id: str) -> InterviewState:
         """Idempotente. Se um turno gravar no meio, relê e tenta de novo: encerrar

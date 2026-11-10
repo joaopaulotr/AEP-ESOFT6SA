@@ -18,4 +18,5 @@ async def handle_turn(
         fala=fala,
         finalizada=session.finished,
         indice_atual=session.current_index,
+        **await sessions.turn_meta(session),
     )

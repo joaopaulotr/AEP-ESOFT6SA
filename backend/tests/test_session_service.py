@@ -88,10 +88,10 @@ class TestTurns:
 
         _, fala = await sessions_service.take_turn(state.session_id, "de bicicleta")
 
-        assert fala == "E a volta?"
+        assert fala == "Entendi. E a volta?"
         stored = await session_repository.get(state.session_id)
         assert stored.current_index == 1
-        assert [t.text for t in stored.conversation][-2:] == ["de bicicleta", "E a volta?"]
+        assert [t.text for t in stored.conversation][-2:] == ["de bicicleta", "Entendi. E a volta?"]
 
     async def test_unknown_session(self, sessions_service):
         with pytest.raises(NotFoundError, match="Sessão não encontrada."):
