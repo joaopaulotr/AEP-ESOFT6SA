@@ -7,6 +7,9 @@ FAKE_DECISION: dict = {
     "next_utterance": "",
     "profile_updates": {},
     "closing_statement": "",
+    "probe_tipo": None,
+    "risco": "nenhum",
+    "reconhecimento": "",
 }
 FAKE_SYNTHESIS = "Síntese gerada em modo offline (provider fake)."
 FAKE_TRANSCRIPTION = "Resposta simulada em modo offline."
