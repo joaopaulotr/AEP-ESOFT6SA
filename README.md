@@ -339,6 +339,36 @@ participante, nem corpo ou query da requisição.
 | `/e/:slug/obrigado` | Agradecimento | Tela final do participante |
 | `/feedback` | Devolutiva | Pede e mostra a síntese da entrevista recém-concluída, com atalho para o detalhe |
 
+### Capturas
+
+As imagens abaixo foram tiradas com os dados de demonstração (`backend/scripts/seed_demo.py`) e o
+provider offline (`LLM_PROVIDER=fake`). Nenhuma entrevista real aparece aqui.
+
+**Pesquisador — criar e distribuir o roteiro**
+
+| | |
+|---|---|
+| ![Lista de roteiros](docs/img/roteiros.jpg) | ![Importar questionário](docs/img/importar-questionario.jpg) |
+| Roteiros cadastrados, com contagem de entrevistas por roteiro | Upload do questionário que vira roteiro de entrevista |
+| ![Convite e QR code](docs/img/convite-qrcode.jpg) | ![Entrevistas do roteiro](docs/img/entrevistas-do-roteiro.jpg) |
+| Link de convite e QR code do roteiro | Entrevistas do roteiro, com filtro por status |
+
+**Participante — responder pelo link, por voz ou por escrito**
+
+| | |
+|---|---|
+| ![Entrada do participante](docs/img/convite-participante.jpg) | ![Entrevista em modo texto](docs/img/entrevista-modo-texto.jpg) |
+| Entrada sem login: escolhe falar ou escrever | Entrevista em modo texto, com o progresso no roteiro |
+
+**Pesquisador — ler o resultado**
+
+| | |
+|---|---|
+| ![Painel do roteiro](docs/img/painel.jpg) | ![Relatório do roteiro](docs/img/relatorio-do-roteiro.jpg) |
+| Números do roteiro, incluindo custo médio por entrevista | Relatório cruzado, com citações ligadas à sessão de origem |
+| ![Transcrição da entrevista](docs/img/detalhe-transcricao.jpg) | ![Síntese da entrevista](docs/img/detalhe-sintese.jpg) |
+| Transcrição, com o aprofundamento decidido pelo LLM | Síntese da sessão: temas, citações e o que ficou sem resposta |
+
 O visual usa tokens CSS (`src/styles/tokens.css`) com modo claro e escuro (`useTheme`, que respeita
 a preferência do sistema e guarda a escolha). A voz fica em hooks (`useRecorder`, `useAudioPlayer`,
 `useInterviewSession`) e todas as chamadas HTTP passam por `src/services/api.js`.
