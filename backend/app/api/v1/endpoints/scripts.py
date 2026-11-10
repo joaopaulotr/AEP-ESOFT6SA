@@ -9,14 +9,17 @@ from app.api.deps import (
     get_invite_service,
     get_script_service,
     get_session_service,
+    get_synthesis_service,
 )
 from app.core.config import settings
 from app.schemas.api import InviteLink, ScriptCreate, ScriptDraft, ScriptSummary, ScriptUpdate, SessionSummary
 from app.schemas.script import InterviewScript
+from app.schemas.synthesis import Synthesis
 from app.services.import_service import ImportService
 from app.services.invite_service import InviteService
 from app.services.script_service import ScriptService
 from app.services.session_service import SessionService
+from app.services.synthesis_service import SynthesisService
 
 router = APIRouter(prefix="/scripts")
 
@@ -79,3 +82,20 @@ async def get_script_qrcode(script_id: str, invites: InviteService = Depends(get
     buffer = BytesIO()
     segno.make(invite.link, error="m").save(buffer, kind="svg", scale=6, border=2)
     return Response(content=buffer.getvalue(), media_type="image/svg+xml")
+
+
+@router.post("/{script_id}/sintese", response_model=Synthesis)
+async def synthesize_script(
+    script_id: str,
+    refresh: bool = False,
+    synthesis: SynthesisService = Depends(get_synthesis_service),
+):
+    """Relatório cruzado do roteiro; devolve o salvo, e `?refresh=true` gera de novo (paga o LLM)."""
+    return await synthesis.synthesize_script(script_id, refresh=refresh)
+
+
+@router.get("/{script_id}/sintese", response_model=Synthesis)
+async def get_script_synthesis(
+    script_id: str, synthesis: SynthesisService = Depends(get_synthesis_service)
+):
+    return await synthesis.get_script(script_id)
