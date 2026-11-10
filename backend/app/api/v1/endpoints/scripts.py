@@ -12,7 +12,7 @@ from app.api.deps import (
     get_synthesis_service,
 )
 from app.core.config import settings
-from app.schemas.api import InviteLink, ScriptCreate, ScriptDraft, ScriptSummary, ScriptUpdate, SessionSummary
+from app.schemas.api import InviteLink, ScriptCreate, ScriptDashboard, ScriptDraft, ScriptSummary, ScriptUpdate, SessionSummary
 from app.schemas.script import InterviewScript
 from app.schemas.synthesis import Synthesis
 from app.services.import_service import ImportService
@@ -69,6 +69,11 @@ async def list_script_sessions(
     sessions: SessionService = Depends(get_session_service),
 ):
     return await sessions.list_for_script(script_id, status=status_filter, limit=limit)
+
+
+@router.get("/{script_id}/painel", response_model=ScriptDashboard)
+async def get_script_dashboard(script_id: str, sessions: SessionService = Depends(get_session_service)):
+    return await sessions.dashboard(script_id)
 
 
 @router.get("/{script_id}/convite", response_model=InviteLink)
