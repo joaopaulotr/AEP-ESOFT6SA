@@ -1,5 +1,8 @@
 # AEP-ESOFT6SA — Interviewer
 
+[![backend-ci](https://github.com/joaopaulotr/AEP-ESOFT6SA/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/joaopaulotr/AEP-ESOFT6SA/actions/workflows/backend-ci.yml)
+[![frontend-ci](https://github.com/joaopaulotr/AEP-ESOFT6SA/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/joaopaulotr/AEP-ESOFT6SA/actions/workflows/frontend-ci.yml)
+
 Prova de Conceito (PoC) de um **entrevistador generalista conduzido por IA e operado por voz**.
 A ferramenta conduz uma entrevista em profundidade sobre qualquer tema, decide a cada resposta se
 aprofunda ou avança, e entrega ao final uma síntese estruturada do que foi dito.
@@ -138,7 +141,8 @@ A fase 3 (`docs/EVOLUCOES.md`, seção 5; referências na seção 13) deixa a co
 - **Cuidado (safety):** sofrimento (por regras ou pelo LLM) gera um acolhimento que cita o CVV
   (188, cvv.org.br) e **encerra a sessão**; só o tipo do alerta é guardado, nunca o texto da
   pessoa. A parada determinística é conservadora: só pedidos claros e curtos encerram, e **pergunta
-  nunca encerra**.
+  nunca encerra**. Na tela do participante, o acolhimento fica visível num cartão fixo do CVV
+  (ligue 188, grátis, 24 h, ou cvv.org.br) com o botão "Continuar": a tela não sai sozinha.
 - **A saída do LLM é validada** (Pydantic), com uma nova tentativa e fallback para `advance`; os
   logs registram só o tipo do erro, nunca o conteúdo da fala.
 - **Concorrência otimista** (`versao`): uma cópia velha da sessão nunca reabre uma entrevista
@@ -237,18 +241,35 @@ alinhadas à ODS 10. Serve só para um banco de demonstração: parte das sessõ
 (modelo `demo`), não geradas pela IA. Todos os ids começam com `demo-`; rodar de novo não duplica nada e o `--reset`
 nunca toca em dados reais.
 
+### Evolução v1 → v2
+
+Comparação entre a tag `v0.1.0` e o estado na data da entrega (contagens feitas no código):
+
+| Aspecto | v0.1.0 | Agora |
+|---|---|---|
+| Coleções do MongoDB | 1 (`interview_sessions`) | 4 (`interview_scripts`, `participants`, `interview_sessions`, `syntheses`) |
+| Rotas `/api/v1` | 7 | 31 |
+| Telas do frontend | 4 (login, boas-vindas, entrevista, devolutiva) | 13 arquivos em `src/screens/` (roteiros, editor, importação, painel, convite público, detalhe e outras) |
+| Realismo da entrevista | Voz com resposta por turno | Resposta em streaming (SSE), pausas e interjeições, interrupção pelo participante, modo texto e acolhimento com CVV |
+| Testes | 85 funções de teste no backend | 676 no backend, 27 no frontend (Vitest) e 9 E2E |
+| CI | `backend-ci` | `backend-ci` e `frontend-ci` |
+| Documentação | só o README | README, `docs/` (arquitetura, banco, api, testes) e spec de evoluções |
+
 ## 6. Testes e cobertura
 
 Três suítes (detalhes e comandos em [`docs/testes.md`](docs/testes.md)):
 
 | Suíte | Banco | Quantidade |
 |---|---|---|
-| Unitários e de API (pytest) | MongoDB simulado em memória (`mongomock-motor`), sem OpenAI | 587 |
-| Integração (`pytest -m mongo`) | MongoDB real, via `MONGO_TEST_URI` | 13 (pulados sem a variável) |
-| E2E (Playwright) | MongoDB real (`aep_e2e`) e `LLM_PROVIDER=fake` | 7, em 6 arquivos |
+| Unitários e de API (pytest) | MongoDB simulado em memória (`mongomock-motor`), sem OpenAI | 676 |
+| Integração (`pytest -m mongo`) | MongoDB real, via `MONGO_TEST_URI` | 12 (pulados sem a variável) |
+| Unitários do frontend (Vitest) | Funções puras, sem rede nem navegador | 27, em 3 arquivos |
+| E2E (Playwright) | MongoDB real (`aep_e2e`) e `LLM_PROVIDER=fake` | 9, em 6 arquivos |
 
-Estado atual do backend: **587 testes passando, 13 pulados** (os de integração),
-**cobertura de 98,3%** (mínimo exigido: 70%, com medição de branches e sem `omit`).
+Números na data da entrega (rode os comandos abaixo para obter os atuais): backend com
+**676 testes passando, 12 pulados** (os de integração), **cobertura de 98,5%** (mínimo exigido: 70%,
+com medição de branches e sem `omit`); frontend com 27 testes Vitest; 9 testes E2E. O estado de cada
+commit é o que a CI (badges no topo) mostra.
 
 Verificação completa da entrega (pytest com cobertura mínima + lint e build do frontend +
 higiene de arquivos proibidos):
@@ -269,8 +290,8 @@ cd backend && .venv/bin/python -m pytest --cov-fail-under=70
 cd backend && .venv/bin/python -m pytest --cov-report=html     # backend/htmlcov/
 ```
 
-Integração com Mongo real (índices, `$lookup`, painel e o `$pull` das citações, que o mongomock
-ignora) e E2E:
+Integração com Mongo real (índices, `$lookup`, painel e a exclusão do relatório do roteiro que usou a
+sessão apagada) e E2E:
 
 ```bash
 docker compose up -d mongo
@@ -288,7 +309,8 @@ de áudio transcrito (STT) e caracteres sintetizados (TTS). Ao final, o consumo 
 `interview_sessions.metricas` com `$inc` atômico (campos acima) e o custo em USD é estimado com preços
 de referência configuráveis (`PRICE_LLM_INPUT_PER_1M` 0,15, `PRICE_LLM_OUTPUT_PER_1M` 0,60,
 `PRICE_STT_PER_MINUTE` 0,006, `PRICE_TTS_PER_1M_CHARS` 15,0). São **estimativas**, não a fatura da
-OpenAI. O painel do roteiro mostra o custo total e o custo médio por entrevista.
+OpenAI. O painel do roteiro mostra o custo total e o custo médio por entrevista (média entre as entrevistas
+com custo medido; sem nenhuma, mostra "—").
 
 ### Logs estruturados
 
@@ -303,7 +325,7 @@ participante, nem corpo ou query da requisição.
 |---|---|---|
 | `/` | Login | Tela de entrada; segue para `/welcome` (sem autenticação real) |
 | `/welcome` | Boas-vindas | Convite para iniciar e atalho para a lista de roteiros |
-| `/entrevistas` | Roteiros | Cards dos roteiros ativos com contagens; "iniciar entrevista" ou "ver entrevistas" do roteiro |
+| `/entrevistas` | Roteiros | Cards de todos os roteiros, com contagens; roteiro com convite encerrado mostra o aviso "Convite encerrado" e não deixa iniciar entrevista; "ver entrevistas", painel, convite e edição continuam disponíveis |
 | `/entrevistas/:scriptId` | Entrevistas do roteiro | Dados do roteiro (tema, perguntas, entrevistadora), lista de sessões com filtro por status e botão para nova entrevista |
 | `/entrevistas/:scriptId/painel` | Painel do roteiro | Números do roteiro (entrevistas, conclusão, duração, custo médio), gráficos de ações, aprofundamentos, temas, canais e entrevistas por dia, e o relatório cruzado do roteiro com citações ligadas à sessão de origem |
 | `/sessao/:sessionId` | Detalhe da entrevista | Conversa transcrita, participante, síntese salva (ou botão para gerá-la, se ainda não existe) e exclusão da sessão |
@@ -347,7 +369,7 @@ frontend/
     services/api.js     # cliente HTTP único (prefixo /api/v1)
     styles/             # tokens.css (modo claro/escuro), base.css, ui.js
     utils/              # tempo.js e e2e.js
-  e2e/                  # testes Playwright (6 arquivos, 7 testes)
+  e2e/                  # testes Playwright (6 arquivos, 9 testes)
 scripts/verify-delivery.sh  # verificação determinística da entrega
 docs/
   arquitetura.md, banco.md, api.md, testes.md   # documentação técnica
@@ -378,7 +400,7 @@ interview_scripts ◄── script_id ── interview_sessions ── participa
 | `syntheses` | Síntese por sessão (`escopo: sessao`) ou por roteiro (`escopo: roteiro`) | `temas[]` com `citacoes[]` |
 
 As citações só entram se forem trecho literal da fala do participante; ao apagar uma sessão, suas
-citações saem dos relatórios de roteiro (`$pull` atômico). Sessões da v0.1.0 são migradas no startup
+os relatórios de roteiro que a usaram (`sessoes_ids` ou citação) são apagados e precisam ser regerados. Sessões da v0.1.0 são migradas no startup
 de forma idempotente. Campos, exemplo real de cada coleção, índices exatos, pipelines de agregação
 (`$lookup`, `$facet`) e regras de exclusão: [`docs/banco.md`](docs/banco.md).
 
@@ -397,8 +419,10 @@ com a verificação em números e os limites abertos. Detalhes em
   Resolver antes do deploy público (RK-11).
 - O painel usa um `$facet`, que devolve um único documento de até 16 MB: em escala muito grande seria
   preciso pré-agregar. O relatório do roteiro usa no máximo as 30 sínteses de sessão mais recentes.
-- **Rotas de convite públicas por desenho** — `/convite/{slug}` e `/convite/{slug}/sessao` não têm login
-  (o participante entra só pelo link); quem tem o link inicia entrevistas no roteiro. As rotas do
+- **Rotas de convite públicas por desenho** — `/convite/{slug}`, `/convite/{slug}/sessao`,
+  `GET /convite/{slug}/sessao/{session_id}` (estado mínimo da sessão) e
+  `POST /convite/{slug}/sessao/{session_id}/canal` (troca voz/texto) não têm login (o participante
+  entra só pelo link); quem tem o link inicia entrevistas no roteiro, sem limite de requisições (RK-15). As rotas do
   pesquisador (inclusive upload e QR) continuam sem autenticação (RK-11).
 - A tela de login não autentica: apenas navega para as boas-vindas.
 - O custo em `metricas` é **estimado** com preços configuráveis de referência, não é faturamento real.

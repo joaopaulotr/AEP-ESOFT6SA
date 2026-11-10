@@ -9,9 +9,9 @@ mesmo código. Modelos de dados e coleções: [banco.md](banco.md).
 - **Formato:** JSON, salvo uploads (`multipart/form-data`), áudio e SSE.
 - **Autenticação:** não há. As rotas do pesquisador e as rotas de convite são abertas
   (limite assumido, RK-11; veja o [README](../README.md#10-limites)). O CORS aceita qualquer origem.
-- **Erros:** o corpo é sempre `{"detail": "<mensagem em português>"}`. `422` (corpo, query ou
-  parâmetro fora do formato) vem do FastAPI com o `detail` padrão do Pydantic e não é repetido
-  nas tabelas.
+- **Erros:** o corpo é sempre `{"detail": "<mensagem em português>"}`. `422` de validação (corpo, query ou
+  parâmetro fora do formato) também é em pt-BR: `{"detail": "Dados inválidos: confira <campos>."}`,
+  só com os nomes dos campos (nunca o valor enviado); não é repetido nas tabelas.
 - **Cabeçalho `X-Request-ID`:** devolvido em toda resposta (o mesmo id aparece no log).
 
 ## Códigos de erro
@@ -21,7 +21,8 @@ mesmo código. Modelos de dados e coleções: [banco.md](banco.md).
 | `400` | `ValueError` (handler em `main.py`) e `HTTPException` | regra de estado violada ou áudio inválido | a da regra (ex.: "Não é possível gerar a síntese antes de encerrar a entrevista.") |
 | `404` | `NotFoundError` | recurso inexistente | "Roteiro não encontrado.", "Participante não encontrado.", "Sessão não encontrada.", "Síntese ainda não gerada.", "Relatório do roteiro ainda não gerado.", "Convite inválido ou encerrado." |
 | `409` | `ConflictError` | conflito de estado ou versão velha | veja cada rota |
-| `413` | `FileTooLargeError`/`HTTPException` | arquivo grande demais | "Arquivo maior que 2 MB." (questionário), "Áudio maior que o permitido." |
+| `411` | `HTTPException` | upload do questionário sem `Content-Length` (por exemplo, `chunked`) | "Envie o arquivo com o tamanho informado." |
+| `413` | `FileTooLargeError`/`HTTPException` | arquivo grande demais; no upload do questionário, recusado já pelo `Content-Length` (acima do limite + 64 KB) antes de o servidor gravar o multipart | "Arquivo maior que 2 MB." (questionário), "Áudio maior que o permitido." |
 | `415` | `UnsupportedFileError` | extensão não aceita | "Formato não suportado. Envie .txt, .md, .csv, .docx ou .pdf." |
 | `422` | `ImportFileError` ou validação | arquivo ilegível/sem perguntas; corpo inválido | "Não consegui abrir o arquivo. Confira se ele não está corrompido.", "O PDF não tem texto (pode ser digitalizado).", "O arquivo .docx é grande demais para ler.", "Não encontrei perguntas no arquivo." |
 | `500` | `CorruptDocumentError` | documento do banco fora do modelo | "Erro interno ao ler os dados." |
@@ -40,7 +41,7 @@ do roteiro."
 
 | Método e rota | Resposta |
 |---|---|
-| `GET /health` | `200` `{"status": "ok"}` (usado pelo healthcheck do Compose e pelo E2E) |
+| `GET /health` | `200` `{"status": "ok"}` (usado pelo Playwright para saber que o backend subiu; o healthcheck do Compose é só do MongoDB) |
 
 ## Roteiros (`/api/v1/scripts`)
 
@@ -53,7 +54,7 @@ do roteiro."
 | `PUT /scripts/{script_id}` | `ScriptUpdate`: todos opcionais (`titulo`, `tema`, `descricao`, `perguntas`, `persona`, `ativo`); só o que vier muda | `200` `InterviewScript` | `404`; `409` roteiro padrão (desativar ou mudar perguntas), roteiro com entrevistas (mudar perguntas) ou versão velha |
 | `DELETE /scripts/{script_id}` | | `204`. Sem sessões apaga; com sessões só desativa | `404`; `409` roteiro padrão |
 | `GET /scripts/{script_id}/sessions?status=&limit=` | `status`: `em_andamento` ou `concluida`; `limit` 1 a 200 (padrão 50) | `200` lista de `SessionSummary`: `session_id`, `script_id`, `participant_id`, `participante` (apelido), `status`, `respostas`, `created_at`, `updated_at`, `tem_sintese` | `404` roteiro |
-| `GET /scripts/{script_id}/painel` | | `200` `ScriptDashboard`: `total_sessoes`, `concluidas`, `em_andamento`, `taxa_conclusao`, `duracao_media_min`, `media_respostas`, `acoes[]`, `aprofundamentos_por_pergunta[]`, `custo_total_usd`, `custo_medio_usd`, `temas_mais_citados[]`, `sessoes_por_dia[]` (últimos 30 dias, fuso America/Sao_Paulo), `canais[]` | `404` |
+| `GET /scripts/{script_id}/painel` | | `200` `ScriptDashboard`: `total_sessoes`, `concluidas`, `em_andamento`, `taxa_conclusao`, `duracao_media_min` (`null` sem base), `media_respostas`, `acoes[]`, `aprofundamentos_por_pergunta[]`, `custo_total_usd` (inclui o custo dos relatórios do roteiro ainda existentes), `custo_medio_usd` (média entre as entrevistas com custo medido), `sinteses_sessao` (nº de sínteses de sessão), `temas_mais_citados[]`, `sessoes_por_dia[]` (últimos 30 dias, fuso America/Sao_Paulo), `canais[]` | `404` |
 | `GET /scripts/{script_id}/convite` | | `200` `{slug, link}` | `404` |
 | `GET /scripts/{script_id}/qrcode.svg` | | `200` `image/svg+xml` (QR do link de convite) | `404` |
 | `GET /scripts/{script_id}/sintese` | | `200` `Synthesis` (`escopo: roteiro`) já salvo | `404` roteiro ou relatório ainda não gerado |
@@ -77,6 +78,10 @@ Rotas **sem login**: o participante entra só pelo link. Só roteiros ativos ace
 |---|---|---|---|
 | `GET /convite/{slug}` | | `200` `InvitePublic`: `slug`, `titulo`, `tema`, `descricao`, `persona`, `perguntas_total`, `link` (nada de sessão nem de participante) | `404` convite inválido ou roteiro desativado |
 | `POST /convite/{slug}/sessao` | opcional `InviteStart`: `canal` (`voz`/`texto`), `apelido` (máx 40), `faixa_etaria` (máx 20), `regiao` (máx 60); texto vazio vira ausente | `201` `SessionResponse` (igual a `POST /session`); cria o participante e abre a sessão | `404` convite inválido ou encerrado |
+| `GET /convite/{slug}/sessao/{session_id}` | | `200` `InviteSession`: `session_id`, `titulo`, `perguntas_total`, `current_index`, `finished`, `acolhimento`, `persona` (`nome`, `tom`) e `conversation[]` (`role`, `text`). Estado mínimo para retomar a entrevista pública: sem objetivos das perguntas, perfil, participante nem métricas | `404` "Convite inválido ou encerrado." (também quando a sessão não é do roteiro do convite) |
+| `POST /convite/{slug}/sessao/{session_id}/canal` | `InviteChannel`: `canal` (`voz`/`texto`) | `204`; atualiza o canal do participante da sessão | `404` como acima; `422` |
+
+Estas rotas são públicas e não têm limite de requisições (RK-15).
 
 ## Sessões (`/api/v1/session`)
 
@@ -85,7 +90,7 @@ Rotas **sem login**: o participante entra só pelo link. Só roteiros ativos ace
 | `POST /session` | opcional `SessionCreate`: `script_id`, `participant_id`; sem corpo usa o roteiro padrão | `200` `SessionResponse`: `session_id`, `pergunta` (a 1ª), `script_id`, `titulo`, `perguntas_total` | `404` roteiro ou participante; `409` roteiro desativado |
 | `GET /session/{id}` | | `200` `InterviewState` (estado completo: `conversation`, `profile`, `metricas`, `finished`, `status`, `versao`…) | `404` |
 | `GET /session/{id}/detalhes` | | `200` `SessionDetails`: `session`, `script`, `participant` (resolvidos por `$lookup`; `script` e `participant` podem ser `null`) | `404` |
-| `DELETE /session/{id}` | | `204`. Apaga a sessão e, em cascata, a síntese dela e as citações dela nos relatórios de roteiro | `404` |
+| `DELETE /session/{id}` | | `204`. Apaga a sessão e, em cascata, a síntese dela e os relatórios de roteiro que a usaram (`sessoes_ids` ou citação dela; precisam ser regerados, e o custo gravado neles sai do total do painel) | `404` |
 | `POST /session/{id}/finish` | | `200` `InterviewState`. Idempotente | `404`; `409` se a sessão mudou de novo durante o encerramento |
 | `POST /session/{id}/synthesis?refresh=false` | | `200` `{"sintese": "<resumo>"}`. Devolve a salva; sem ela (ou com `refresh=true`) gera pelo LLM e grava | `400` entrevista não encerrada ou sem respostas do participante; `404`; `502` |
 | `GET /session/{id}/synthesis` | | `200` `Synthesis` completa (`resumo`, `temas`, `lacunas`, `modelo`…) | `404` sessão ou síntese ainda não gerada |
@@ -125,9 +130,9 @@ data: <json em uma linha>
 
 | Evento | `data` | Quando |
 |---|---|---|
-| `pensando` | `{}` | na hora, antes de o LLM responder |
-| `frase` | `{"texto": "...", "indice": 0, "finalizada": false}` | uma por frase da fala já decidida, em ordem |
-| `fim` | o mesmo corpo de `POST /turn/{id}` (`TurnResponse`) | depois da última frase |
+| `pensando` | `{"risco": "nenhum" \| "sofrimento" \| "pedido_parar"}` | na hora, antes de o LLM responder; o `risco` vem da checagem determinística (sem LLM) e o front não toca filler se for diferente de `nenhum` |
+| `frase` | `{"texto": "...", "indice": 0, "finalizada": false, "acolhimento": false}` | uma por frase da fala já decidida, em ordem |
+| `fim` | o mesmo corpo de `POST /turn/{id}` (`TurnResponse`, que inclui `acolhimento`: a fala é o acolhimento com o CVV e o front não navega sozinho) | depois da última frase |
 | `erro` | `{"detail": "..."}` | falha depois do início: provedor ("Falha ao se comunicar com o provedor de IA."), conflito/sessão ausente (mensagem do domínio) ou inesperada ("Não consegui processar sua resposta. Tente de novo.") |
 
 O LLM é chamado uma vez; o turno é gravado antes da primeira `frase` e sobrevive a uma

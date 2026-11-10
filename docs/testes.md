@@ -8,16 +8,15 @@ Os comandos abaixo foram executados neste repositório. Instalação e variávei
 
 | Suíte | Onde | Banco | Quantidade | O que cobre |
 |---|---|---|---|---|
-| **Unitários e de API** (pytest) | `backend/tests/` | MongoDB simulado em memória (`mongomock-motor`) | 587 | Modelos, repositórios, serviços, endpoints, grafo de decisão, segurança, providers, importação, síntese, SSE, métricas e logs |
-| **Integração com Mongo real** (`-m mongo`) | `backend/tests/test_mongo_integration.py` | MongoDB de verdade (`MONGO_TEST_URI`) | 13 | Índices e unicidade no servidor, `$lookup`, agregações do painel, controle de `versao`, migração v0.1.0, `$pull` atômico de citações |
-| **E2E** (Playwright) | `frontend/e2e/` | MongoDB real, banco `aep_e2e` | 7 testes em 6 arquivos | Fluxos completos no navegador, com a API real e `LLM_PROVIDER=fake` |
+| **Unitários e de API** (pytest) | `backend/tests/` | MongoDB simulado em memória (`mongomock-motor`) | 676 | Modelos, repositórios, serviços, endpoints, grafo de decisão, segurança, providers, importação, síntese, SSE, métricas e logs |
+| **Integração com Mongo real** (`-m mongo`) | `backend/tests/test_mongo_integration.py` | MongoDB de verdade (`MONGO_TEST_URI`) | 12 | Índices e unicidade no servidor, `$lookup`, agregações do painel, controle de `versao`, migração v0.1.0, exclusão do relatório do roteiro que usou a sessão apagada |
+| **E2E** (Playwright) | `frontend/e2e/` | MongoDB real, banco `aep_e2e` | 9 testes em 6 arquivos | Fluxos completos no navegador, com a API real e `LLM_PROVIDER=fake` |
 
 ### 1.1 Unitários e de API
 
 Rodam sem rede, sem OpenAI e sem MongoDB instalado: o provider é um dublê ou o `fake`, e o
 banco é o `mongomock-motor` (executa filtros, índices únicos e pipelines de agregação). O
-`conftest.py` monta o app com esse banco e troca por um equivalente em Python o `$pull` com
-`$[]`, que o mongomock ignora (o teste de integração confere o real).
+`conftest.py` monta o app com esse banco.
 
 Principais arquivos, por área:
 
@@ -35,15 +34,18 @@ Principais arquivos, por área:
   `test_providers_fake.py`, `test_usage.py`, `test_logging.py`, `test_deps.py`,
   `test_demo_seed.py`.
 
+Os casos negativos com código HTTP (404, 409, 411, 413, 415, 422 em pt-BR, 502) ficam aqui, no
+pytest, e não no E2E; o E2E cobre só os negativos que o participante vê na tela.
+
 ### 1.2 Integração com MongoDB real
 
 Marcados com `@pytest.mark.mongo` (`--strict-markers`, declarado em `pyproject.toml`). Sem
-`MONGO_TEST_URI` eles são **pulados** (são os 13 "skipped" da execução padrão). Cada teste cria
+`MONGO_TEST_URI` eles são **pulados** (são os 12 "skipped" da execução padrão). Cada teste cria
 um banco temporário `aep_it_<id>` e o apaga ao final.
 
 ### 1.3 E2E (Playwright)
 
-Sete testes, na ordem dos arquivos:
+Nove testes, na ordem dos arquivos:
 
 | Arquivo | Cenário |
 |---|---|
@@ -51,11 +53,16 @@ Sete testes, na ordem dos arquivos:
 | `02-importacao.spec.js` | Importação: subir questionário, revisar no editor, publicar e ver na lista |
 | `03-convite-texto.spec.js` | Convite e modo texto: responde tudo, agradecimento, entrevista concluída e síntese |
 | `04-painel.spec.js` | Painel: cartões, gráficos, tabela de dados e relatório do roteiro |
-| `05-negativos.spec.js` | Convite inexistente mostra "convite encerrado"; pedido de parar no modo texto encerra com a mensagem de parada |
-| `06-voz.spec.js` | Voz: entra por "Falar", o microfone falso é aceito e a tela mostra "ouvindo" |
+| `05-negativos.spec.js` | Convite inexistente mostra "convite encerrado"; pedido de parar no modo texto encerra com a mensagem de parada; sofrimento no modo texto mantém o cartão do CVV até "Continuar" e o repete no agradecimento |
+| `06-voz.spec.js` | Voz, ciclo completo: grava, clica "Parar e enviar", confirma o que foi entendido e espera a próxima pergunta (o teste falha se houver erro de console); microfone negado mostra o aviso e deixa passar para o modo escrever |
 
 Como é montado (`frontend/playwright.config.js`, `frontend/e2e/global-setup.js`):
 
+- O Python do backend é resolvido por `frontend/e2e/ambiente.js` (módulo único, usado pela config e pelo
+  `global-setup.js`): `E2E_PYTHON`, senão `backend/.venv/Scripts/python` (Windows) ou
+  `backend/.venv/bin/python` (Linux/macOS), senão o do `PATH`, sempre relativo ao próprio arquivo (não ao cwd).
+- Os servidores usam `reuseExistingServer: false`: o E2E nunca reaproveita um backend ou Vite já aberto
+  (que poderia apontar para outro banco); se a porta estiver ocupada, falha.
 - O Playwright sobe o backend (`uvicorn` na porta 8090) com `LLM_PROVIDER=fake`, banco
   `aep_e2e` e `OPENAI_API_KEY=test-key`, e o Vite na porta 5190 com `VITE_E2E=1`. **Nunca usa a
   OpenAI nem o banco de desenvolvimento.**
@@ -121,8 +128,12 @@ O mesmo comando funciona no Windows (PowerShell). O relatório HTML fica em
 ### Lint e build do frontend
 
 ```bash
-cd frontend && npm run lint && npm run build
+cd frontend && npm run lint && npm test && npm run build
 ```
+
+- O lint roda com `--max-warnings=0`: **aviso também falha** (não só erro).
+- `npm test` roda os testes unitários do frontend (Vitest, 27 testes em 3 arquivos: funções puras
+  como `atrasoDePensar`, `pausaApos`, `sortear`, `lerEventosSSE` e os textos), sem rede nem navegador.
 
 ## 3. `scripts/verify-delivery.sh`
 
@@ -143,7 +154,7 @@ O que cada passo faz (no código do script):
 - **Backend:** `pytest -q --cov-fail-under=70` (usa `OPENAI_API_KEY=test-key` se não houver
   chave) e falha se `backend/pyproject.toml` tiver `omit` na cobertura: o código é testado, não
   excluído da medição.
-- **Frontend:** `npm ci`, `npm run lint --if-present` e `npm run build`.
+- **Frontend:** `npm ci`, `npm run lint` (0 avisos), `npm test` (Vitest) e `npm run build`.
 - **`--integration` e `--e2e`** não entram no modo padrão: precisam de MongoDB.
 
 Termina com `[OK] verificação concluída (<modo>)` ou `[FALHOU] <motivo>` (código de saída 1).
@@ -154,7 +165,7 @@ Termina com `[OK] verificação concluída (<modo>)` ou `[FALHOU] <motivo>` (có
 |---|---|---|---|
 | `.github/workflows/backend-ci.yml` | push e PR que mudam `backend/**` | `unit` | Python 3.11, `pip install -r requirements-dev.txt`, `pytest --cov-fail-under=70` com relatórios `term-missing`, `xml` e `html`; escreve `coverage report` no resumo do job (`$GITHUB_STEP_SUMMARY`) e publica `backend/htmlcov` e `backend/coverage.xml` como artefato `cobertura` |
 | | | `integration` | Service container `mongo:7` com healthcheck; `pytest -m mongo --no-cov` com `MONGO_TEST_URI=mongodb://localhost:27017/ci` |
-| `.github/workflows/frontend-ci.yml` | push e PR que mudam `frontend/**` ou `backend/**` | `lint-build` | Node 20, `npm ci`, `npm run lint`, `npm run build` |
+| `.github/workflows/frontend-ci.yml` | push e PR que mudam `frontend/**` ou `backend/**` | `lint-build` | Node 20, `npm ci`, `npm run lint` (0 avisos), `npm test` (Vitest), `npm run build` |
 | | | `e2e` (depende de `lint-build`) | Service container `mongo:7`; instala o backend (`pip install -r backend/requirements.txt`), o Chromium do Playwright e roda `npx playwright test`; em falha, publica `playwright-report/` e `test-results/` como artefato (7 dias) |
 
 Nenhum job exige segredos: o CI usa `OPENAI_API_KEY=test-key` e o provider `fake` no E2E. Cada
@@ -165,8 +176,8 @@ teste (unitário, de integração ou E2E) quebrar.
 
 - **Mínimo exigido: 70%** (`--cov-fail-under=70`, na CI e em `verify-delivery.sh`), com medição de
   branches e sem nenhum `omit`: a camada de voz e os providers entram na cobertura.
-- **Número atual** (`bash scripts/verify-delivery.sh --backend`): **98,3%** (2.322
-  instruções, 18 sem cobertura; 394 branches, 27 parciais) com **587 testes passando e 13
+- **Número atual** (`bash scripts/verify-delivery.sh --backend`): **98,5%** (2.505
+  instruções, 19 sem cobertura; 432 branches, 26 parciais) com **676 testes passando e 12
   pulados** (os de integração), em cerca de 1 minuto.
 - **Evidência:** o relatório HTML e o `coverage.xml` não ficam no repositório (`backend/htmlcov/` e
   `coverage.xml` estão no `.gitignore`); são gerados a cada execução da CI e publicados como

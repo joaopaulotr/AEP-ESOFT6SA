@@ -196,6 +196,8 @@ Exemplo (`demo-s01`, conversa com 17 falas, mostradas 3):
 | `temas` | array de `Theme` | `tema`, `pontos[]` (strings), `citacoes[]` (`texto`, `session_id`) |
 | `divergencias`, `lacunas` | array de string | `divergencias` só no relatório do roteiro |
 | `sessoes_usadas` | int | quantas sínteses de sessão alimentaram o relatório do roteiro |
+| `sessoes_ids` | array de string | ids das sessões usadas no relatório do roteiro; serve para apagar o relatório se uma delas for excluída (relatório antigo sem o campo também é apagado) |
+| `metricas` | `SessionMetrics` | consumo e custo da geração do relatório do roteiro; somado ao `custo_total_usd` do painel |
 | `modelo` | string | modelo que gerou (`demo` no seed, `v0.1.0` nas migradas) |
 | `created_at`, `updated_at` | datetime | |
 
@@ -228,7 +230,7 @@ Exemplo (`sessao:demo-s01`, temas encurtados):
 
 O relatório do roteiro tem a mesma forma, com `synthesis_id: "roteiro:demo-transporte"`,
 `escopo: "roteiro"`, `session_id: null` e citações de várias sessões (por exemplo
-`demo-s01`, `demo-s02`, `demo-s05`).
+`demo-s01`, `demo-s02`, `demo-s05`). No relatório do seed, `sessoes_usadas` é o número de sessões distintas citadas e `sessoes_ids` lista os ids delas; `sessoes_usadas: 0` acima é o valor de uma síntese de sessão.
 
 ## 3. Índices
 
@@ -292,19 +294,18 @@ O que sobra é feito em Python: agrupar `datas` por dia no fuso `America/Sao_Pau
 código para o Mongo real e para os testes) e ranquear os temas por sessões distintas
 (`_top_themes`, no máximo 8). Limitação: um `$facet` devolve um único documento de até 16 MB.
 
-`script_stats` (três agregações separadas, modelo `ScriptStats`) calcula métricas parecidas com as
-do painel; nenhuma rota a chama (só os testes, inclusive o de integração `test_script_stats_pipeline`).
+O painel devolve ainda `sinteses_sessao` (quantas sínteses de sessão existem no roteiro, do ramo `temas`);
+`duracao_media_min` e `custo_medio_usd` são `null` quando não há base (o custo médio é a média entre as
+entrevistas com custo medido). O antigo `script_stats` (agregações duplicadas sem consumidor) foi removido.
 
-**Citações (`SynthesisRepository._atomic_pull_citations`)**: `update_many` nos relatórios
-`escopo: "roteiro"` com `$pull` em `temas.$[].citacoes` filtrando por `session_id`. É uma
-operação só no servidor; o mongomock ignora `$[]`, então o `conftest.py` a substitui por um
-equivalente em Python e o teste `-m mongo` confere no Mongo real.
+**Exclusão de relatórios (`SynthesisRepository.delete_script_reports_with_session`)**: `delete_many`
+nos relatórios `escopo: "roteiro"` cuja lista `sessoes_ids` ou cujas citações tenham o `session_id`.
 
 ## 5. Regras de exclusão e cascata
 
 | Ação | Regra | Onde |
 |---|---|---|
-| Apagar sessão | apaga a sessão, depois a síntese dela (`delete_for_session`) e tira as citações dela dos relatórios de roteiro (`$pull`). Idempotente: se a sessão já não existe, ainda limpa; `404` só se não havia nada | `SessionService.delete` |
+| Apagar sessão | apaga a sessão, depois a síntese dela (`delete_for_session`) e apaga o relatório do roteiro que a usou (`delete_script_reports_with_session`; o custo gravado nele sai do total do painel). Idempotente: se a sessão já não existe, ainda limpa; `404` só se não havia nada | `SessionService.delete` |
 | Apagar roteiro sem sessões | apaga o documento | `ScriptService.delete` |
 | Apagar roteiro com sessões | só desativa (`ativo: false`); o histórico mantém o roteiro | `ScriptService.delete` |
 | Apagar o roteiro padrão | `409` (nem apagar, nem desativar, nem alterar perguntas) | `ScriptService` |
@@ -356,6 +357,6 @@ coerente. O teste `test_v010_sessions_are_backfilled` repete isso num Mongo real
 | Subdocumentos e arrays aninhados | `perguntas[]`, `persona{}` e `origem{}` em roteiros; `conversation[]` (cada `Turn`), `profile{}` e `metricas{}` em sessões; `temas[]` com `citacoes[]` dentro, em sínteses |
 | Índices | seção 3 (únicos, compostos e simples) |
 | Agregações | `$group`, `$unwind`, `$filter`, `$cond`, `$lookup`, `$facet`, `$project`, `$sort`, `$limit` (seção 4) |
-| Operadores de atualização | `$set`, `$setOnInsert`, `$inc`, `$pull` com filtro posicional `$[]`, `$unset` |
+| Operadores de atualização | `$set`, `$setOnInsert`, `$inc`, `$unset` |
 | Integridade e concorrência | regras de exclusão (seção 5), `versao` otimista (seção 6), ids fixos de síntese + índice único |
 | Migração | seção 8 |
