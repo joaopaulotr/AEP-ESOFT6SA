@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../services/api";
-import { agora } from "../utils/tempo";
+import { agora, atrasoDePensar } from "../utils/tempo";
 import { useAudioPlayer } from "./useAudioPlayer";
 import { useTurnStream } from "./useTurnStream";
+import { useFillers, ESPERA_FILLER_MS } from "./useFillers";
 
 
 /**
@@ -26,6 +27,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
 
     const player = useAudioPlayer();
     const stream = useTurnStream();
+    const fillers = useFillers();
 
     const sessionIdRef = useRef(null);
     const processandoRef = useRef(false);
@@ -91,6 +93,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         try {
             const det = await api.getSessionDetails(id);
             tomRef.current = det.script?.persona?.tom;
+            if (vozRef.current) fillers.preparar(tomRef.current);
         } catch {
             // Sem o tom a voz usa o padrão do servidor.
         }
@@ -124,6 +127,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         setSessionId(id);
         setTituloRoteiro(det.script?.titulo || "");
         tomRef.current = det.script?.persona?.tom;
+        if (vozRef.current) fillers.preparar(tomRef.current);
         const turnos = sessao.conversation || [];
         respostasRef.current = turnos.filter((t) => t.role === "participant").length;
         setTranscricao(turnos.map((t) => ({ quem: t.role === "participant" ? "voce" : "ia", texto: t.text, hora: "" })));
@@ -175,15 +179,30 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     async function lerTurno(id, msg) {
         const vozAtiva = vozRef.current;
         const frases = [];
+        const naoAntesDe = Date.now() + atrasoDePensar(msg.length); // a 1ª frase não toca antes disso
         let fim = null;
         let detalheErro = "";
         let falhou = false;
         try {
             await stream.enviar(id, msg, {
+                onPensando: () => {
+                    if (!vozAtiva) return;
+                    // Demorou: talvez um "Hmm, entendi…". Entra na mesma fila, então a 1ª frase
+                    // só começa depois que ele terminar (nunca sobrepõe).
+                    agendar(() => {
+                        if (frases.length || interrompidoRef.current) return;
+                        const filler = fillers.sortear();
+                        if (!filler) return;
+                        player.enfileirar(filler.blob, { aoIniciar: () => setLegenda(filler.texto) });
+                    }, ESPERA_FILLER_MS);
+                },
                 onFrase: ({ texto }) => {
                     frases.push(texto);
                     if (!vozAtiva || interrompidoRef.current) return;
-                    falarFrase(texto, { aoIniciar: () => setProcessando(false) });
+                    falarFrase(texto, {
+                        naoAntesDe: frases.length === 1 ? naoAntesDe : undefined,
+                        aoIniciar: () => setProcessando(false),
+                    });
                 },
                 onFim: (dados) => {
                     fim = dados;
@@ -203,7 +222,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             return { erro: detalheErro };
         }
         if (vozAtiva && !frases.length && !interrompidoRef.current) {
-            falarFrase(fim.fala, { aoIniciar: () => setProcessando(false) });
+            falarFrase(fim.fala, { naoAntesDe, aoIniciar: () => setProcessando(false) });
         }
         return { fim };
     }
@@ -215,6 +234,8 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         if (!montadoRef.current || processandoRef.current) return;
 
         interrompidoRef.current = false;
+        // Começou em texto e passou para voz: prepara os fillers agora (valem do próximo turno).
+        if (vozRef.current && !fillers.preparadoRef.current) fillers.preparar(tomRef.current);
         adicionarMensagem("voce", msg);
         const desfazer = () => {
             respostasRef.current = Math.max(0, respostasRef.current - 1);
