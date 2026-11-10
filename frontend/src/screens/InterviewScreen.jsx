@@ -16,6 +16,8 @@ import { ui, CSS as UI_CSS } from "../styles/ui";
 import { style, CSS } from "./InterviewScreen.styles";
 
 const INTERVIEWER = "du";
+const SILENCIO_INCENTIVO_MS = 12000;
+const INCENTIVO = "Pode ficar à vontade, sem pressa.";
 
 /**
  * `publico`: rota `/e/:slug/entrevista` (participante do convite) - sem menu do pesquisador,
@@ -60,12 +62,28 @@ function Entrevista({ publico, slug }) {
     });
     const { perguntaAtual, indiceAtual, turno, processando, finalizada, transcricao, erro } = sessao;
 
-    const recorder = useRecorder({ onRecorded: sessao.enviarAudio });
+    const { pararAudio, falarAviso } = sessao;
+    const recorder = useRecorder({
+        onRecorded: sessao.enviarAudio,
+        // Barge-in: a pessoa começou a falar por cima da IA → corta o áudio e já grava.
+        bargeInAtivo: !modoTexto && sessao.audioTocando && !finalizada,
+        aoBargeIn: () => {
+            pararAudio();
+            recorder.start().catch(() => {});
+        },
+    });
 
-    const { pararAudio } = sessao;
+    // Ao trocar para texto (ou encerrar) o áudio para e o microfone é liberado.
+    const { liberar: liberarMicrofone } = recorder;
     useEffect(() => {
-        if (modoTexto) pararAudio();
+        if (modoTexto) {
+            pararAudio();
+            liberarMicrofone();
+        }
     }, [modoTexto]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        if (finalizada) liberarMicrofone();
+    }, [finalizada]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         const el = msgsRef.current;
@@ -76,8 +94,24 @@ function Entrevista({ publico, slug }) {
         if (erro) alert(erro.mensagem);
     }, [erro]);
 
+    // Incentivo: 12 s esperando a pessoa sem que ela fale -> uma vez por pergunta.
+    const [incentivo, setIncentivo] = useState(false);
+    const perguntasIA = transcricao.filter((m) => m.quem === "ia").length;
+    const aguardando = turno === "voce" && !processando && !finalizada && !recorder.gravando;
+    useEffect(() => {
+        setIncentivo(false);
+    }, [perguntasIA]);
+    useEffect(() => {
+        if (!aguardando) return undefined;
+        const t = setTimeout(() => {
+            setIncentivo(true);
+            falarAviso(INCENTIVO);
+        }, SILENCIO_INCENTIVO_MS);
+        return () => clearTimeout(t);
+    }, [aguardando, perguntasIA]); // eslint-disable-line react-hooks/exhaustive-deps
+
     const podeResponder = turno === "voce" && !processando && !finalizada;
-    const ouvindo = turno === "voce" && recorder.gravando;
+    const ouvindo = recorder.gravando; // inclui a gravação iniciada por barge-in (turno ainda é da IA)
     const iaFalando = !modoTexto && turno === "interviewer" && !processando && !finalizada;
     const podeAlternar = !recorder.gravando && !processando && !finalizada && !!sessao.sessionId;
 
@@ -181,6 +215,7 @@ function Entrevista({ publico, slug }) {
                                 </div>
                             )}
                         </div>
+                        {incentivo && aguardando && <p style={{ ...style.incentivo, padding: "0 14px" }} role="status">{INCENTIVO}</p>}
                         <ChatComposer
                             desabilitado={!sessao.sessionId || finalizada || turno !== "voce"}
                             enviando={processando}
@@ -201,6 +236,7 @@ function Entrevista({ publico, slug }) {
                             </div>
 
                             <p style={style.status} role="status">{statusTexto}</p>
+                            {incentivo && aguardando && <p style={style.incentivo} role="status">{INCENTIVO}</p>}
 
                             <div style={style.wave}>
                                 {[0, 1, 2, 3, 4, 5, 6].map((i) => (
@@ -219,14 +255,14 @@ function Entrevista({ publico, slug }) {
                             <div style={{ flex: 1 }}>
                                 <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>Status</p>
                                 <p style={{ margin: "2px 0 0", fontSize: 14, fontWeight: 700, color: "var(--color-status)" }}>
-                                    {processando ? "Processando…" : podeResponder ? "Pronta para ouvir" : "Aguarde…"}
+                                    {processando ? "Processando…" : podeResponder || ouvindo ? "Pronta para ouvir" : "Aguarde…"}
                                 </p>
                             </div>
                             <button
                                 className="mic-btn"
                                 aria-label={recorder.gravando ? "Parar e enviar resposta" : "Falar ao microfone"}
-                                style={{ ...style.micBtn, opacity: podeResponder ? 1 : 0.5, cursor: podeResponder ? "pointer" : "default" }}
-                                disabled={!podeResponder}
+                                style={{ ...style.micBtn, opacity: podeResponder || ouvindo ? 1 : 0.5, cursor: podeResponder || ouvindo ? "pointer" : "default" }}
+                                disabled={!podeResponder && !ouvindo}
                                 onClick={recorder.gravando ? recorder.stop : comecarGravacao}
                             >
                                 {recorder.gravando ? <Square size={18} fill="currentColor" /> : <Mic size={18} />}

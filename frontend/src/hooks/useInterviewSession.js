@@ -38,6 +38,8 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     const interrompidoRef = useRef(false); // barge-in: as frases que ainda chegam não tocam
     const vozRef = useRef(voz);
     vozRef.current = voz;
+    const ocupadoRef = useRef(false);
+    ocupadoRef.current = player.ocupado;
     const onFinishedRef = useRef(onFinished);
     onFinishedRef.current = onFinished;
 
@@ -77,6 +79,12 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
                 aoIniciar?.();
             },
         });
+    }
+
+    /** Frase avulsa (incentivo ao silêncio): só fala se a IA não estiver tocando nada. */
+    function falarAviso(texto) {
+        if (!vozRef.current || ocupadoRef.current || processandoRef.current) return;
+        falarFrase(texto);
     }
 
     async function carregarTom(id) {
@@ -303,6 +311,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         tentarDeNovo: iniciar,
         audioTocando: player.ocupado,
         pararAudio: interromper,
+        falarAviso,
         enviarResposta,
         enviarAudio,
         concluir,

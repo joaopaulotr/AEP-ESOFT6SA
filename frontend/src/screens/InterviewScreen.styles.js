@@ -202,6 +202,13 @@ export const style = {
         borderRadius: 1,
         padding: "3px 9px",
     },
+    incentivo: {
+        margin: 0,
+        fontSize: 14,
+        fontStyle: "italic",
+        textAlign: "center",
+        color: "var(--color-text-muted)",
+    },
     textoIA: {
         margin: 0,
         color: "var(--color-text)",
