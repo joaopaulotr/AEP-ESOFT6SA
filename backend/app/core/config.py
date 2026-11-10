@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     llm_provider: Literal["openai", "fake"] = "openai"
     llm_model: str = "gpt-4o-mini"
     llm_timeout_seconds: float = 20.0
+    # Modelo de voz (TTS). O tom da persona (`instructions`) só vale nos gpt-4o*-tts.
+    speech_model: str = "gpt-4o-mini-tts"
     max_audio_bytes: int = 25 * 1024 * 1024
     max_upload_bytes: int = 2 * 1024 * 1024
     frontend_url: str = "http://localhost:5173"

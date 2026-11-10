@@ -202,3 +202,25 @@ class TestClientConstruction:
         with pytest.raises(ProviderError, match="não configurado") as info:
             cls()
         assert isinstance(info.value.__cause__, openai.OpenAIError)
+
+
+async def test_truncated_json_is_an_invalid_json_error(fake_async_openai):
+    from app.providers.base import InvalidJSONError
+
+    fake_async_openai.queue_raw('{"resumo": "x')
+    with pytest.raises(InvalidJSONError):
+        await OpenAILLMProvider(client=fake_async_openai).complete_json("p")
+
+
+@pytest.mark.parametrize("model", ["tts-1", "tts-1-hd"])
+async def test_older_speech_models_do_not_get_instructions(fake_async_openai, model):
+    fake_async_openai.queue_speech(b"MP3")
+    await OpenAISpeechProvider(client=fake_async_openai, speech_model=model).synthesize("olá", "acolhedor")
+    call = fake_async_openai.last_speech_call
+    assert call["model"] == model and "instructions" not in call
+
+
+def test_factory_uses_the_configured_speech_model(monkeypatch, fake_async_openai):
+    monkeypatch.setattr(openai_provider, "AsyncOpenAI", lambda **kwargs: fake_async_openai)
+    provider = build_speech_provider(Settings(llm_provider="openai", speech_model="tts-1"))
+    assert provider._speech_model == "tts-1" and not provider.supports_instructions
