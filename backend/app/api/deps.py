@@ -11,6 +11,7 @@ from app.repositories.participant_repository import ParticipantRepository
 from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.synthesis_repository import SynthesisRepository
+from app.services.invite_service import InviteService
 from app.services.import_service import ImportService
 from app.services.interview_service import InterviewService
 from app.services.participant_service import ParticipantService
@@ -102,6 +103,13 @@ def get_import_service() -> ImportService:
     return ImportService(QuestionnaireParser(get_llm_provider()))
 
 
+@lru_cache(maxsize=1)
+def get_invite_service() -> InviteService:
+    return InviteService(
+        get_script_repository(), get_participant_repository(), get_session_service()
+    )
+
+
 def reset_dependencies() -> None:
     """Limpa os singletons (uso em testes)."""
     for getter in (
@@ -118,5 +126,6 @@ def reset_dependencies() -> None:
         get_participant_service,
         get_synthesis_service,
         get_import_service,
+        get_invite_service,
     ):
         getter.cache_clear()

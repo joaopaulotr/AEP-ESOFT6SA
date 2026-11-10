@@ -102,7 +102,7 @@ class TestRead:
         assert [item["script_id"] for item in body] == [script_id, DEFAULT_ID]
         resumo = body[0]
         assert set(resumo) == {
-            "script_id", "titulo", "tema", "descricao", "slug_convite", "ativo",
+            "script_id", "titulo", "tema", "descricao", "slug_convite", "link_convite", "ativo",
             "perguntas_total", "persona", "sessoes_total", "concluidas", "em_andamento",
         }
         assert resumo["perguntas_total"] == 2

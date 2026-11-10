@@ -1,12 +1,20 @@
+from io import BytesIO
 from typing import Literal
 
+import segno
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 
-from app.api.deps import get_import_service, get_script_service, get_session_service
+from app.api.deps import (
+    get_import_service,
+    get_invite_service,
+    get_script_service,
+    get_session_service,
+)
 from app.core.config import settings
-from app.schemas.api import ScriptCreate, ScriptDraft, ScriptSummary, ScriptUpdate, SessionSummary
+from app.schemas.api import InviteLink, ScriptCreate, ScriptDraft, ScriptSummary, ScriptUpdate, SessionSummary
 from app.schemas.script import InterviewScript
 from app.services.import_service import ImportService
+from app.services.invite_service import InviteService
 from app.services.script_service import ScriptService
 from app.services.session_service import SessionService
 
@@ -58,3 +66,16 @@ async def list_script_sessions(
     sessions: SessionService = Depends(get_session_service),
 ):
     return await sessions.list_for_script(script_id, status=status_filter, limit=limit)
+
+
+@router.get("/{script_id}/convite", response_model=InviteLink)
+async def get_script_invite(script_id: str, invites: InviteService = Depends(get_invite_service)):
+    return await invites.link_for_script(script_id)
+
+
+@router.get("/{script_id}/qrcode.svg")
+async def get_script_qrcode(script_id: str, invites: InviteService = Depends(get_invite_service)):
+    invite = await invites.link_for_script(script_id)
+    buffer = BytesIO()
+    segno.make(invite.link, error="m").save(buffer, kind="svg", scale=6, border=2)
+    return Response(content=buffer.getvalue(), media_type="image/svg+xml")

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 20.0
     max_audio_bytes: int = 25 * 1024 * 1024
     max_upload_bytes: int = 2 * 1024 * 1024
+    frontend_url: str = "http://localhost:5173"
 
     class Config:
         env_file = ".env"

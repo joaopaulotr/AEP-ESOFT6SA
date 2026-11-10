@@ -1,4 +1,5 @@
 from app.core.errors import ConflictError
+from app.services.invite_service import build_invite_link
 from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
 from app.schemas.api import QuestionCreate, ScriptCreate, ScriptSummary, ScriptUpdate
@@ -34,6 +35,7 @@ class ScriptService:
             summaries.append(
                 ScriptSummary(
                     **script.model_dump(include=_SUMMARY_FIELDS),
+                    link_convite=build_invite_link(script.slug_convite),
                     perguntas_total=len(script.perguntas),
                     sessoes_total=total,
                     concluidas=concluidas,
