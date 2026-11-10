@@ -131,3 +131,52 @@ def test_conflict_during_stream_becomes_erro_event(client, fake_llm, monkeypatch
     events = _events(client.post(f"{API}/turn/{sid}/stream", json={"texto": "Oi"}))
     assert [n for n, _ in events] == ["pensando", "erro"]
     assert events[1][1] == {"detail": "A sessão mudou durante o turno."}
+
+
+def test_not_found_during_stream_becomes_erro_event(client, monkeypatch):
+    from app.core.errors import NotFoundError
+
+    sid = _abrir(client)
+
+    async def gone(self, session_id, text):
+        raise NotFoundError("Sessão não encontrada.")
+
+    monkeypatch.setattr(SessionService, "take_turn", gone)
+    events = _events(client.post(f"{API}/turn/{sid}/stream", json={"texto": "Oi"}))
+    assert [n for n, _ in events] == ["pensando", "erro"]
+    assert events[1][1] == {"detail": "Sessão não encontrada."}
+
+
+def test_unexpected_error_becomes_generic_erro_and_logs_without_text(client, monkeypatch, caplog):
+    sid = _abrir(client)
+
+    async def broken(self, session_id, text):
+        raise RuntimeError("segredo-do-participante")
+
+    monkeypatch.setattr(SessionService, "take_turn", broken)
+    with caplog.at_level("ERROR"):
+        events = _events(client.post(f"{API}/turn/{sid}/stream", json={"texto": "segredo-do-participante"}))
+    assert [n for n, _ in events] == ["pensando", "erro"]
+    assert events[1][1] == {"detail": "Não consegui processar sua resposta. Tente de novo."}
+    assert "RuntimeError" in caplog.text and "segredo-do-participante" not in caplog.text
+
+
+def test_turn_is_saved_even_if_the_client_disconnects(client, fake_llm):
+    import asyncio
+
+    from app.api.v1.endpoints import turns
+
+    sid = _abrir(client)
+    fake_llm.queue("deepen", "Me conta mais.")
+
+    async def run():
+        sessions = app.dependency_overrides[deps.get_session_service]()
+        gen = turns._turn_events(sessions, sid, "Trabalho à noite.")
+        assert (await gen.__anext__()).startswith("event: pensando")
+        await gen.aclose()  # cliente saiu logo após o `pensando`
+        await asyncio.gather(*turns._pending_turns)
+
+    client.portal.call(run)
+    session = client.portal.call(deps.get_session_repository().get_or_raise, sid)
+    roles = [t.role for t in session.conversation]
+    assert roles.count("participant") == 1 and roles.count("interviewer") == 2  # abertura + resposta

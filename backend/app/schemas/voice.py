@@ -1,11 +1,11 @@
-from typing import Literal
-
 from pydantic import BaseModel, Field
+
+from app.providers.base import Tom
 
 
 class SpeechRequest(BaseModel):
     texto: str = Field(min_length=1)
-    tom: Literal["acolhedor", "neutro", "formal"] | None = None
+    tom: Tom | None = None
 
 
 class TranscriptionResponse(BaseModel):

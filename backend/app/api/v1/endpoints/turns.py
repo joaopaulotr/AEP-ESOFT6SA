@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 import re
 from collections.abc import AsyncIterator
 
@@ -12,8 +14,13 @@ from app.schemas.interview import TurnRequest, TurnResponse
 from app.services.session_service import SessionService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# Referência forte aos turnos em andamento: o loop só guarda referência fraca às tasks.
+_pending_turns: set[asyncio.Task] = set()
 
 _PROVIDER_ERROR_DETAIL = "Falha ao se comunicar com o provedor de IA."
+_UNEXPECTED_DETAIL = "Não consegui processar sua resposta. Tente de novo."
 _ABBREVIATIONS = ("sr", "sra", "dr", "dra", "prof", "etc")
 # Fim de frase: . ? ! … (com fechamentos opcionais) seguido de espaço.
 _BOUNDARY = re.compile(r"[.?!…]+[\"')\]]*(?=\s)")
@@ -57,6 +64,32 @@ async def _turn_response(sessions: SessionService, session_id: str, texto: str) 
     )
 
 
+async def _turn_events(
+    sessions: SessionService, session_id: str, texto: str
+) -> AsyncIterator[str]:
+    # O turno roda numa task protegida: se o cliente sair, a resposta é cancelada mas
+    # a gravação (um LLM + save) termina, e a resposta dele não se perde.
+    task = asyncio.ensure_future(_turn_response(sessions, session_id, texto))
+    _pending_turns.add(task)
+    task.add_done_callback(_pending_turns.discard)
+    yield _sse("pensando", {})
+    try:
+        response = await asyncio.shield(task)
+    except ProviderError:
+        yield _sse("erro", {"detail": _PROVIDER_ERROR_DETAIL})
+        return
+    except (ConflictError, NotFoundError) as exc:
+        yield _sse("erro", {"detail": exc.message})
+        return
+    except Exception as exc:  # nunca derrubar o stream sem avisar o front
+        logger.error("Falha inesperada no turno em streaming: %s", type(exc).__name__)
+        yield _sse("erro", {"detail": _UNEXPECTED_DETAIL})
+        return
+    for indice, frase in enumerate(split_sentences(response.fala)):
+        yield _sse("frase", {"texto": frase, "indice": indice})
+    yield _sse("fim", response.model_dump(mode="json"))
+
+
 @router.post("/turn/{session_id}/stream")
 async def handle_turn_stream(
     session_id: str,
@@ -65,29 +98,15 @@ async def handle_turn_stream(
 ):
     """Turno em SSE: `pensando` na hora, as frases da fala decidida e `fim`.
 
-    O LLM é chamado uma vez e o turno é gravado antes de qualquer frase sair;
-    404/409 iniciais respondem HTTP normal, falhas depois viram evento `erro`.
+    O LLM é chamado uma vez e o turno é gravado antes de qualquer frase sair, mesmo
+    que o cliente desconecte no meio (a gravação não é cancelada). 404/409 iniciais
+    respondem HTTP normal; falhas depois viram evento `erro`.
     """
     session = await sessions.get(session_id)  # 404 antes de abrir o stream
     if session.finished:
         raise ConflictError("A entrevista já foi encerrada.")
-
-    async def events() -> AsyncIterator[str]:
-        yield _sse("pensando", {})
-        try:
-            response = await _turn_response(sessions, session_id, payload.texto)
-        except ProviderError:
-            yield _sse("erro", {"detail": _PROVIDER_ERROR_DETAIL})
-            return
-        except (ConflictError, NotFoundError) as exc:
-            yield _sse("erro", {"detail": exc.message})
-            return
-        for indice, frase in enumerate(split_sentences(response.fala)):
-            yield _sse("frase", {"texto": frase, "indice": indice})
-        yield _sse("fim", response.model_dump(mode="json"))
-
     return StreamingResponse(
-        events(),
+        _turn_events(sessions, session_id, payload.texto),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

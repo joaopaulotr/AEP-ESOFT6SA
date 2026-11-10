@@ -140,14 +140,17 @@ async def test_synthesize_returns_audio_bytes(fake_async_openai):
 
 
 @pytest.mark.parametrize(
-    "tom, trecho",
-    [("acolhedor", "calor humano"), ("neutro", "clara e tranquila"), ("formal", "profissional")],
+    "tom, esperado",
+    [
+        ("acolhedor", "Fale em português do Brasil, com calma e calor humano, em ritmo de conversa, com pausas naturais nas vírgulas."),
+        ("neutro", "Fale em português do Brasil, de forma clara e tranquila, em ritmo de conversa."),
+        ("formal", "Fale em português do Brasil, de forma cordial e profissional, com ritmo pausado."),
+    ],
 )
-async def test_synthesize_with_tom_sends_portuguese_instructions(fake_async_openai, tom, trecho):
+async def test_synthesize_with_tom_sends_portuguese_instructions(fake_async_openai, tom, esperado):
     fake_async_openai.queue_speech(b"MP3")
     await OpenAISpeechProvider(client=fake_async_openai).synthesize("olá", tom)
-    instructions = fake_async_openai.last_speech_call["instructions"]
-    assert instructions.startswith("Fale em português do Brasil") and trecho in instructions
+    assert fake_async_openai.last_speech_call["instructions"] == esperado
 
 
 @pytest.mark.parametrize("call", ["transcribe", "synthesize"])
