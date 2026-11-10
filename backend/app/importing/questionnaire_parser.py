@@ -1,5 +1,6 @@
 """Transforma o texto de um questionário em rascunho de roteiro (LLM + fallback heurístico)."""
 
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import PurePath
@@ -20,6 +21,15 @@ TRUNCATED_WARNING = "O arquivo é grande; usei só o começo."
 CAPPED_WARNING = f"Mantive só as {MAX_QUESTIONS} primeiras perguntas."
 
 _PREFIX = re.compile(r"^\s*(?:\d+\s*[.)]|[-•*])\s+")
+_NUMBERED = re.compile(r"^\d+\s*[.)]\s+\S")
+# Linha numerada sem "?" só é pergunta se começar com palavra interrogativa
+# ("1. Qual seu bairro"); "2. Introdução" ou "3. Descreva seu dia" não entram.
+_INTERROGATIVE = re.compile(
+    r"^(?:o que|qual|quais|quando|onde|aonde|como|por que|porque|quanto|quanta|quantos|quantas|quem)\b",
+    re.IGNORECASE,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class _LLMQuestion(BaseModel):
@@ -54,15 +64,16 @@ def _dedupe(questions: list[DraftQuestion]) -> list[DraftQuestion]:
 
 
 def heuristic_parse(text: str, filename: str) -> ScriptDraft:
-    """Leitura sem IA: linhas com '?' ou numeradas (1. / 1)); tira numeração e marcadores."""
+    """Leitura sem IA: linhas que terminam em '?' ou numeradas (1. / 1)) que começam com
+    palavra interrogativa; tira numeração e marcadores."""
     found = []
     for line in text.splitlines():
         stripped = line.strip()
-        numbered = re.match(r"^\d+\s*[.)]\s+\S", stripped) is not None
-        if not stripped or not (stripped.endswith("?") or numbered):
+        if not stripped:
             continue
         clean = _PREFIX.sub("", stripped).strip()
-        if clean:
+        numbered_question = _NUMBERED.match(stripped) is not None and _INTERROGATIVE.match(clean)
+        if clean and (stripped.endswith("?") or numbered_question):
             found.append(DraftQuestion(texto=clean))
     questions = _dedupe(found)
     avisos = []
@@ -99,6 +110,9 @@ class QuestionnaireParser:
             payload = await self._llm.complete_json(IMPORT_PROMPT.format(texto=text))
             parsed = _LLMDraft.model_validate(payload)
         except (ProviderError, ValidationError):
+            return None
+        except Exception as exc:  # falha inesperada do LLM: segue pela leitura automática
+            logger.warning("Falha inesperada do LLM na importação: %s", type(exc).__name__)
             return None
         questions = _dedupe(
             [

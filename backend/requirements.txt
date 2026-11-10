@@ -6,7 +6,7 @@ python-dotenv
 openai
 langgraph
 python-multipart
-python-docx
-pypdf
-segno
+python-docx>=1.1
+pypdf>=6.0
+segno>=1.6
 tzdata==2026.6

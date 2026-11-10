@@ -45,7 +45,70 @@ def test_upload_413(client, monkeypatch):
     monkeypatch.setattr(settings, "max_upload_bytes", 10)
     response = _up(client, data=b"x" * 11)
     assert response.status_code == 413
-    assert response.json()["detail"] == "Arquivo maior que 2 MB."
+    assert response.json()["detail"] == "Arquivo maior que 0 MB."
+
+
+def test_upload_413_message_follows_the_configured_limit(client, monkeypatch):
+    monkeypatch.setattr(settings, "max_upload_bytes", 512 * 1024)
+    response = _up(client, data=b"x" * (512 * 1024 + 1))
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Arquivo maior que 0,5 MB."
+
+
+def test_upload_far_over_the_limit_is_refused_before_parsing_the_multipart(client, monkeypatch):
+    from starlette.requests import Request
+
+    async def _never(self, *args, **kwargs):
+        raise AssertionError("o multipart não pode ser lido")
+
+    monkeypatch.setattr(settings, "max_upload_bytes", 1024)
+    monkeypatch.setattr(Request, "form", _never)
+    monkeypatch.setattr(Request, "_get_form", _never, raising=False)
+    response = _up(client, data=b"x" * (1024 + 64 * 1024 + 10))
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Arquivo maior que 0 MB."
+
+
+def test_upload_docx_route(client, fake_llm):
+    from docx import Document
+
+    doc = Document()
+    doc.add_paragraph("Como você vai ao trabalho?")
+    buffer = BytesIO()
+    doc.save(buffer)
+    fake_llm.queue_payload({})  # LLM sem perguntas: cai na leitura automática
+    response = _up(client, name="q.docx", data=buffer.getvalue())
+    assert response.status_code == 200, response.text
+    assert [p["texto"] for p in response.json()["perguntas"]] == ["Como você vai ao trabalho?"]
+
+
+def test_upload_semicolon_csv_route(client, fake_llm):
+    fake_llm.queue_payload({})
+    response = _up(client, name="q.csv", data="Pergunta;Objetivo\nQual seu bairro?;Mapear\n".encode())
+    assert response.status_code == 200, response.text
+    assert [p["texto"] for p in response.json()["perguntas"]] == ["Qual seu bairro?"]
+
+
+def test_upload_encrypted_docx_is_422(client):
+    response = _up(client, name="q.docx", data=_encrypted_zip())
+    assert response.status_code == 422
+
+
+def _encrypted_zip() -> bytes:
+    """Zip com o bit de criptografia ligado (o zipfile pede senha ao abrir a entrada)."""
+    import zipfile
+
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        info = zipfile.ZipInfo("word/document.xml")
+        archive.writestr(info, b"<xml/>")
+    data = bytearray(buffer.getvalue())
+    # Liga o bit 0 (encrypted) nos cabeçalhos local (offset 6) e central (offset 8).
+    local = data.find(b"PK\x03\x04")
+    central = data.find(b"PK\x01\x02")
+    data[local + 6] |= 0x01
+    data[central + 8] |= 0x01
+    return bytes(data)
 
 
 def test_upload_415(client):
