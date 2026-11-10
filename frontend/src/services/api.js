@@ -56,6 +56,38 @@ export const api = {
         return res.json();
     },
 
+    /** Envia o questionário; devolve um rascunho de roteiro (não grava nada). */
+    async uploadQuestionnaire(file) {
+        const form = new FormData();
+        form.append("file", file); // sem Content-Type manual: o browser define o boundary
+        const res = await request("/scripts/upload", { method: "POST", body: form });
+        return res.json();
+    },
+
+    async createScript(data) {
+        const res = await request("/scripts", postJson(data));
+        return res.json();
+    },
+
+    async updateScript(scriptId, data) {
+        const res = await request(`/scripts/${encodeURIComponent(scriptId)}`, { ...postJson(data), method: "PUT" });
+        return res.json();
+    },
+
+    async deleteScript(scriptId) {
+        await request(`/scripts/${encodeURIComponent(scriptId)}`, { method: "DELETE" });
+    },
+
+    async getInvite(scriptId) {
+        const res = await request(`/scripts/${encodeURIComponent(scriptId)}/convite`);
+        return res.json();
+    },
+
+    /** URL absoluta do QR Code (SVG), para usar direto em <img src>. */
+    qrCodeUrl(scriptId) {
+        return `${BASE_URL}${API_PREFIX}/scripts/${encodeURIComponent(scriptId)}/qrcode.svg`;
+    },
+
     async listScriptSessions(scriptId, { status } = {}) {
         const qs = status ? `?status=${encodeURIComponent(status)}` : "";
         const res = await request(`/scripts/${encodeURIComponent(scriptId)}/sessions${qs}`);
