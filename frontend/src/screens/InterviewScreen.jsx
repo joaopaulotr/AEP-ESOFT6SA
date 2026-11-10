@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Mic, MicOff, Square, Send, Volume2, XCircle, Clock, PenLine } from "lucide-react";
 import PublicLayout from "../components/PublicLayout";
 import ChatComposer from "../components/ChatComposer";
@@ -34,7 +34,11 @@ const INCENTIVO = "Pode ficar à vontade, sem pressa.";
  */
 export default function InterviewScreen({ publico = false }) {
     const { slug } = useParams();
-    const [guardada] = useState(() => (publico ? lerSessaoPublica(slug) : null));
+    const location = useLocation();
+    // sessionStorage indisponível (modo privado restrito): o id segue no state da navegação.
+    const [guardada] = useState(() =>
+        publico ? lerSessaoPublica(slug) ?? (location.state?.sessionId ? location.state : null) : null,
+    );
     if (publico && !guardada) return <Navigate to={`/e/${encodeURIComponent(slug || "")}`} replace />;
     return <Entrevista publico={publico} slug={slug} guardada={guardada} />;
 }
@@ -95,10 +99,6 @@ function Entrevista({ publico, slug, guardada }) {
         const el = msgsRef.current;
         if (el) el.scrollTop = el.scrollHeight;
     }, [transcricao, sessao.digitado]);
-
-    useEffect(() => {
-        if (erro) alert(erro.mensagem);
-    }, [erro]);
 
     // Incentivo: 12 s esperando a pessoa sem que ela fale -> uma vez por pergunta.
     const [incentivo, setIncentivo] = useState(false);
@@ -240,6 +240,17 @@ function Entrevista({ publico, slug, guardada }) {
                     {alternar}
                 </div>
 
+                {sessao.recuperando && (
+                    <p role="status" style={{ margin: "0 0 12px", fontSize: 14.5, fontWeight: 600, color: "var(--color-status)" }}>
+                        Ainda estou processando sua resposta…
+                    </p>
+                )}
+                {(erroMic || erro) && (
+                    <p role="alert" style={{ margin: "0 0 12px", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--color-error)", color: "var(--color-error)", fontSize: 14.5 }}>
+                        {erroMic || erro.mensagem}
+                    </p>
+                )}
+
                 {modoTexto ? (
                     <div style={{ ...style.colRight, maxWidth: 760, margin: "0 auto" }}>
                         <div style={{ padding: "12px 14px 0" }}><InterviewProgress {...progresso} /></div>
@@ -309,7 +320,6 @@ function Entrevista({ publico, slug, guardada }) {
                             <div style={SO_LEITOR} role="status" aria-live="polite" aria-atomic="true" aria-label="Fala do entrevistador">{anuncioVoz}</div>
                         </div>
 
-                        {erroMic && <p role="alert" style={{ margin: 0, color: "var(--color-error)", fontSize: 14.5 }}>{erroMic}</p>}
 
                         {pendente && <TranscriptConfirm key={`${pendente.texto}|${pendente.editar ? "e" : "a"}`} texto={pendente.texto} editarInicial={!!pendente.editar} onEnviar={sessao.confirmarTranscricao} />}
 

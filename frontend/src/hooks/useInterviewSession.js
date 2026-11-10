@@ -9,8 +9,10 @@ import { E2E } from "../utils/e2e";
 
 
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
-const TENTATIVAS_RECUPERAR = 3;
-const INTERVALO_RECUPERAR_MS = E2E ? 300 : 1500;
+// Depois de uma queda do stream o servidor pode ainda estar gerando a fala (LLM com retry + TTS):
+// relê a sessão a cada 3 s por até 45 s antes de concluir que a resposta não foi gravada.
+const INTERVALO_RECUPERAR_MS = E2E ? 300 : 3000;
+const PRAZO_RECUPERAR_MS = E2E ? 3000 : 45000;
 
 /**
  * `existente`: { sessionId, slug } quando a sessão já foi criada (entrada pelo convite). Nesse
@@ -35,6 +37,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     const [encerrando, setEncerrando] = useState(false); // a fala atual é a última (encerramento/acolhimento)
     const [legenda, setLegenda] = useState(""); // frase da IA que está tocando agora
     const [acolhimento, setAcolhimento] = useState(false); // fala de acolhimento: mostra o CVV e não sai sozinha
+    const [recuperando, setRecuperando] = useState(false); // stream caiu: relendo a sessão no servidor
 
     const player = useAudioPlayer();
     const stream = useTurnStream();
@@ -54,6 +57,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     const encerrandoRef = useRef(false); // "Concluir" clicado ou sessão já finalizada: sem novos turnos, sem erro falso
     const interrompidoRef = useRef(false); // barge-in: as frases que ainda chegam não tocam (exceto a final)
     const acolhimentoRef = useRef(false);
+    const abortadoRef = useRef(false); // a pessoa clicou "Concluir": o stream foi cortado de propósito
     const vozRef = useRef(voz);
     vozRef.current = voz;
     const ocupadoRef = useRef(false);
@@ -154,7 +158,8 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             current_index: det.session?.current_index || 0,
             perguntas_total: det.script?.perguntas?.length || 0,
             finished: !!det.session?.finished,
-            acolhimento: !!det.session?.acolhimento,
+            // Detalhes não têm o campo: o acolhimento fica marcado no perfil (alerta) da sessão encerrada.
+            acolhimento: !!det.session?.finished && det.session?.profile?.alerta === "acolhimento",
         };
     }
 
@@ -252,6 +257,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         let fim = null;
         let detalheErro = "";
         let status = 0;
+        let erroDoServidor = false; // evento `erro` ou recusa HTTP: o servidor terminou o turno sem `fim`
         let falhou = false;
         let acolheu = false;
         let encerrado = false; // turno acabou (fim/erro/exceção): nenhum filler tardio
@@ -322,6 +328,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
                     encerrado = true;
                     clearTimeout(timerFiller);
                     falhou = true;
+                    erroDoServidor = true;
                     detalheErro = dados?.detail || "";
                 },
             });
@@ -329,6 +336,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             falhou = true;
             detalheErro = e?.detail || detalheErro;
             status = e?.status || 0;
+            if (status) erroDoServidor = true;
         } finally {
             encerrado = true;
             clearTimeout(timerFiller);
@@ -340,8 +348,9 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             digitador.limpar();
             player.stop();
             setLegenda("");
-            // "Concluir" (ou sair) aborta o stream de propósito: não é erro para mostrar.
-            return { erro: detalheErro, status, silencioso: encerrandoRef.current && !detalheErro && status !== 409 };
+            // Só "Concluir" (aborto pela pessoa) é silencioso. Uma queda depois da frase final
+            // (encerrandoRef já true) ainda precisa de recuperação, senão a tela fica presa.
+            return { erro: detalheErro, status, erroDoServidor, silencioso: abortadoRef.current };
         }
         if (acolheu) fim = { ...fim, acolhimento: true };
         if (vozAtiva && !frases.length && (!interrompidoRef.current || fim.finalizada)) {
@@ -363,6 +372,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
 
         interrompidoRef.current = false;
         instantaneoRef.current = false;
+        setErro(null);
         // Começou em texto e passou para voz: prepara os fillers agora (valem do próximo turno).
         if (vozRef.current && !fillers.preparadoRef.current) fillers.preparar(tomRef.current);
         adicionarMensagem("voce", msg);
@@ -401,7 +411,11 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         if (!r.silencioso) {
             // O stream caiu sem `fim`: o servidor pode ter gravado o turno mesmo assim. Reenviar
             // duplicaria a resposta, então primeiro relê a sessão.
-            const recuperado = await recuperarTurno(r.status === 409);
+            setRecuperando(true);
+            // Recusa/erro explícito do servidor (fora 409): basta uma leitura. Queda de rede ou
+            // vigia de inatividade: o turno pode estar rodando, então espera até ele aparecer.
+            const recuperado = await recuperarTurno({ conflito: r.status === 409, umaVez: r.erroDoServidor && r.status !== 409 });
+            if (montadoRef.current) setRecuperando(false);
             if (!montadoRef.current) return false;
             if (recuperado === "ok") return true;
             if (recuperado === "travado") {
@@ -412,8 +426,12 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         }
         desfazer();
         setProcessando(false);
+        if (r.silencioso || abortadoRef.current) return false; // "Concluir" no meio: nada a mostrar
+        // A frase final chegou mas o turno não foi gravado: libera a tela para reenviar.
+        encerrandoRef.current = false;
+        setEncerrando(false);
         setTurno("voce");
-        if (!r.silencioso) falhar(r.erro || "Não consegui enviar sua resposta. Tente de novo.");
+        falhar(r.erro || "Não consegui enviar sua resposta. Tente de novo.");
         return false;
     }
 
@@ -422,19 +440,23 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
      * salva) ou se a sessão já estava encerrada (409); "naoGravada" se dá para reenviar; "travado" se
      * a resposta foi gravada mas a fala da entrevistadora ainda não apareceu.
      */
-    async function recuperarTurno(conflito) {
+    async function recuperarTurno({ conflito = false, umaVez = false } = {}) {
         const id = sessionIdRef.current;
         let gravada = false;
-        for (let i = 0; i < TENTATIVAS_RECUPERAR; i += 1) {
-            if (i > 0) await espera(INTERVALO_RECUPERAR_MS);
-            if (!montadoRef.current) return "naoGravada";
+        const prazo = Date.now() + PRAZO_RECUPERAR_MS;
+        for (let i = 0; ; i += 1) {
+            if (i > 0) {
+                if (umaVez || Date.now() >= prazo) break;
+                await espera(INTERVALO_RECUPERAR_MS);
+            }
+            if (!montadoRef.current || abortadoRef.current) return "naoGravada";
             let est;
             try {
                 est = await lerEstado(id);
             } catch {
                 continue;
             }
-            if (!montadoRef.current) return "naoGravada";
+            if (!montadoRef.current || abortadoRef.current) return "naoGravada";
             const turnos = est.conversation;
             const respostasServidor = turnos.filter((t) => t.role === "participant").length;
             const ultimo = turnos[turnos.length - 1];
@@ -451,7 +473,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
                 finalizar(est.acolhimento, 300);
                 return "ok";
             }
-            if (!gravada && !conflito) return "naoGravada";
+            // Ainda sem a fala: o turno pode estar em andamento no servidor; tenta de novo.
         }
         if (conflito) {
             setProcessando(false);
@@ -462,6 +484,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     }
 
     async function enviarAudio(blob) {
+        setErro(null);
         setProcessando(true);
         let texto;
         try {
@@ -499,6 +522,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             ? "Você ainda não respondeu nada. Encerrar mesmo assim?"
             : "Encerrar a entrevista agora?";
         if (!window.confirm(aviso)) return;
+        abortadoRef.current = true;
         encerrandoRef.current = true;
         setPendente(null);
         stream.cancelar();
@@ -566,6 +590,8 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         anuncio,
         encerrando,
         acolhimento,
+        recuperando,
+        limparErro: () => setErro(null),
         continuar,
         mostrarTudo,
         audioReproduzindo: player.tocando,

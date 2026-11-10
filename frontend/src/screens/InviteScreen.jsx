@@ -55,7 +55,10 @@ export default function InviteScreen() {
             });
             // O id da sessão fica no sessionStorage (por slug), nunca na URL.
             guardarSessaoPublica(slug, { sessionId: dados.session_id, canal: canal === "texto" ? "texto" : "voz" });
-            navigate(`/e/${encodeURIComponent(slug)}/entrevista`);
+            // O state leva o mesmo dado: sem sessionStorage (modo privado restrito) a entrevista abre igual.
+            navigate(`/e/${encodeURIComponent(slug)}/entrevista`, {
+                state: { sessionId: dados.session_id, canal: canal === "texto" ? "texto" : "voz" },
+            });
         } catch (e) {
             setErroInicio(e?.detail || "Não consegui começar agora. Tente de novo em instantes.");
             travaRef.current = false;

@@ -47,13 +47,13 @@ export async function lerEventosSSE(body, aoEvento, { aoPedaco } = {}) {
     if (buffer.trim()) despachar(buffer);
 }
 
-export const INATIVIDADE_SSE_MS = 30000;
+export const INATIVIDADE_SSE_MS = 60000; // pior caso do servidor: ~2x20 s de LLM + TTS
 export const MSG_DEMOROU = "Demorou mais que o normal. Tente de novo.";
 
 /**
  * `enviar(sessionId, texto, { onPensando, onFrase, onFim, onErro })` abre o turno em streaming e
  * resolve quando o stream acaba. Rejeita com ApiError se o servidor recusar antes de transmitir
- * (404/409) ou com o erro de rede. 30 s sem nenhum byte: aborta e rejeita com `detail` =
+ * (404/409) ou com o erro de rede. 60 s sem nenhum byte: aborta e rejeita com `detail` =
  * "Demorou mais que o normal…". `cancelar()` aborta (usado ao desmontar a tela).
  */
 export function useTurnStream() {

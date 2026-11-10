@@ -39,8 +39,8 @@ export default function ScriptDashboardScreen() {
         setAbrindo(true);
         setErroConvite("");
         try {
-            const { link } = await api.getInvite(scriptId);
-            setConvite({ script_id: scriptId, titulo: p.titulo, link_convite: link });
+            const [{ link }, roteiro] = await Promise.all([api.getInvite(scriptId), api.getScript(scriptId)]);
+            setConvite({ script_id: scriptId, titulo: p.titulo, link_convite: link, ativo: roteiro.ativo });
         } catch (e) {
             setErroConvite(e.detail || "Não consegui abrir o convite. Tente de novo.");
         } finally {
