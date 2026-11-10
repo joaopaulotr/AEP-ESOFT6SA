@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from collections.abc import Awaitable, Callable
 
 from pymongo import ASCENDING, DESCENDING, IndexModel
@@ -27,16 +28,18 @@ class SessionRepository(BaseRepository[InterviewState]):
     stale_message = "A sessão foi alterada por outra ação. Tente de novo."
     extra_indexes = (
         IndexModel([("script_id", ASCENDING), ("created_at", DESCENDING)], name="script_id_data"),
+        IndexModel([("script_id", ASCENDING), ("updated_at", DESCENDING)], name="script_id_atualizada"),
         IndexModel([("participant_id", ASCENDING)], name="participant_id"),
     )
 
     async def list_by_script(self, script_id: str, *, limit: int = 100) -> list[InterviewState]:
         return await self.list({"script_id": script_id}, limit=limit)
 
-    async def count_by_script(self) -> dict[str, tuple[int, int]]:
-        """script_id -> (total, concluídas), numa só agregação."""
+    async def count_by_script(self, script_ids: list[str]) -> dict[str, tuple[int, int]]:
+        """script_id -> (total, concluídas) dos roteiros pedidos, numa só agregação."""
         rows = await self._collection.aggregate(
             [
+                {"$match": {"script_id": {"$in": script_ids}}},
                 {
                     "$group": {
                         "_id": "$script_id",
@@ -145,6 +148,7 @@ class SessionRepository(BaseRepository[InterviewState]):
             {"script_id": {"$exists": False}},
             {"session_id": 1, "finished": 1, "synthesis": 1},
         ).to_list(length=None)
+        now = datetime.now(timezone.utc)
         for document in legacy:
             session_id = document["session_id"]
             old_synthesis = document.get("synthesis")
@@ -162,6 +166,12 @@ class SessionRepository(BaseRepository[InterviewState]):
                     "$unset": {"synthesis": ""},
                 },
             )
+            # Sem datas, a sessão não valida em SessionSummary nem ordena na listagem.
+            for date_field in ("created_at", "updated_at"):
+                await self._collection.update_one(
+                    {"session_id": session_id, date_field: {"$exists": False}},
+                    {"$set": {date_field: now}},
+                )
         return len(legacy)
 
     # -- consultas relacionais ($lookup) ----------------------------------

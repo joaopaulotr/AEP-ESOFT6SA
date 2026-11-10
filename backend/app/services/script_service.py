@@ -27,7 +27,7 @@ class ScriptService:
 
     async def list_summaries(self, *, only_active: bool = True) -> list[ScriptSummary]:
         scripts = await (self._scripts.list_active() if only_active else self._scripts.list())
-        counts = await self._sessions.count_by_script()
+        counts = await self._sessions.count_by_script([s.script_id for s in scripts])
         summaries = []
         for script in scripts:
             total, concluidas = counts.get(script.script_id, (0, 0))

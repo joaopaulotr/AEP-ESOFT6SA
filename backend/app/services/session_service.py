@@ -30,12 +30,6 @@ class SessionService:
         self._interview = interview
         self._syntheses = syntheses
 
-    async def start(
-        self, script_id: str | None = None, participant_id: str | None = None
-    ) -> tuple[InterviewState, str]:
-        state, pergunta, _ = await self._open(script_id, participant_id)
-        return state, pergunta
-
     async def open(
         self, script_id: str | None = None, participant_id: str | None = None
     ) -> SessionResponse:

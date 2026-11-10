@@ -63,6 +63,15 @@ def test_put_can_clear_a_field_with_null(client):
     assert body["apelido"] is None
 
 
+def test_put_canal_null_keeps_the_current_channel(client):
+    created = client.post(API, json={"apelido": "Maria", "canal": "texto"}).json()
+
+    response = client.put(f"{API}/{created['participant_id']}", json={"canal": None})
+
+    assert response.status_code == 200
+    assert response.json()["canal"] == "texto"
+
+
 def test_put_unknown_is_404(client):
     assert client.put(f"{API}/nao-existe", json={"apelido": "x"}).status_code == 404
 

@@ -30,7 +30,7 @@ class TestConstruction:
     def test_declares_the_relationship_indexes(self, repository):
         names = {index.document["name"] for index in repository.indexes()}
 
-        assert names == {"session_id_unico", "script_id_data", "participant_id"}
+        assert names == {"session_id_unico", "script_id_data", "script_id_atualizada", "participant_id"}
 
 
 class TestCrud:
@@ -345,3 +345,29 @@ class TestCorruptRelatedDocuments:
         assert "participants" in str(error.value) and "canal" in str(error.value)
         assert "Maria" not in str(error.value)
         assert error.value.__cause__ is None and error.value.__suppress_context__
+
+
+class TestCountByScript:
+    async def test_counts_only_the_requested_scripts(self, repository):
+        await repository.create(InterviewState(script_id="a", finished=True))
+        await repository.create(InterviewState(script_id="a"))
+        await repository.create(InterviewState(script_id="b"))
+
+        assert await repository.count_by_script(["a"]) == {"a": (2, 1)}
+        assert await repository.count_by_script([]) == {}
+
+
+class TestBackfillMissingDates:
+    async def test_legacy_session_without_dates_is_listed_after_backfill(self, repository, sessions):
+        document = v010_document("sem-data", finished=True)
+        del document["created_at"], document["updated_at"]
+        await sessions.insert_one(document)
+
+        async def ignore(session_id, text):
+            pass
+
+        await repository.backfill_legacy(ignore)
+
+        found = await repository.list_summaries("entrevista-generalista")
+        assert [s.session_id for s in found] == ["sem-data"]
+        assert found[0].created_at is not None and found[0].updated_at is not None
