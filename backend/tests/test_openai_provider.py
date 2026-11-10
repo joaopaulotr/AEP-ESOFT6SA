@@ -139,6 +139,20 @@ async def test_synthesize_returns_audio_bytes(fake_async_openai):
     assert call == {"model": "gpt-4o-mini-tts", "voice": "alloy", "input": "olá"}
 
 
+@pytest.mark.parametrize(
+    "tom, esperado",
+    [
+        ("acolhedor", "Fale em português do Brasil, com calma e calor humano, em ritmo de conversa, com pausas naturais nas vírgulas."),
+        ("neutro", "Fale em português do Brasil, de forma clara e tranquila, em ritmo de conversa."),
+        ("formal", "Fale em português do Brasil, de forma cordial e profissional, com ritmo pausado."),
+    ],
+)
+async def test_synthesize_with_tom_sends_portuguese_instructions(fake_async_openai, tom, esperado):
+    fake_async_openai.queue_speech(b"MP3")
+    await OpenAISpeechProvider(client=fake_async_openai).synthesize("olá", tom)
+    assert fake_async_openai.last_speech_call["instructions"] == esperado
+
+
 @pytest.mark.parametrize("call", ["transcribe", "synthesize"])
 async def test_speech_api_failure_raises_provider_error(fake_async_openai, call):
     fake_async_openai.fail_next(_conn_error())

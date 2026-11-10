@@ -22,3 +22,13 @@ export function dataHora(iso) {
     const d = new Date(iso);
     return Number.isNaN(d.getTime()) ? "" : FORMATO_DATA.format(d);
 }
+
+/**
+ * Atraso de "pensar" antes da 1ª frase da IA tocar: proporcional ao tamanho da resposta da pessoa,
+ * 600 ms a 2,5 s, com jitter de +-250 ms (o resultado também fica dentro de 600 ms..2,5 s).
+ */
+export function atrasoDePensar(tamanhoResposta, aleatorio = Math.random) {
+    const base = Math.min(2500, Math.max(600, 600 + tamanhoResposta * 12));
+    const jitter = (aleatorio() * 2 - 1) * 250;
+    return Math.round(Math.min(2500, Math.max(600, base + jitter)));
+}

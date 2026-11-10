@@ -4,7 +4,7 @@ import { Send } from "lucide-react";
 const MAX_LINHAS = 6;
 
 /** Caixa de resposta do modo texto: Enter envia, Shift+Enter quebra a linha. */
-export default function ChatComposer({ onSend, desabilitado = false, enviando = false }) {
+export default function ChatComposer({ onSend, desabilitado = false, enviando = false, aoDigitar }) {
     const [texto, setTexto] = useState("");
     const ref = useRef(null);
     const vazio = !texto.trim();
@@ -43,7 +43,10 @@ export default function ChatComposer({ onSend, desabilitado = false, enviando = 
                 style={s.textarea}
                 value={texto}
                 disabled={travado}
-                onChange={(e) => setTexto(e.target.value)}
+                onChange={(e) => {
+                    setTexto(e.target.value);
+                    aoDigitar?.();
+                }}
                 onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                         e.preventDefault();

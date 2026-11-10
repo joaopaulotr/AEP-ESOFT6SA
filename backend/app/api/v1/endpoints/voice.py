@@ -30,5 +30,5 @@ async def generate_speech(
     payload: SpeechRequest,
     speech: SpeechProvider = Depends(get_speech_provider),
 ):
-    audio = await speech.synthesize(payload.texto)
+    audio = await speech.synthesize(payload.texto, payload.tom)
     return Response(content=audio, media_type="audio/mpeg")

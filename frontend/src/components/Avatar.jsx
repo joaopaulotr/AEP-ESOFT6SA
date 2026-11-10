@@ -1,7 +1,8 @@
 import { useState } from "react";
 import React from "react";
 
-export default function Avatar({ size = 64, style: extraStyle }) {
+/** `ativo`: false para as ondas e deixa só o círculo (IA em silêncio). */
+export default function Avatar({ size = 64, style: extraStyle, ativo = true }) {
     return (
         <>
             <style>{`
@@ -15,8 +16,9 @@ export default function Avatar({ size = 64, style: extraStyle }) {
                         opacity: 0;
                     }
                 }
-                   
-                    
+                @media (prefers-reduced-motion: reduce) {
+                    .avatar-onda { animation: none !important; opacity: 0.35; }
+                }
             `}</style>
             <div
                 style={{
@@ -31,8 +33,8 @@ export default function Avatar({ size = 64, style: extraStyle }) {
                 }}
             >
                
-                <div style={ondaStyle(size, "0s")} />
-                <div style={ondaStyle(size, "1s")} />
+                {ativo && <div className="avatar-onda" style={ondaStyle(size, "0s")} />}
+                {ativo && <div className="avatar-onda" style={ondaStyle(size, "1s")} />}
                 
 
              

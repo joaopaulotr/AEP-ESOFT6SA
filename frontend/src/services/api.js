@@ -138,13 +138,22 @@ export const api = {
         return res.json();
     },
 
+    /**
+     * Turno em streaming (SSE sobre POST). Devolve a Response já validada (404/409 viram ApiError);
+     * quem chama lê `res.body` (ver useTurnStream). `signal` aborta a leitura.
+     */
+    async streamTurn(sessionId, texto, { signal } = {}) {
+        return request(`/turn/${sessionId}/stream`, { ...postJson({ texto }), signal });
+    },
+
     /** Encerra a sessão manualmente (botão "Concluir"). */
     async finishSession(sessionId) {
         await request(`/session/${sessionId}/finish`, { method: "POST" });
     },
 
-    async synthesizeSpeech(texto) {
-        const res = await request("/voice/fala", postJson({ texto }));
+    /** `tom`: "acolhedor" | "neutro" | "formal" (tom da persona do roteiro); omitido = padrão do servidor. */
+    async synthesizeSpeech(texto, tom) {
+        const res = await request("/voice/fala", postJson(tom ? { texto, tom } : { texto }));
         return res.blob();
     },
 

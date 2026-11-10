@@ -251,7 +251,10 @@ Pesquisa resumida (fontes na seção 13):
 - Backchannel ("uhum", "entendi") ajuda, mas **em excesso soa performático/debochado**.
 - Erros de digitação simulados **reduzem** a humanidade percebida; hesitação e autocorreção pontual são bem vistas.
 
-### EV-20 — Escuta ativa no prompt de decisão `TODO`
+### EV-20 — Escuta ativa no prompt de decisão `DONE`
+
+- Entregue: `DECISION_PROMPT` com reconhecimento curto (`reconhecimento`), tipos de probe, anti-repetição (últimas falas) e transição natural; uma única chamada ao LLM por turno.
+- Desvio: o limite de `max_aprofundamentos` é imposto pelo código (`aprofundar` vira avanço), não só pelo prompt.
 
 - O entrevistador **reconhece o que a pessoa disse antes de perguntar** (espelhamento curto com as palavras dela:
   "Você falou que o ônibus atrasa toda semana…").
@@ -262,12 +265,18 @@ Pesquisa resumida (fontes na seção 13):
 - Linguagem oral, frases curtas, sem listas, sem jargão; adaptar o registro ao do participante.
 - Anti-repetição: não repetir a mesma abertura/estrutura em turnos seguidos (histórico das últimas falas no prompt).
 
-### EV-21 — Persona configurável `TODO`
+### EV-21 — Persona configurável `DONE`
+
+- Entregue: `persona` (nome, tom) entra no prompt de decisão e nas falas fixas de encerramento/acolhimento.
+- O tom também escolhe as instruções do TTS (`TOM_INSTRUCTIONS` em `openai_provider.py`).
 
 - Nome, tom (acolhedor/neutro/formal) e voz TTS por roteiro (`interview_scripts.persona`).
 - Apresentação inicial humana: quem é, quanto tempo leva, que não existe resposta certa.
 
-### EV-22 — Ritmo humano (timing) `TODO`
+### EV-22 — Ritmo humano (timing) `DONE`
+
+- Entregue: modo texto com "digitando…" e texto revelado em ritmo humano (`useTypewriter`, pausas leves e fortes), sem erros simulados; modo voz com instruções de entonação por tom.
+- Desvio: o ritmo vem das frases do stream (EV-60), não de token a token.
 
 - **Atraso dinâmico**: tempo de "pensar" proporcional ao tamanho da resposta do participante e da próxima fala,
   com jitter aleatório (ex.: 600 ms–2,5 s), nunca resposta instantânea.
@@ -276,14 +285,21 @@ Pesquisa resumida (fontes na seção 13):
 - **Modo voz:** pausas naturais (vírgulas e reticências no texto enviado ao TTS) e instruções de entonação no
   `gpt-4o-mini-tts` (ex.: "fale de forma calma, calorosa, como numa conversa").
 
-### EV-23 — Backchannel e fillers `TODO`
+### EV-23 — Backchannel e fillers `DONE`
+
+- Entregue: `useFillers` toca um filler pré-pronto só se a 1ª frase não chegou em 700 ms, com probabilidade 0,5 e sem repetir o último.
+- Desvio: não há filler gerado por sub-prompt (item cortável da spec).
 
 - Enquanto o LLM processa, tocar um **filler curto e contextual** ("hmm, entendi…", "certo…") — pré-gerado em
   cache de áudio para latência zero, sorteado sem repetir o último.
 - Frequência limitada (não em todo turno) para não soar performático.
 - Filler gerado em paralelo por sub-prompt rápido quando a resposta for longa/emocional.
 
-### EV-24 — Turn-taking `TODO`
+### EV-24 — Turn-taking `DONE`
+
+- Entregue: VAD no navegador (`useVoiceActivity`) com calibração de ruído e eco, barge-in e incentivo após silêncio longo.
+- Barge-in só atua com cancelamento de eco ativo na trilha do microfone (`useRecorder`); sem isso a IA não é interrompida.
+- A despedida e o acolhimento não podem ser interrompidos.
 
 - **Detecção de fim de fala (VAD)** no navegador: para de gravar após silêncio (~1,2 s) em vez de exigir clique.
 - **Barge-in**: se o participante começa a falar enquanto a IA fala, o áudio da IA para.
@@ -291,13 +307,19 @@ Pesquisa resumida (fontes na seção 13):
 - Pendência vinda do EV-17: o `useRecorder` ainda não tem VAD (grava e envia por clique) e o `useAudioPlayer` não
   tem barge-in (só `play`/`stop`).
 
-### EV-25 — Memória e coerência `TODO`
+### EV-25 — Memória e coerência `DONE`
+
+- Entregue: `profile` e falas anteriores do participante (`said_before`) entram no prompt; encerramento personalizado via `closing_statement`.
 
 - Perfil extraído (`profile`) e pontos-chave já ditos entram no prompt → a IA retoma coisas ditas antes
   ("Lá no começo você comentou que trabalha à noite…") e não pergunta o que já foi respondido.
 - Encerramento personalizado, citando 1–2 pontos da conversa e agradecendo.
 
-### EV-26 — Cuidado (safety) `TODO`
+### EV-26 — Cuidado (safety) `DONE`
+
+- Entregue: `safety_check` determinístico (`safety.py`) antes do LLM; o LLM também pode sinalizar `risco`.
+- Sofrimento: nó `acolher` encerra a sessão, cita o CVV (188, cvv.org.br) e marca `profile.alerta` sem guardar o texto da pessoa.
+- Desvio: a parada determinística é conservadora (frases claras e curtas); pergunta nunca encerra, e o restante fica a cargo do LLM. O pedido claro de parar encerra com `STOP_CLOSING`.
 
 - Nó `safety_check` (EV-40) detecta sofrimento, risco ou pedido para parar → responde com acolhimento,
   oferece pausar/encerrar e (se for o caso) indica canal de ajuda (ex.: CVV 188).
@@ -352,7 +374,10 @@ O pesquisador **sobe o questionário que já tem** e a plataforma transforma em 
 
 ## 7. Backend
 
-### EV-40 — Grafo LangGraph real `TODO`
+### EV-40 — Grafo LangGraph real `DONE`
+
+- Entregue: grafo real em `interview_graph.py`: `safety_check` -> `encerrar_a_pedido` / `acolher` / `decide` -> `aprofundar` / `transicionar` / `encerrar`, com arestas condicionais.
+- Desvio: a extração de perfil não é um nó; vem do mesmo JSON do `decide` (`profile_updates`), mantendo uma chamada ao LLM por turno. `finish` antes da última pergunta vira `advance`.
 
 ```
 START → extract_profile → safety_check ─┬─ risco → acolher_e_encerrar → END
@@ -372,7 +397,10 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 - Escolha por configuração. Demonstra polimorfismo para Paradigmas de Linguagem.
 - `stream_text` fica para o EV-60 (streaming), quando houver consumidor.
 
-### EV-60 — Streaming da fala (SSE) `TODO`
+### EV-60 — Streaming da fala (SSE) `DONE`
+
+- Entregue: `POST /api/v1/turn/{id}/stream` (SSE) com eventos `pensando`, `frase` (`texto`, `indice`, `finalizada`), `fim` e `erro`; hook `useTurnStream`.
+- Desvio: o streaming é por frase após uma única chamada ao LLM, não token a token; `stream_text` segue sem consumidor. O turno roda sob `asyncio.shield` e é gravado antes da 1ª frase.
 
 - `POST /api/v1/turn/{id}/stream` devolve Server-Sent Events: tokens do texto conforme gerados;
   TTS por frase assim que a primeira frase fecha → áudio começa antes da resposta inteira existir (RK-08).
@@ -389,20 +417,28 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 
 ## 8. Frontend
 
-### EV-80 — Estados visuais e onda de áudio `TODO`
+### EV-80 — Estados visuais e onda de áudio `DONE`
+
+- Entregue: `Waveform` com estados ouvindo/pensando/falando (Web Audio `AnalyserNode`).
 
 - Avatar com estados claros: **ouvindo** (onda reage ao microfone via Web Audio `AnalyserNode`),
   **pensando** (animação sutil), **falando** (onda do áudio da IA).
 
-### EV-81 — Transcrição ao vivo `TODO`
+### EV-81 — Transcrição ao vivo `DONE`
+
+- Entregue: `LiveCaption`, legenda com a conversa e a fala da IA aparecendo por frase.
 
 - Painel lateral estilo legenda com a conversa; fala da IA aparece em streaming.
 
-### EV-82 — Confirmação da transcrição `TODO`
+### EV-82 — Confirmação da transcrição `DONE`
+
+- Entregue: `TranscriptConfirm` mostra a transcrição por 3 s com opção de corrigir antes de enviar.
 
 - Após transcrever, mostra o texto por alguns segundos com opção "corrigir" antes de enviar (RK-09).
 
-### EV-83 — Barra de progresso do roteiro `TODO`
+### EV-83 — Barra de progresso do roteiro `DONE`
+
+- Entregue: `InterviewProgress` ("Pergunta N de M" e estado de aprofundamento).
 
 - "Pergunta 2 de 5 · aprofundando" — reduz ansiedade e abandono.
 

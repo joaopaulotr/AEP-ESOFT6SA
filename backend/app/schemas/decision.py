@@ -21,11 +21,26 @@ class DecisionResult(BaseModel):
     next_utterance: str = ""
     profile_updates: dict[str, str] = Field(default_factory=dict)
     closing_statement: str = ""
+    probe_tipo: Literal["elaboracao", "exemplo", "sentimento", "clarificacao", "confirmacao"] | None = None
+    risco: Literal["nenhum", "sofrimento", "pedido_parar"] = "nenhum"
+    reconhecimento: str = ""
 
-    @field_validator("next_utterance", "closing_statement", mode="before")
+    @field_validator("next_utterance", "closing_statement", "reconhecimento", mode="before")
     @classmethod
     def _none_to_empty(cls, value: Any) -> Any:
         return "" if value is None else value
+
+    @field_validator("probe_tipo", mode="before")
+    @classmethod
+    def _unknown_probe_is_none(cls, value: Any) -> Any:
+        valid = {"elaboracao", "exemplo", "sentimento", "clarificacao", "confirmacao"}
+        return value if value in valid else None
+
+    @field_validator("risco", mode="before")
+    @classmethod
+    def _unknown_risk_is_none(cls, value: Any) -> Any:
+        # Campo auxiliar: valor desconhecido não pode derrubar a decisão inteira.
+        return value if value in {"nenhum", "sofrimento", "pedido_parar"} else "nenhum"
 
     @model_validator(mode="after")
     def _deepen_needs_an_utterance(self) -> "DecisionResult":

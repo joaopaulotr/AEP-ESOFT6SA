@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Literal
 
 
 class ProviderError(Exception):
@@ -18,9 +19,12 @@ class LLMProvider(ABC):
     async def complete_text(self, prompt: str) -> str: ...
 
 
+Tom = Literal["acolhedor", "neutro", "formal"]
+
+
 class SpeechProvider(ABC):
     @abstractmethod
     async def transcribe(self, audio: bytes, filename: str = "audio.webm") -> str: ...
 
     @abstractmethod
-    async def synthesize(self, text: str) -> bytes: ...
+    async def synthesize(self, text: str, tom: Tom | None = None) -> bytes: ...

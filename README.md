@@ -142,6 +142,7 @@ Todas as rotas abaixo ficam sob `/api/v1`, exceto `GET /health` (raiz, usado pel
 | `POST` | `/session/{id}/synthesis?refresh=false` | Devolve a síntese salva; sem síntese (ou com `refresh=true`) gera pelo LLM e grava | `400` entrevista não encerrada; `404`; `502` LLM |
 | `GET` | `/session/{id}/synthesis` | Síntese já salva (completa, com `temas`, `lacunas`, `modelo`) | `404` sessão ou síntese ainda não gerada |
 | `POST` | `/turn/{id}` | Processa a resposta (`texto`) e devolve `fala`, `finalizada`, `indice_atual` | `404`; `409` entrevista encerrada ou sessão alterada por outra ação |
+| `POST` | `/turn/{id}/stream` | Mesmo turno, em SSE (`text/event-stream`): `pensando` (na hora), `frase` (`texto`, `indice`, `finalizada`, uma por frase da fala decidida), `fim` (mesmo corpo de `POST /turn/{id}`) e `erro` (`detail`, após o início do stream). O LLM é chamado uma vez; o turno é gravado antes da 1ª frase e sobrevive à desconexão do cliente | `404` e `409` antes de abrir o stream |
 | `POST` | `/voice/transcricao` | Áudio (multipart `file`) para texto | `400` áudio vazio ou ininteligível; `413` acima de `MAX_AUDIO_BYTES`; `502` |
 | `POST` | `/voice/fala` | Texto para áudio `audio/mpeg` | `502` |
 | `GET` | `/health` (raiz) | Verificação de saúde | — |
@@ -200,20 +201,32 @@ sequenceDiagram
 
 ### Grafo de decisão (LangGraph)
 
-`InterviewService._build_graph` compila o grafo executado a cada turno. Estruturalmente é um
-único nó — a política de condução mora inteira no `decide_node`, que lê a última resposta, chama
-o LLM e devolve `deepen`, `advance` ou `finish`:
+`InterviewGraphBuilder` (`app/services/interview_graph.py`) compila o grafo executado a cada
+turno. Há **uma única chamada ao LLM por turno** (nó `decide`); a checagem de segurança que vem
+antes é determinística (`app/services/safety.py`) e não usa rede:
 
 ```mermaid
 flowchart LR
-    START((START)) --> decide["decide_node\nchama o LLM"]
-    decide --> END((END))
+    START((START)) --> safety["safety_check"]
+    safety -->|pedido_parar| parar["encerrar_a_pedido"]
+    safety -->|sofrimento| acolher["acolher"]
+    safety -->|nenhum| decide["decide<br/>chama o LLM"]
+    decide -->|risco| acolher
+    decide -->|deepen| aprof["aprofundar"]
+    decide -->|advance| trans["transicionar"]
+    decide -->|finish| enc["encerrar"]
+    parar --> END((END))
+    acolher --> END
+    aprof --> END
+    trans --> END
+    enc --> END
 ```
 
-O que interessa de verdade não é a forma do grafo (um nó só), e sim **o que o resultado desse nó
-dirige** em `run_turn`: o avanço pelas perguntas do roteiro escolhido (`script.perguntas`, N
-perguntas, cada uma com `max_aprofundamentos`). É esse loop — fora do LangGraph, em código comum e
-testável — que decide se a entrevista aprofunda, avança ou encerra:
+Cada nó final tem uma responsabilidade só: `aprofundar` fala a próxima sondagem (com o
+reconhecimento do que a pessoa disse), `transicionar` avança para a próxima pergunta,
+`encerrar` fecha a entrevista, `encerrar_a_pedido` atende um pedido claro de parar e `acolher`
+trata sofrimento. O avanço pelas perguntas do roteiro (`script.perguntas`, cada uma com
+`max_aprofundamentos`) acontece nesses nós:
 
 ```mermaid
 stateDiagram-v2
@@ -227,10 +240,32 @@ stateDiagram-v2
     Encerrada --> [*]
 ```
 
-Cada transição é decidida pelo LLM dentro do `decide_node`; o `run_turn` só aplica o efeito
-(`current_index += 1`, marca `finished`, anexa o turno) e persiste o estado. Duas regras do código
-corrigem o LLM: `finish` antes da última pergunta vira `advance`, e `deepen` além de
+Cada transição é decidida pelo LLM no nó `decide`; os nós do grafo aplicam o efeito
+(`current_index += 1`, marca `finished`) e o `run_turn` anexa o turno e persiste o estado. Duas
+regras do código corrigem o LLM: `finish` antes da última pergunta vira `advance`, e `deepen` além de
 `max_aprofundamentos` da pergunta também vira `advance`.
+
+### Realismo do entrevistador
+
+A fase 3 (`docs/EVOLUCOES.md`, seção 5; referências na seção 13) deixa a conversa menos robótica:
+
+- **Escuta ativa:** a fala começa reconhecendo o que a pessoa disse, usa tipos de sondagem
+  (elaboração, exemplo, sentimento, clarificação, confirmação), não repete aberturas e retoma
+  pontos de falas anteriores.
+- **Persona:** nome e tom (acolhedor, neutro, formal) do roteiro entram no prompt e escolhem as
+  instruções de entonação do TTS.
+- **Ritmo e streaming:** o servidor emite a fala por frase (SSE, após uma única chamada ao LLM; não
+  é streaming token a token). No modo texto aparece "digitando…" e o texto é revelado em ritmo
+  humano; no modo voz, fillers curtos ("hmm, entendi…") cobrem a espera, em no máximo cerca de
+  metade dos turnos.
+- **Turn-taking:** detecção de fim de fala (VAD) com calibração de ruído, incentivo gentil após
+  silêncio longo e barge-in, que só atua com cancelamento de eco no microfone. Despedida e
+  acolhimento não podem ser interrompidos.
+- **Interface:** onda de áudio por estado, legenda ao vivo, confirmação da transcrição (3 s, com
+  opção de corrigir) e progresso "Pergunta N de M".
+
+A base de pesquisa (atrasos dinâmicos, digitação humana, sondagens e turn-taking) está citada na
+seção 13 de `docs/EVOLUCOES.md`.
 
 ### Decisões de projeto
 
@@ -240,9 +275,13 @@ corrigem o LLM: `finish` antes da última pergunta vira `advance`, e `deepen` al
   (cliente assíncrono, `max_retries=0`, timeout `LLM_TIMEOUT_SECONDS`); nenhum endpoint ou serviço
   o importa. Com `LLM_PROVIDER=fake`, `FakeLLMProvider` e `FakeSpeechProvider` respondem de forma
   determinística, sem rede e sem chave: serve para demo offline e para testes.
-- **A decisão de condução é um grafo.** `InterviewService` compila um grafo LangGraph com o nó
-  `decide`, que executa o `DECISION_PROMPT` e devolve `deepen`, `advance` ou `finish` em JSON —
-  isolando a política de condução do código que aplica seus efeitos no estado.
+- **A decisão de condução é um grafo.** O grafo LangGraph tem `safety_check`, `decide` (executa o
+  `DECISION_PROMPT` e devolve `deepen`, `advance` ou `finish` em JSON) e os nós `aprofundar`,
+  `transicionar`, `encerrar`, `encerrar_a_pedido` e `acolher`, isolando a política de condução.
+- **Cuidado (safety).** Sofrimento (detectado por regras ou pelo LLM) gera um acolhimento que cita o
+  CVV (188, cvv.org.br) e **encerra a sessão**; só o tipo do alerta é guardado (`profile.alerta`),
+  nunca o texto da pessoa. A parada determinística é conservadora: só pedidos claros e curtos
+  encerram, e **pergunta nunca encerra** (o resto fica com o LLM).
 - **A saída do LLM é validada, com retry e fallback.** O JSON vira `DecisionResult` (Pydantic:
   `action` restrito, `deepen` exige fala, `profile_updates` normalizado para texto). Resposta
   inválida ou erro do provedor gera uma segunda tentativa (`MAX_DECISION_ATTEMPTS = 2`); esgotadas,
@@ -359,8 +398,8 @@ Os testes automatizados do backend rodam sem chamadas reais à OpenAI (providers
 dublês ou pelo `fake`) e sem MongoDB instalado: o banco é simulado em memória com
 `mongomock-motor`, que executa filtros, índices únicos e pipelines de agregação.
 
-Estado atual: **410 testes passando, 9 pulados** (os de integração, que exigem `MONGO_TEST_URI`),
-**cobertura de 98,7%** (mínimo exigido: 70%, com medição de branches).
+Estado atual: **506 testes passando, 9 pulados** (os de integração, que exigem `MONGO_TEST_URI`),
+**cobertura de 98,8%** (mínimo exigido: 70%, com medição de branches).
 
 Verificação completa da entrega (pytest com cobertura mínima + build do frontend + higiene de
 arquivos proibidos):
@@ -546,6 +585,7 @@ Toda entrega segue a rotina `/entregar` (`.claude/skills/entregar/SKILL.md`):
   (o participante entra só pelo link); quem tem o link inicia entrevistas no roteiro. As rotas do
   pesquisador (inclusive upload e QR) continuam sem autenticação (RK-11).
 - A tela de login não autentica: apenas navega para as boas-vindas.
-- `metricas` da sessão (tokens, áudio, custo) existem no modelo, mas ficam zeradas (EV-62), e a
-  `persona` do roteiro ainda não entra no prompt (EV-21).
+- `metricas` da sessão (tokens, áudio, custo) existem no modelo, mas ficam zeradas (EV-62).
+- A detecção de sofrimento e de pedido de parar é por regras e pelo LLM, não um classificador clínico:
+  pode errar; o acolhimento apenas indica o CVV e encerra, não substitui atendimento humano.
 - Vale o que está na seção 2: transcrição, viés do modelo e dependência de microfone e conexão.

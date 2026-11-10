@@ -6,6 +6,10 @@ import PublicLayout from "../components/PublicLayout";
 import ChatComposer from "../components/ChatComposer";
 import SideBar from "../components/SideBar";
 import Avatar from "../components/Avatar";
+import Waveform from "../components/Waveform";
+import LiveCaption from "../components/LiveCaption";
+import InterviewProgress from "../components/InterviewProgress";
+import TranscriptConfirm from "../components/TranscriptConfirm";
 import ThemeToggle from "../components/ThemeToggle";
 import { useInterviewSession } from "../hooks/useInterviewSession";
 import { useRecorder } from "../hooks/useRecorder";
@@ -16,6 +20,9 @@ import { ui, CSS as UI_CSS } from "../styles/ui";
 import { style, CSS } from "./InterviewScreen.styles";
 
 const INTERVIEWER = "du";
+const SILENCIO_INCENTIVO_MS = 12000;
+const SO_LEITOR = { position: "absolute", width: 1, height: 1, margin: -1, padding: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 };
+const INCENTIVO = "Pode ficar à vontade, sem pressa.";
 
 /**
  * `publico`: rota `/e/:slug/entrevista` (participante do convite) - sem menu do pesquisador,
@@ -58,26 +65,64 @@ function Entrevista({ publico, slug }) {
                 ? navigate(`/e/${encodeURIComponent(slug)}/obrigado`, { replace: true })
                 : navigate("/feedback", { state: { sessionId, ...extra } }),
     });
-    const { perguntaAtual, indiceAtual, turno, processando, finalizada, transcricao, erro } = sessao;
+    const { perguntaAtual, indiceAtual, turno, processando, finalizada, transcricao, erro, progresso, pendente } = sessao;
 
-    const recorder = useRecorder({ onRecorded: sessao.enviarAudio });
+    const { pararAudio, falarAviso, descartarPendente } = sessao;
+    const recorder = useRecorder({
+        onRecorded: sessao.enviarAudio,
+        // Barge-in: a pessoa começou a falar por cima da IA → corta o áudio e já grava.
+        // só com um <audio> de fato tocando, e nunca na mensagem final (encerramento/acolhimento)
+        bargeInAtivo: !modoTexto && sessao.audioReproduzindo && !sessao.encerrando && !finalizada,
+        iaOcupada: sessao.audioTocando,
+        aoBargeIn: () => {
+            pararAudio();
+            recorder.start().catch(() => {});
+        },
+    });
 
-    const { pararAudio } = sessao;
+    // Ao trocar para texto (ou encerrar) o áudio para e o microfone é liberado.
+    const { liberar: liberarMicrofone } = recorder;
     useEffect(() => {
-        if (modoTexto) pararAudio();
+        if (modoTexto) {
+            pararAudio();
+            descartarPendente();
+            liberarMicrofone();
+        }
     }, [modoTexto]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        if (finalizada) liberarMicrofone();
+    }, [finalizada]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         const el = msgsRef.current;
         if (el) el.scrollTop = el.scrollHeight;
-    }, [transcricao]);
+    }, [transcricao, sessao.digitado]);
 
     useEffect(() => {
         if (erro) alert(erro.mensagem);
     }, [erro]);
 
-    const podeResponder = turno === "voce" && !processando && !finalizada;
-    const ouvindo = turno === "voce" && recorder.gravando;
+    // Incentivo: 12 s esperando a pessoa sem que ela fale -> uma vez por pergunta.
+    const [incentivo, setIncentivo] = useState(false);
+    const aguardando = turno === "voce" && !processando && !finalizada && !recorder.gravando && !pendente;
+    const incentivadoRef = useRef(null); // pergunta (ordem) que já recebeu o incentivo
+    const [digitou, setDigitou] = useState(0); // cada tecla no modo texto reinicia a espera
+    const ordemAtual = progresso.ordem || indiceAtual + 1;
+    useEffect(() => {
+        setIncentivo(false);
+    }, [ordemAtual]);
+    useEffect(() => {
+        if (!aguardando || incentivadoRef.current === ordemAtual) return undefined;
+        const t = setTimeout(() => {
+            incentivadoRef.current = ordemAtual; // uma vez por pergunta
+            setIncentivo(true);
+            falarAviso(INCENTIVO);
+        }, SILENCIO_INCENTIVO_MS);
+        return () => clearTimeout(t);
+    }, [aguardando, ordemAtual, digitou]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const podeResponder = turno === "voce" && !processando && !finalizada && !pendente;
+    const ouvindo = recorder.gravando; // inclui a gravação iniciada por barge-in (turno ainda é da IA)
     const iaFalando = !modoTexto && turno === "interviewer" && !processando && !finalizada;
     const podeAlternar = !recorder.gravando && !processando && !finalizada && !!sessao.sessionId;
 
@@ -95,6 +140,9 @@ function Entrevista({ publico, slug }) {
         sessao.enviarResposta(texto);
         setTexto("");
     }
+
+    const estadoOnda = ouvindo ? "ouvindo" : processando ? "pensando" : sessao.audioTocando ? "falando" : "parado";
+    const legendaTexto = processando ? "" : sessao.legenda || perguntaAtual;
 
     const statusTexto = processando
         ? "PROCESSANDO…"
@@ -158,11 +206,12 @@ function Entrevista({ publico, slug }) {
 
                 {modoTexto ? (
                     <div style={{ ...style.colRight, maxWidth: 760, margin: "0 auto" }}>
+                        <div style={{ padding: "12px 14px 0" }}><InterviewProgress {...progresso} /></div>
                         <div
                             style={{ ...style.msgs, maxHeight: "60vh" }}
                             ref={msgsRef}
                             role="log"
-                            aria-live="polite"
+                            aria-live="off"
                             aria-label="Conversa da entrevista"
                         >
                             {transcricao.length === 0 && <p style={ui.meta}>Conectando à entrevista…</p>}
@@ -175,16 +224,24 @@ function Entrevista({ publico, slug }) {
                                 </div>
                             ))}
                             {processando && (
-                                <div style={{ alignSelf: "flex-start", maxWidth: "88%" }}>
+                                <div style={{ alignSelf: "flex-start", maxWidth: "88%" }} aria-hidden="true">
                                     <div style={style.msgMeta}>{INTERVIEWER}</div>
-                                    <div style={{ ...style.bubble, fontStyle: "italic", color: "var(--color-text-muted)" }}>digitando…</div>
+                                    {sessao.digitado ? (
+                                        <div style={style.bubble}>{sessao.digitado}</div>
+                                    ) : (
+                                        <div style={{ ...style.bubble, fontStyle: "italic", color: "var(--color-text-muted)" }}>digitando…</div>
+                                    )}
                                 </div>
                             )}
                         </div>
+                        {/* Única região ao vivo do modo texto: recebe a frase pronta (não cada caractere). */}
+                        <div style={SO_LEITOR} role="status" aria-live="polite" aria-label="Fala do entrevistador">{sessao.anuncio}</div>
+                        {incentivo && aguardando && <p style={{ ...style.incentivo, padding: "0 14px" }} role="status">{INCENTIVO}</p>}
                         <ChatComposer
                             desabilitado={!sessao.sessionId || finalizada || turno !== "voce"}
                             enviando={processando}
                             onSend={sessao.enviarResposta}
+                            aoDigitar={() => setDigitou((n) => n + 1)}
                         />
                     </div>
                 ) : (
@@ -192,41 +249,38 @@ function Entrevista({ publico, slug }) {
                     <div style={style.colLeft}>
                         <div style={style.aiPanel}>
                             <div style={style.panelHead}>
-                                <span style={style.perguntaNum}>Pergunta {indiceAtual + 1}</span>
+                                <InterviewProgress {...progresso} />
                                 <span style={style.voiceChip}><Volume2 size={14} /> Voz: Ativada</span>
                             </div>
 
                             <div style={style.avatarWrap}>
-                                <Avatar size={128} />
+                                <Avatar size={128} ativo={estadoOnda !== "parado"} />
                             </div>
 
                             <p style={style.status} role="status">{statusTexto}</p>
+                            {incentivo && aguardando && <p style={style.incentivo} role="status">{INCENTIVO}</p>}
 
-                            <div style={style.wave}>
-                                {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-                                    <span key={i} className={ouvindo || iaFalando ? "bar on" : "bar"} style={{ animationDelay: `${i * 0.09}s` }} />
-                                ))}
-                            </div>
+                            <Waveform estado={estadoOnda} nivelRef={recorder.nivelRef} />
 
                             <div style={style.questionCard}>
-                                <p style={style.textoIA}>
-                                    {perguntaAtual ? `"${perguntaAtual}"` : "Conectando à entrevista…"}
-                                </p>
+                                <LiveCaption texto={legendaTexto} vazio={processando ? "…" : undefined} />
                             </div>
                         </div>
+
+                        {pendente && <TranscriptConfirm key={`${pendente.texto}|${pendente.editar ? "e" : "a"}`} texto={pendente.texto} editarInicial={!!pendente.editar} onEnviar={sessao.confirmarTranscricao} />}
 
                         <div style={style.bottomBar}>
                             <div style={{ flex: 1 }}>
                                 <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-text-muted)" }}>Status</p>
                                 <p style={{ margin: "2px 0 0", fontSize: 14, fontWeight: 700, color: "var(--color-status)" }}>
-                                    {processando ? "Processando…" : podeResponder ? "Pronta para ouvir" : "Aguarde…"}
+                                    {processando ? "Processando…" : podeResponder || ouvindo ? "Pronta para ouvir" : "Aguarde…"}
                                 </p>
                             </div>
                             <button
                                 className="mic-btn"
                                 aria-label={recorder.gravando ? "Parar e enviar resposta" : "Falar ao microfone"}
-                                style={{ ...style.micBtn, opacity: podeResponder ? 1 : 0.5, cursor: podeResponder ? "pointer" : "default" }}
-                                disabled={!podeResponder}
+                                style={{ ...style.micBtn, opacity: podeResponder || ouvindo ? 1 : 0.5, cursor: podeResponder || ouvindo ? "pointer" : "default" }}
+                                disabled={!podeResponder && !ouvindo}
                                 onClick={recorder.gravando ? recorder.stop : comecarGravacao}
                             >
                                 {recorder.gravando ? <Square size={18} fill="currentColor" /> : <Mic size={18} />}
@@ -243,7 +297,8 @@ function Entrevista({ publico, slug }) {
                             <span style={style.pill}>Tempo Real</span>
                         </div>
 
-                        <div style={style.msgs} ref={msgsRef} aria-live="polite" aria-label="Transcrição da entrevista">
+                        {/* Sem aria-live: no modo voz a fala da IA já é anunciada pela legenda (uma só região ao vivo). */}
+                        <div style={style.msgs} ref={msgsRef} role="log" aria-live="off" aria-label="Transcrição da entrevista">
                             {transcricao.map((m, i) => (
                                 <div key={i} style={{ alignSelf: m.quem === "ia" ? "flex-start" : "flex-end", maxWidth: "88%" }}>
                                     <div style={style.msgMeta}>

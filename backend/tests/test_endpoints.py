@@ -73,7 +73,11 @@ def test_turn_advances_the_interview_and_persists(client, fake_llm):
     response = client.post(f"/api/v1/turn/{session_id}", json={"texto": "é confuso"})
 
     assert response.status_code == 200
-    assert response.json() == {"fala": "Pode detalhar?", "finalizada": False, "indice_atual": 0}
+    assert response.json() == {
+        "fala": "Pode detalhar?", "finalizada": False, "indice_atual": 0,
+        "acao": "deepen", "pergunta_ordem": 1, "perguntas_total": 4,
+        "aprofundamentos_restantes": 1,
+    }
 
     conversa = client.get(f"/api/v1/session/{session_id}").json()["conversation"]
     assert conversa[-1]["text"] == "Pode detalhar?"

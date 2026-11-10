@@ -5,6 +5,7 @@ from app.repositories.session_repository import SessionRepository
 from app.schemas.interview import InterviewState, Turn
 from app.schemas.script import InterviewScript, Question
 from app.db.seed import CORE_QUESTIONS, generalist_script
+from app.services.interview_graph import default_closing
 from app.services.interview_service import (
     DEFAULT_CLOSING,
     MAX_DECISION_ATTEMPTS,
@@ -25,9 +26,15 @@ def graph_state(interview_state: InterviewState, last_answer: str = "uma respost
         "interview_state": interview_state,
         "script": SCRIPT,
         "last_answer": last_answer,
-        "action": "deepen",
+        "decision": None,
+        "risco": "nenhum",
+        "acao": None,
+        "pergunta_ordem": 1,
         "next_utterance": "",
     }
+
+
+PERSONA_CLOSING = default_closing("Ana")
 
 
 class TestCoreQuestions:
@@ -83,19 +90,19 @@ class TestConstruction:
         assert service._graph is not None
 
 
-class TestDecideNode:
+class TestGraphDecisions:
     async def test_deepen_keeps_action_and_utterance(self, service, fake_llm, state):
         fake_llm.queue(action="deepen", next_utterance="Por que isso te incomoda?")
 
-        result = await service._decide_node(graph_state(state))
+        result = await service._graph.ainvoke(graph_state(state))
 
-        assert result["action"] == "deepen"
+        assert result["acao"] == "deepen"
         assert result["next_utterance"] == "Por que isso te incomoda?"
 
     async def test_preserves_the_untouched_state_keys(self, service, fake_llm, state):
         fake_llm.queue(action="deepen", next_utterance="E depois?")
 
-        result = await service._decide_node(graph_state(state, last_answer="trabalho com suporte"))
+        result = await service._graph.ainvoke(graph_state(state, last_answer="trabalho com suporte"))
 
         assert result["last_answer"] == "trabalho com suporte"
         assert result["interview_state"] is state
@@ -103,7 +110,7 @@ class TestDecideNode:
     async def test_merges_profile_updates_into_the_interview_state(self, service, fake_llm, state):
         fake_llm.queue(profile_updates={"cargo": "analista", "sentimento": "frustrado"})
 
-        await service._decide_node(graph_state(state))
+        await service._graph.ainvoke(graph_state(state))
 
         assert state.profile == {"cargo": "analista", "sentimento": "frustrado"}
 
@@ -111,7 +118,7 @@ class TestDecideNode:
         state.profile = {"cargo": "estagiário", "contexto": "varejo"}
         fake_llm.queue(profile_updates={"cargo": "gerente"})
 
-        await service._decide_node(graph_state(state))
+        await service._graph.ainvoke(graph_state(state))
 
         assert state.profile == {"cargo": "gerente", "contexto": "varejo"}
 
@@ -120,51 +127,51 @@ class TestDecideNode:
     ):
         fake_llm.queue_payload({"action": "deepen"}).queue_payload({"action": "deepen"})
 
-        result = await service._decide_node(graph_state(state))
+        result = await service._graph.ainvoke(graph_state(state))
 
-        assert result["action"] == "advance"
+        assert result["acao"] == "advance"
         assert len(fake_llm.prompts) == MAX_DECISION_ATTEMPTS
         assert state.profile == {}
 
     async def test_tolerates_advance_without_optional_keys(self, service, fake_llm, state):
         fake_llm.queue_payload({"action": "advance"})
 
-        result = await service._decide_node(graph_state(state))
+        result = await service._graph.ainvoke(graph_state(state))
 
-        assert result["next_utterance"] == ""
+        assert result["next_utterance"].startswith("Entendi. ")
         assert state.profile == {}
 
     async def test_finish_before_the_last_question_is_downgraded_to_advance(self, service, fake_llm, state):
         state.current_index = 0
         fake_llm.queue(action="finish", closing_statement="Era só isso, obrigado!")
 
-        result = await service._decide_node(graph_state(state))
+        result = await service._graph.ainvoke(graph_state(state))
 
-        assert result["action"] == "advance"
+        assert result["acao"] == "advance"
         assert result["next_utterance"] != "Era só isso, obrigado!"
 
     async def test_finish_on_the_last_question_uses_the_closing_statement(self, service, fake_llm, state):
         state.current_index = LAST_INDEX
         fake_llm.queue(action="finish", closing_statement="Valeu pelo tempo!")
 
-        result = await service._decide_node(graph_state(state))
+        result = await service._graph.ainvoke(graph_state(state))
 
-        assert result["action"] == "finish"
+        assert result["acao"] == "finish"
         assert result["next_utterance"] == "Valeu pelo tempo!"
 
     async def test_finish_falls_back_to_the_default_closing(self, service, fake_llm, state):
         state.current_index = LAST_INDEX
         fake_llm.queue(action="finish", closing_statement="")
 
-        result = await service._decide_node(graph_state(state))
+        result = await service._graph.ainvoke(graph_state(state))
 
-        assert result["next_utterance"] == DEFAULT_CLOSING
+        assert result["next_utterance"] == PERSONA_CLOSING
 
     async def test_prompt_carries_the_current_and_remaining_questions(self, service, fake_llm, state):
         state.current_index = 1
         fake_llm.queue()
 
-        await service._decide_node(graph_state(state, last_answer="uso todo dia"))
+        await service._graph.ainvoke(graph_state(state, last_answer="uso todo dia"))
 
         prompt = fake_llm.last_prompt
         assert CORE_QUESTIONS[1] in prompt
@@ -176,7 +183,7 @@ class TestDecideNode:
         state.current_index = LAST_INDEX
         fake_llm.queue(action="finish")
 
-        await service._decide_node(graph_state(state))
+        await service._graph.ainvoke(graph_state(state))
 
         assert "nenhuma" in fake_llm.last_prompt
 
@@ -184,7 +191,7 @@ class TestDecideNode:
         state.conversation = [Turn(role="interviewer", text="Como é seu dia?")]
         fake_llm.queue()
 
-        await service._decide_node(graph_state(state))
+        await service._graph.ainvoke(graph_state(state))
 
         assert "interviewer: Como é seu dia?" in fake_llm.last_prompt
 
@@ -195,7 +202,7 @@ class TestCompiledGraph:
 
         result = await service._graph.ainvoke(graph_state(state))
 
-        assert result["action"] == "deepen"
+        assert result["acao"] == "deepen"
         assert result["next_utterance"] == "Me dá um exemplo?"
 
 
@@ -242,8 +249,8 @@ class TestRunTurn:
 
         _, utterance = await service.run_turn(state, SCRIPT, "cobri tudo")
 
-        assert utterance == CORE_QUESTIONS[1]
-        assert state.conversation[-1].text == CORE_QUESTIONS[1]
+        assert utterance == f"Entendi. {CORE_QUESTIONS[1]}"
+        assert state.conversation[-1].text == f"Entendi. {CORE_QUESTIONS[1]}"
 
     async def test_advance_past_the_last_question_finishes_the_interview(self, service, fake_llm, state):
         state.current_index = LAST_INDEX
@@ -254,7 +261,7 @@ class TestRunTurn:
         assert state.finished is True
         assert state.current_index == len(CORE_QUESTIONS)
         assert state.asked_indices == [LAST_INDEX]
-        assert utterance == DEFAULT_CLOSING
+        assert utterance == PERSONA_CLOSING
 
     async def test_finish_marks_the_state_as_finished(self, service, fake_llm, state):
         state.current_index = LAST_INDEX
@@ -293,7 +300,7 @@ class TestRunTurn:
         second_prompt = fake_llm.last_prompt
         assert "participant: primeira resposta" in second_prompt
         assert "interviewer: Conta mais." in second_prompt
-        assert "participant: segunda resposta" in second_prompt
+        assert second_prompt.count("segunda resposta") == 1  # no bloco delimitado, fora do histórico
 
     async def test_walks_through_every_core_question_until_finished(self, service, fake_llm, state):
         for _ in CORE_QUESTIONS:
@@ -301,7 +308,7 @@ class TestRunTurn:
 
         utterances = [(await service.run_turn(state, SCRIPT, "respondi"))[1] for _ in CORE_QUESTIONS]
 
-        assert utterances == [*CORE_QUESTIONS[1:], DEFAULT_CLOSING]
+        assert utterances == [*(f"Entendi. {q}" for q in CORE_QUESTIONS[1:]), PERSONA_CLOSING]
         assert state.asked_indices == list(range(len(CORE_QUESTIONS)))
         assert state.current_index == len(CORE_QUESTIONS)
         assert state.finished is True
@@ -320,7 +327,7 @@ class TestDecisionValidation:
     ):
         fake_llm.queue_payload({"action": "skip"}).queue_payload({"action": "skip"})
         _, fala = await service.run_turn(state, SCRIPT, "resposta")
-        assert state.current_index == 1 and fala == CORE_QUESTIONS[1]
+        assert state.current_index == 1 and fala == f"Entendi. {CORE_QUESTIONS[1]}"
         assert len(fake_llm.prompts) == MAX_DECISION_ATTEMPTS
 
     async def test_validation_failure_log_does_not_leak_llm_payload(
@@ -351,7 +358,7 @@ class TestDecisionValidation:
     async def test_provider_error_falls_back_to_advance(self, service, fake_llm, state):
         fake_llm.queue_error(ProviderError("timeout")).queue_error(ProviderError("timeout"))
         _, fala = await service.run_turn(state, SCRIPT, "resposta")
-        assert fala == CORE_QUESTIONS[1] and not state.finished
+        assert fala == f"Entendi. {CORE_QUESTIONS[1]}" and not state.finished
 
     async def test_provider_error_then_success_uses_the_success(self, service, fake_llm, state):
         fake_llm.queue_error(ProviderError("timeout")).queue(
@@ -364,7 +371,7 @@ class TestDecisionValidation:
         state.current_index = LAST_INDEX
         fake_llm.queue_payload({}).queue_payload({})
         _, fala = await service.run_turn(state, SCRIPT, "resposta")
-        assert state.finished and fala == DEFAULT_CLOSING
+        assert state.finished and fala == PERSONA_CLOSING
 
     async def test_non_string_profile_values_survive_a_repository_round_trip(
         self, service, fake_llm, state, fake_db
@@ -385,7 +392,7 @@ class TestDecisionValidation:
 class TestNoRealApiCalls:
     async def test_unqueued_call_fails_loudly(self, service, state):
         with pytest.raises(AssertionError, match="Chamada inesperada"):
-            await service._decide_node(graph_state(state))
+            await service._graph.ainvoke(graph_state(state))
 
 
 # --------------------------------------------------------------------------
@@ -425,7 +432,7 @@ class TestScriptDrivenTurns:
 
         _, fala = await service.run_turn(state, two_question_script(), "de ônibus")
 
-        assert fala == "O que mudaria no ônibus?"
+        assert fala == "Entendi. O que mudaria no ônibus?"
         assert "Como você se desloca?" in fake_llm.prompts[0]
 
     async def test_prompt_carries_the_goal_and_numbered_remaining_questions(
@@ -485,7 +492,7 @@ class TestScriptDrivenTurns:
         await service.run_turn(state, script, "de ônibus")
         _, fala = await service.run_turn(state, script, "uma hora")
 
-        assert fala == "O que mudaria no ônibus?"
+        assert fala == "Entendi. O que mudaria no ônibus?"
         assert state.current_index == 1
         assert "E no domingo?" not in [turn.text for turn in state.conversation]
 
@@ -494,7 +501,7 @@ class TestScriptDrivenTurns:
 
         _, fala = await service.run_turn(state, two_question_script(max_aprofundamentos=0), "a pé")
 
-        assert fala == "O que mudaria no ônibus?"
+        assert fala == "Entendi. O que mudaria no ônibus?"
 
     async def test_shortened_script_finishes_instead_of_crashing(self, service, fake_llm, state):
         state.current_index = 2  # a sessão estava na 3ª pergunta; o roteiro agora tem 2

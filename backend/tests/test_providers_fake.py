@@ -73,3 +73,7 @@ def test_llm_provider_default_model_name_is_the_class_name():
             return ""
 
     assert Minimal().model_name == "Minimal"
+
+
+async def test_fake_speech_ignores_tom():
+    assert await FakeSpeechProvider().synthesize("olá", "acolhedor") == b""

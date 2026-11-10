@@ -4,7 +4,17 @@ import json
 from openai import AsyncOpenAI, OpenAIError
 
 from app.core.config import settings
-from app.providers.base import LLMProvider, ProviderError, SpeechProvider
+from app.providers.base import LLMProvider, ProviderError, SpeechProvider, Tom
+
+
+TOM_INSTRUCTIONS: dict[str, str] = {
+    "acolhedor": (
+        "Fale em português do Brasil, com calma e calor humano, em ritmo de conversa, "
+        "com pausas naturais nas vírgulas."
+    ),
+    "neutro": "Fale em português do Brasil, de forma clara e tranquila, em ritmo de conversa.",
+    "formal": "Fale em português do Brasil, de forma cordial e profissional, com ritmo pausado.",
+}
 
 
 def _build_client() -> AsyncOpenAI:
@@ -94,12 +104,14 @@ class OpenAISpeechProvider(SpeechProvider):
         except OpenAIError as exc:
             raise ProviderError(f"Falha na transcrição de áudio: {exc}") from exc
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, tom: Tom | None = None) -> bytes:
+        options = {"instructions": TOM_INSTRUCTIONS[tom]} if tom else {}
         try:
             response = await self._client.audio.speech.create(
                 model=self._speech_model,
                 voice=self._voice,
                 input=text,
+                **options,
             )
             return response.content
         except OpenAIError as exc:

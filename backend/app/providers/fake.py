@@ -1,12 +1,15 @@
 import copy
 
-from app.providers.base import LLMProvider, SpeechProvider
+from app.providers.base import LLMProvider, SpeechProvider, Tom
 
 FAKE_DECISION: dict = {
     "action": "advance",
     "next_utterance": "",
     "profile_updates": {},
     "closing_statement": "",
+    "probe_tipo": None,
+    "risco": "nenhum",
+    "reconhecimento": "",
 }
 FAKE_SYNTHESIS = "Síntese gerada em modo offline (provider fake)."
 FAKE_TRANSCRIPTION = "Resposta simulada em modo offline."
@@ -28,5 +31,5 @@ class FakeSpeechProvider(SpeechProvider):
     async def transcribe(self, audio: bytes, filename: str = "audio.webm") -> str:
         return FAKE_TRANSCRIPTION
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, tom: Tom | None = None) -> bytes:
         return b""
