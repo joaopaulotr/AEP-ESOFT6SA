@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.schemas.script import Persona
+from app.schemas.script import Persona, ScriptOrigin
 
 
 def _not_blank(value: str, campo: str) -> str:
@@ -31,11 +31,28 @@ class ScriptCreate(BaseModel):
     descricao: str = ""
     perguntas: list[QuestionCreate] = Field(min_length=1)
     persona: Persona | None = None
+    origem: ScriptOrigin | None = None  # o front publica o rascunho mantendo a origem
 
     @field_validator("titulo")
     @classmethod
     def _titulo(cls, value: str) -> str:
         return _not_blank(value, "o título")
+
+
+class DraftQuestion(BaseModel):
+    texto: str
+    objetivo: str = ""
+
+
+class ScriptDraft(BaseModel):
+    """Rascunho de roteiro vindo de um upload; não é gravado até o pesquisador publicar."""
+
+    titulo: str
+    tema: str = ""
+    descricao: str = ""
+    perguntas: list[DraftQuestion]
+    origem: ScriptOrigin
+    avisos: list[str] = Field(default_factory=list)
 
 
 class ScriptUpdate(BaseModel):

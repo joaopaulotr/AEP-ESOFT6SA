@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_timeout_seconds: float = 20.0
     max_audio_bytes: int = 25 * 1024 * 1024
+    max_upload_bytes: int = 2 * 1024 * 1024
 
     class Config:
         env_file = ".env"

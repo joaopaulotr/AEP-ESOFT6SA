@@ -46,8 +46,10 @@ class ScriptService:
         return await self._scripts.get_or_raise(script_id)
 
     async def create(self, data: ScriptCreate) -> InterviewScript:
-        fields = data.model_dump(exclude={"perguntas", "persona"})
+        fields = data.model_dump(exclude={"perguntas", "persona", "origem"})
         script = InterviewScript(**fields, perguntas=_questions(data.perguntas))
+        if data.origem is not None:
+            script.origem = data.origem
         if data.persona is not None:
             script.persona = data.persona
         return await self._scripts.create(script)

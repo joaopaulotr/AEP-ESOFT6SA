@@ -3,6 +3,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.db import mongodb
+from app.importing.questionnaire_parser import QuestionnaireParser
 from app.providers.base import LLMProvider, SpeechProvider
 from app.providers.factory import build_llm_provider, build_speech_provider
 from app.repositories.base import BaseRepository
@@ -10,6 +11,7 @@ from app.repositories.participant_repository import ParticipantRepository
 from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.synthesis_repository import SynthesisRepository
+from app.services.import_service import ImportService
 from app.services.interview_service import InterviewService
 from app.services.participant_service import ParticipantService
 from app.services.script_service import ScriptService
@@ -95,6 +97,11 @@ def get_synthesis_service() -> SynthesisService:
     )
 
 
+@lru_cache(maxsize=1)
+def get_import_service() -> ImportService:
+    return ImportService(QuestionnaireParser(get_llm_provider()))
+
+
 def reset_dependencies() -> None:
     """Limpa os singletons (uso em testes)."""
     for getter in (
@@ -110,5 +117,6 @@ def reset_dependencies() -> None:
         get_script_service,
         get_participant_service,
         get_synthesis_service,
+        get_import_service,
     ):
         getter.cache_clear()

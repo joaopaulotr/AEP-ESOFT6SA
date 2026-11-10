@@ -7,7 +7,14 @@ from fastapi.responses import JSONResponse
 
 from app.api import deps
 from app.api.v1.router import api_router
-from app.core.errors import ConflictError, CorruptDocumentError, NotFoundError
+from app.core.errors import (
+    ConflictError,
+    CorruptDocumentError,
+    FileTooLargeError,
+    ImportFileError,
+    NotFoundError,
+    UnsupportedFileError,
+)
 from app.providers.base import ProviderError
 
 logger = logging.getLogger(__name__)
@@ -62,6 +69,21 @@ async def not_found_handler(request: Request, exc: NotFoundError):
 @app.exception_handler(ConflictError)
 async def conflict_handler(request: Request, exc: ConflictError):
     return JSONResponse(status_code=409, content={"detail": exc.message})
+
+
+@app.exception_handler(FileTooLargeError)
+async def file_too_large_handler(request: Request, exc: FileTooLargeError):
+    return JSONResponse(status_code=413, content={"detail": exc.message})
+
+
+@app.exception_handler(UnsupportedFileError)
+async def unsupported_file_handler(request: Request, exc: UnsupportedFileError):
+    return JSONResponse(status_code=415, content={"detail": exc.message})
+
+
+@app.exception_handler(ImportFileError)
+async def import_file_handler(request: Request, exc: ImportFileError):
+    return JSONResponse(status_code=422, content={"detail": exc.message})
 
 
 @app.exception_handler(ProviderError)

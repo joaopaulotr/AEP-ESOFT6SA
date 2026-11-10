@@ -1,10 +1,12 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 
-from app.api.deps import get_script_service, get_session_service
-from app.schemas.api import ScriptCreate, ScriptSummary, ScriptUpdate, SessionSummary
+from app.api.deps import get_import_service, get_script_service, get_session_service
+from app.core.config import settings
+from app.schemas.api import ScriptCreate, ScriptDraft, ScriptSummary, ScriptUpdate, SessionSummary
 from app.schemas.script import InterviewScript
+from app.services.import_service import ImportService
 from app.services.script_service import ScriptService
 from app.services.session_service import SessionService
 
@@ -19,6 +21,15 @@ async def list_scripts(ativos: bool = True, scripts: ScriptService = Depends(get
 @router.post("", response_model=InterviewScript, status_code=status.HTTP_201_CREATED)
 async def create_script(payload: ScriptCreate, scripts: ScriptService = Depends(get_script_service)):
     return await scripts.create(payload)
+
+
+@router.post("/upload", response_model=ScriptDraft)
+async def upload_script(
+    file: UploadFile = File(...), imports: ImportService = Depends(get_import_service)
+):
+    """Lê o questionário enviado e devolve um rascunho; não salva nada."""
+    data = await file.read(settings.max_upload_bytes + 1)  # nunca lê o arquivo inteiro
+    return await imports.build_draft(file.filename or "", data)
 
 
 @router.get("/{script_id}", response_model=InterviewScript)
