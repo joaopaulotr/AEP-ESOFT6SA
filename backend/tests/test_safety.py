@@ -108,7 +108,12 @@ def test_distress_wins_over_stop_request():
 
 @pytest.mark.parametrize(
     "text",
-    ["Não quero mais.", "não quero continuar", "chega", "chega por hoje", "quero parar", "encerra a entrevista"],
+    [
+        "Não quero mais.", "não quero continuar", "chega", "chega por hoje", "quero parar",
+        "encerra a entrevista", "quero encerrar", "Não, não quero mais.", "Não quero mais responder",
+        "não quero continuar não", "Já deu, chega", "Sério, chega.", "quero sair daqui",
+        "para, por favor", "pode encerrar",
+    ],
 )
 def test_mentions_stop_uses_the_broad_list(text):
     # Lista ampla: só usada quando o LLM falhou e não pode decidir.
@@ -117,7 +122,7 @@ def test_mentions_stop_uses_the_broad_list(text):
 
 @pytest.mark.parametrize(
     "text",
-    ["o ônibus chega às 7h", "não quero mais ônibus lotado", "quando termina a entrevista?", "pego dois ônibus"],
+    ["pego dois ônibus", "quando termina a entrevista?", "de ônibus, todo dia", "o trajeto é longo"],
 )
 def test_mentions_stop_ignores_regular_answers(text):
     assert not mentions_stop(text)

@@ -132,6 +132,16 @@ class TestSafetyPaths:
         assert len(fake_llm.prompts) == 2
         assert state.finished and r["next_utterance"] == STOP_CLOSING and state.current_index == 0
 
+    @pytest.mark.parametrize(
+        "answer",
+        ["quero encerrar", "Não, não quero mais.", "Não quero mais responder",
+         "não quero continuar não", "Já deu, chega", "Sério, chega."],
+    )
+    async def test_llm_down_twice_with_a_broad_stop_phrase_anywhere_ends(self, fake_llm, state, answer):
+        fake_llm.queue_error(ProviderError("x")).queue_error(ProviderError("x"))
+        r = await run(fake_llm, state, answer=answer)
+        assert state.finished and r["next_utterance"] == STOP_CLOSING and state.current_index == 0
+
     async def test_llm_down_twice_without_a_stop_phrase_advances(self, fake_llm, state):
         fake_llm.queue_error(ProviderError("x")).queue_error(ProviderError("x"))
         r = await run(fake_llm, state, answer="de ônibus, todo dia")

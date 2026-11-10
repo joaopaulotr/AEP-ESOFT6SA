@@ -45,10 +45,14 @@ _EXPLICIT_STOP_RE = re.compile(
 )
 
 _SHORT_STOP_PHRASES = [p.split() for p in ("quero parar", "pode parar", "vamos parar")]
-# Lista ampla: só decide quando o LLM falhou (ver `mentions_stop`).
-_BROAD_STOP_PHRASES = _SHORT_STOP_PHRASES + [
-    p.split() for p in ("nao quero mais", "nao quero continuar", "chega", "encerrar", "encerra", "parar")
-]
+# Lista ampla: só decide quando o LLM falhou (ver `mentions_stop`). Vale em qualquer
+# ponto da mensagem: sem o LLM, "Não quero mais responder" ou "Já deu, chega" encerram.
+_BROAD_STOP_PHRASES = (
+    "quero parar", "pode parar", "vamos parar", "chega", "ja deu", "nao quero mais",
+    "nao quero continuar", "quero encerrar", "pode encerrar", "quero sair",
+    "nao quero responder", "para por favor",
+)
+_BROAD_STOP_RE = re.compile(r"\b(?:" + "|".join(re.escape(p) for p in _BROAD_STOP_PHRASES) + r")\b")
 _LEAD_WORDS = {"eu", "ah", "ok", "entao", "olha", "desculpa", "bom", "e", "por", "favor", "oi", "ola"}
 _TAIL_WORDS = {
     "obrigado", "obrigada", "por", "favor", "agora", "aqui", "hoje", "mesmo", "de", "verdade",
@@ -92,6 +96,5 @@ def mentions_stop(text: str) -> bool:
     normalized = _normalize(text)
     if _QUESTION_RE.search(normalized):
         return False
-    return bool(
-        _EXPLICIT_STOP_RE.search(normalized) or _is_short_stop(normalized, _BROAD_STOP_PHRASES)
-    )
+    words = " ".join(re.sub(r"[^a-z0-9 ]", " ", normalized).split())  # sem pontuação
+    return bool(_EXPLICIT_STOP_RE.search(normalized) or _BROAD_STOP_RE.search(words))
