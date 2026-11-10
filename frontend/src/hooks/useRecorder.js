@@ -10,7 +10,7 @@ const RESTRICOES_MIC = { audio: { echoCancellation: true, noiseSuppression: true
  * `bargeInAtivo`: a IA está falando e o barge-in pode valer. Só vale se o navegador confirmar
  * `echoCancellation` na trilha (senão a IA se interromperia com a própria voz).
  */
-export function useRecorder({ onRecorded, bargeInAtivo = false, aoBargeIn } = {}) {
+export function useRecorder({ onRecorded, bargeInAtivo = false, iaOcupada = false, aoBargeIn } = {}) {
     const [gravando, setGravando] = useState(false);
     const [stream, setStream] = useState(null);
     const [ecoCancelado, setEcoCancelado] = useState(false);
@@ -124,6 +124,7 @@ export function useRecorder({ onRecorded, bargeInAtivo = false, aoBargeIn } = {}
         stream,
         contexto,
         modo,
+        iaOcupada,
         aoSilencio: stop,
         aoFalaContinua: () => aoBargeIn?.(),
     });

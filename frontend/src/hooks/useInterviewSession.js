@@ -227,7 +227,12 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
                     }, ESPERA_FILLER_MS);
                     timersRef.current.push(timerFiller);
                 },
-                onFrase: ({ texto }) => {
+                onFrase: ({ texto, finalizada: ultima }) => {
+                    if (ultima) {
+                        // Despedida/acolhimento: ninguém interrompe, já desde a 1ª frase.
+                        encerrandoRef.current = true;
+                        setEncerrando(true);
+                    }
                     frases.push(texto);
                     if (!vozAtiva) revelarFrase(texto);
                     if (!vozAtiva || interrompidoRef.current) return;

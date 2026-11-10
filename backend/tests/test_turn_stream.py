@@ -72,8 +72,8 @@ def test_stream_emits_events_in_order_and_fim_matches_normal_turn(client, fake_l
     events = _events(response)
     assert [n for n, _ in events] == ["pensando", "frase", "frase", "fim"]
     assert events[0][1] == {}
-    assert events[1][1] == {"texto": "Entendi.", "indice": 0}
-    assert events[2][1] == {"texto": "Como é isso no dia a dia?", "indice": 1}
+    assert events[1][1] == {"texto": "Entendi.", "indice": 0, "finalizada": False}
+    assert events[2][1] == {"texto": "Como é isso no dia a dia?", "indice": 1, "finalizada": False}
     fim = events[3][1]
     assert fim["fala"] == "Entendi. Como é isso no dia a dia?"
     assert fim["acao"] == "deepen" and fim["finalizada"] is False
@@ -82,6 +82,17 @@ def test_stream_emits_events_in_order_and_fim_matches_normal_turn(client, fake_l
     fake_llm.queue("deepen", "Entendi. Como é isso no dia a dia?")
     normal = client.post(f"{API}/turn/{sid2}", json={"texto": "Trabalho à noite."}).json()
     assert fim == normal
+
+
+def test_frase_events_carry_finalizada_true_on_the_closing_turn(client):
+    sid = _abrir(client)
+    response = client.post(f"{API}/turn/{sid}/stream", json={"texto": "quero parar"})
+
+    events = _events(response)
+    frases = [d for n, d in events if n == "frase"]
+    fim = [d for n, d in events if n == "fim"][0]
+    assert fim["finalizada"] is True
+    assert frases and all(f["finalizada"] is True for f in frases)
 
 
 def test_provider_error_becomes_erro_event_and_retry_saves_one_turn(client, fake_llm, monkeypatch):

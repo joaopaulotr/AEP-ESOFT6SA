@@ -93,8 +93,9 @@ async def _turn_events(
         logger.error("Falha inesperada no turno em streaming: %s", type(exc).__name__)
         yield _sse("erro", {"detail": _UNEXPECTED_DETAIL})
         return
+    # `finalizada` já é conhecida aqui: o front bloqueia a interrupção desde a 1ª frase da despedida.
     for indice, frase in enumerate(split_sentences(response.fala)):
-        yield _sse("frase", {"texto": frase, "indice": indice})
+        yield _sse("frase", {"texto": frase, "indice": indice, "finalizada": response.finalizada})
     yield _sse("fim", response.model_dump(mode="json"))
 
 

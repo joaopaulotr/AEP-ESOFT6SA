@@ -73,6 +73,7 @@ function Entrevista({ publico, slug }) {
         // Barge-in: a pessoa começou a falar por cima da IA → corta o áudio e já grava.
         // só com um <audio> de fato tocando, e nunca na mensagem final (encerramento/acolhimento)
         bargeInAtivo: !modoTexto && sessao.audioReproduzindo && !sessao.encerrando && !finalizada,
+        iaOcupada: sessao.audioTocando,
         aoBargeIn: () => {
             pararAudio();
             recorder.start().catch(() => {});

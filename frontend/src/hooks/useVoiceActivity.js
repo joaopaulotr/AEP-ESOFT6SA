@@ -47,8 +47,10 @@ function percentil(leituras, p) {
  *    Chama `aoFalaContinua` com > 300 ms de fala contínua.
  * `contexto`: AudioContext criado no gesto do usuário (quem cria também fecha); sem ele a hook cria um.
  */
-export function useVoiceActivity({ stream, contexto, modo = "ocioso", aoFalaContinua, aoSilencio }) {
+export function useVoiceActivity({ stream, contexto, modo = "ocioso", iaOcupada = false, aoFalaContinua, aoSilencio }) {
     const nivelRef = useRef(0);
+    const iaOcupadaRef = useRef(iaOcupada); // IA com áudio na fila/tocando: o eco não entra no ruído de fundo
+    iaOcupadaRef.current = iaOcupada;
     const modoRef = useRef(modo);
     modoRef.current = modo;
     const aoFalaRef = useRef(aoFalaContinua);
@@ -110,7 +112,7 @@ export function useVoiceActivity({ stream, contexto, modo = "ocioso", aoFalaCont
             }
 
             if (modoAtual === "ocioso") {
-                if (ambiente !== null && rms <= base) ambiente = ambiente * 0.97 + rms * 0.03;
+                if (ambiente !== null && !iaOcupadaRef.current && rms <= base) ambiente = ambiente * 0.97 + rms * 0.03;
                 return;
             }
 
