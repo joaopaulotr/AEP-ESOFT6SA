@@ -1,5 +1,5 @@
 from app.core.errors import ConflictError, NotFoundError
-from app.core.usage import estimate_cost, track_usage
+from app.core.usage import record_usage_safely, track_usage
 from app.repositories.participant_repository import ParticipantRepository
 from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
@@ -102,7 +102,7 @@ class SessionService:
                     session, fala = await self._interview.run_turn(session, script, text)
                 await self._persist(session)
             finally:
-                await self._sessions.add_metrics(session_id, meter, estimate_cost(meter))
+                await record_usage_safely(self._sessions, session_id, meter)
         return session, fala
 
     async def turn_meta(self, session: InterviewState) -> dict:

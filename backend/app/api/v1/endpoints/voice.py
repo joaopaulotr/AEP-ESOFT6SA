@@ -3,7 +3,7 @@ from fastapi.responses import Response
 
 from app.api.deps import get_session_repository, get_speech_provider
 from app.core.config import settings
-from app.core.usage import estimate_cost, track_usage
+from app.core.usage import record_usage_safely, track_usage
 from app.providers.base import SpeechProvider
 from app.repositories.session_repository import SessionRepository
 from app.schemas.voice import SpeechRequest, TranscriptionResponse
@@ -14,7 +14,7 @@ router = APIRouter()
 async def _attribute(sessions: SessionRepository, session_id: str | None, meter) -> None:
     """Soma o uso de voz na sessão informada; sessão desconhecida é ignorada (não falha a voz)."""
     if session_id:
-        await sessions.add_metrics(session_id, meter, estimate_cost(meter))
+        await record_usage_safely(sessions, session_id, meter)
 
 
 @router.post("/voice/transcricao", response_model=TranscriptionResponse)

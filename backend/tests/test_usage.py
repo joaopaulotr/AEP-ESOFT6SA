@@ -45,12 +45,12 @@ def test_estimate_cost_uses_configured_prices():
     meter = UsageMeter(
         llm_input_tokens=1_000_000, llm_output_tokens=1_000_000, stt_seconds=60, tts_chars=1_000_000
     )
-    assert estimate_cost(meter, Settings()) == pytest.approx(0.15 + 0.60 + 0.006 + 15.0)
-    assert estimate_cost(UsageMeter(), Settings()) == 0
+    assert estimate_cost(meter, Settings(_env_file=None)) == pytest.approx(0.15 + 0.60 + 0.006 + 15.0)
+    assert estimate_cost(UsageMeter(), Settings(_env_file=None)) == 0
 
 
 def test_defaults_match_the_documented_prices():
-    s = Settings()
+    s = Settings(_env_file=None)
     assert (s.price_llm_input_per_1m, s.price_llm_output_per_1m) == (0.15, 0.60)
     assert (s.price_stt_per_minute, s.price_tts_per_1m_chars) == (0.006, 15.0)
 
@@ -181,3 +181,63 @@ def test_voice_with_unknown_session_still_works(client):
 
 def test_voice_without_session_id_is_unchanged(client):
     assert client.post(f"{API}/voice/fala", json={"texto": "olá"}).status_code == 200
+
+
+# -- gravar métricas nunca derruba nem esconde o erro -----------------------
+
+
+def _break_add_metrics(monkeypatch):
+    from app.repositories.session_repository import SessionRepository
+
+    async def boom(self, *args, **kwargs):
+        raise RuntimeError("mongo caiu")
+
+    monkeypatch.setattr(SessionRepository, "add_metrics", boom)
+
+
+def test_metrics_failure_does_not_break_a_successful_turn(client, monkeypatch, caplog):
+    sid = _open(client)
+    _break_add_metrics(monkeypatch)
+    with caplog.at_level("WARNING"):
+        r = client.post(f"{API}/turn/{sid}", json={"texto": "resposta"})
+    assert r.status_code == 200
+    rec = next(x for x in caplog.records if x.getMessage() == "Falha ao gravar metricas")
+    assert (rec.stage, rec.session_id, rec.error_type) == ("metricas", sid, "RuntimeError")
+
+
+def test_metrics_failure_does_not_mask_the_provider_error(client, monkeypatch):
+    from app.providers.base import ProviderError
+
+    sid = _open(client)
+    _break_add_metrics(monkeypatch)
+
+    async def fail(self, audio, filename="audio.webm"):
+        raise ProviderError("falhou")
+
+    monkeypatch.setattr(FakeSpeechProvider, "transcribe", fail)
+    files = {"file": ("r.webm", b"", "audio/webm")}
+    r = client.post(f"{API}/voice/transcricao?session_id={sid}", files=files)
+    assert r.status_code == 502  # o erro do provider, não o do Mongo
+
+
+def test_voice_metrics_failure_does_not_break_the_request(client, monkeypatch):
+    sid = _open(client)
+    _break_add_metrics(monkeypatch)
+    assert client.post(f"{API}/voice/fala?session_id={sid}", json={"texto": "olá"}).status_code == 200
+
+
+def test_failed_provider_call_still_attributes_reported_usage(client, monkeypatch):
+    """Se o provider reportou uso e depois falhou (ex.: 1ª tentativa do retry), o custo conta."""
+    from app.core.usage import current_meter
+    from app.providers.base import ProviderError
+
+    sid = _open(client)
+
+    async def report_then_fail(self, audio, filename="audio.webm"):
+        current_meter().add_stt(4.0)
+        raise ProviderError("falhou")
+
+    monkeypatch.setattr(FakeSpeechProvider, "transcribe", report_then_fail)
+    files = {"file": ("r.webm", b"\x01", "audio/webm")}
+    assert client.post(f"{API}/voice/transcricao?session_id={sid}", files=files).status_code == 502
+    assert _metricas(client, sid)["stt_seconds"] == 4.0

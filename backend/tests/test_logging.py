@@ -39,11 +39,22 @@ def test_formatter_ignores_content_fields():
     assert SEGREDO not in line
 
 
-def test_configure_logging_does_not_replace_existing_handlers():
+def test_configure_logging_installs_a_single_json_handler(monkeypatch):
     root = logging.getLogger()
-    before = list(root.handlers)
+    monkeypatch.setattr(root, "handlers", [])
+    monkeypatch.setattr(root, "level", logging.WARNING)
     configure_logging()
-    assert root.handlers == before
+    configure_logging()  # idempotente
+    assert len(root.handlers) == 1
+    assert isinstance(root.handlers[0].formatter, JsonFormatter)
+
+
+def test_configure_logging_keeps_existing_handlers(monkeypatch):
+    root = logging.getLogger()
+    existing = logging.NullHandler()
+    monkeypatch.setattr(root, "handlers", [existing])
+    configure_logging()
+    assert root.handlers == [existing]
 
 
 def test_middleware_logs_one_line_per_request(caplog, monkeypatch):

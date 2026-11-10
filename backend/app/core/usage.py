@@ -4,6 +4,7 @@ Um medidor vive numa ContextVar: cada requisição/tarefa enxerga o seu e os pro
 somam nele sem saber de sessão. Fora de `track_usage()` não há medidor e somar é no-op.
 """
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -62,3 +63,15 @@ def estimate_cost(meter: UsageMeter, config: Settings = default_settings) -> flo
         + meter.tts_chars * config.price_tts_per_1m_chars / 1_000_000
     )
     return round(cost, 8)
+
+
+async def record_usage_safely(sessions, session_id: str, meter: UsageMeter) -> None:
+    """Grava o consumo na sessão sem nunca levantar: medir não pode derrubar a requisição
+    nem esconder o erro original (chamado em `finally`)."""
+    try:
+        await sessions.add_metrics(session_id, meter, estimate_cost(meter))
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "Falha ao gravar metricas",
+            extra={"stage": "metricas", "session_id": session_id, "error_type": type(exc).__name__},
+        )

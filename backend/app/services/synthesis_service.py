@@ -3,7 +3,7 @@ import json
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.core.errors import ConflictError, NotFoundError
-from app.core.usage import estimate_cost, track_usage
+from app.core.usage import record_usage_safely, track_usage
 from app.prompts.synthesis_prompts import (
     SCRIPT_SYNTHESIS_PROMPT,
     SYNTHESIS_FALLBACK_PROMPT,
@@ -149,7 +149,7 @@ class SynthesisService:
                     ]
                     themes = self._build_themes(parsed, interview_state.session_id, participant_texts)
             finally:
-                await self._sessions.add_metrics(session_id, meter, estimate_cost(meter))
+                await record_usage_safely(self._sessions, session_id, meter)
         await self._syntheses.save_for_session(
             Synthesis(
                 escopo="sessao",
