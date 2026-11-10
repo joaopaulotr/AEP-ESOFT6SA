@@ -318,3 +318,26 @@ def test_startup_warns_when_frontend_url_is_localhost(monkeypatch, caplog):
     with caplog.at_level("WARNING"):
         warn_default_frontend_url()
     assert "FRONTEND_URL" not in caplog.text
+
+
+def test_validation_errors_are_422_in_portuguese_without_the_input(client):
+    response = client.post("/api/v1/participants", json={"canal": "telepatia", "apelido": 5})
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail.startswith("Dados inválidos: confira ") and "canal" in detail
+    assert "telepatia" not in detail
+
+
+def test_validation_error_without_field_names_the_body(client):
+    response = client.post(
+        "/api/v1/participants", content="{", headers={"content-type": "application/json"}
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"].startswith("Dados inválidos: confira ")
+
+
+def test_invalid_fields_skips_locations_and_repeats():
+    from app.main import invalid_fields
+
+    errors = [{"loc": ("body", "perguntas", 0, "texto")}, {"loc": ("query", "limit")}, {"loc": ("query", "limit")}, {"loc": ("body",)}]
+    assert invalid_fields(errors) == ["perguntas.0.texto", "limit", "corpo da requisição"]

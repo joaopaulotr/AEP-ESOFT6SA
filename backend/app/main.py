@@ -6,6 +6,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -117,6 +118,27 @@ async def log_requests(request: Request, call_next):
 
 
 app.include_router(api_router)
+
+
+_LOCATIONS = {"body", "query", "path", "header", "cookie"}
+
+
+def invalid_fields(errors) -> list[str]:
+    """Nomes dos campos com erro (sem a origem "body"/"query"), na ordem, sem repetir."""
+    fields: list[str] = []
+    for error in errors:
+        loc = [str(part) for part in error.get("loc", ()) if str(part) not in _LOCATIONS]
+        name = ".".join(loc) or "corpo da requisição"
+        if name not in fields:
+            fields.append(name)
+    return fields
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(request: Request, exc: RequestValidationError):
+    """422 em pt-BR com só os nomes dos campos: nunca devolve nem loga o valor enviado."""
+    campos = ", ".join(invalid_fields(exc.errors()))
+    return JSONResponse(status_code=422, content={"detail": f"Dados inválidos: confira {campos}."})
 
 
 @app.exception_handler(ValueError)
