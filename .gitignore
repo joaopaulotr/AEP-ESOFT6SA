@@ -10,3 +10,5 @@ dist/
 .superpowers/
 htmlcov/
 *.stackdump
+coverage.xml
+backend/htmlcov/

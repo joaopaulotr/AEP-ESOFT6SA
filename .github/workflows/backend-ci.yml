@@ -15,7 +15,49 @@ defaults:
     working-directory: backend
 
 jobs:
-  test:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Instala dependências
+        run: pip install -r requirements-dev.txt
+
+      - name: Testes unitários com cobertura (mínimo 70%)
+        env:
+          OPENAI_API_KEY: test-key
+        run: pytest --cov-fail-under=70 --cov-report=term-missing --cov-report=xml --cov-report=html
+
+      - name: Resumo da cobertura
+        if: always()
+        run: |
+          if [ -f .coverage ]; then
+            {
+              echo "### Cobertura do backend"
+              echo
+              echo '```'
+              coverage report
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Publica a cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura
+          path: |
+            backend/htmlcov
+            backend/coverage.xml
+          if-no-files-found: warn
+
+  integration:
     runs-on: ubuntu-latest
     services:
       # MongoDB real para os testes de integração (-m mongo): índices, $lookup e agregações.
@@ -40,8 +82,8 @@ jobs:
       - name: Instala dependências
         run: pip install -r requirements-dev.txt
 
-      - name: Roda os testes com cobertura
+      - name: Testes de integração com MongoDB real
         env:
           OPENAI_API_KEY: test-key
-          MONGO_TEST_URI: mongodb://localhost:27017
-        run: pytest --cov-fail-under=70
+          MONGO_TEST_URI: mongodb://localhost:27017/ci
+        run: pytest -m mongo --no-cov
