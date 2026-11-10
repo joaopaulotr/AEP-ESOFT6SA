@@ -131,6 +131,29 @@ class InvitePublic(BaseModel):
     link: str
 
 
+class PublicTurn(BaseModel):
+    role: Literal["interviewer", "participant"]
+    text: str
+
+
+class InviteSession(BaseModel):
+    """Estado mínimo da sessão para a tela pública do convite: sem objetivos das perguntas,
+    perfil, participante, métricas nem id do roteiro."""
+
+    session_id: str
+    titulo: str
+    perguntas_total: int
+    current_index: int
+    finished: bool
+    acolhimento: bool = False
+    persona: Persona
+    conversation: list[PublicTurn] = Field(default_factory=list)
+
+
+class InviteChannel(BaseModel):
+    canal: Literal["voz", "texto"]
+
+
 class InviteLink(BaseModel):
     slug: str
     link: str
