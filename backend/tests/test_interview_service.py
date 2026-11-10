@@ -5,7 +5,7 @@ from app.repositories.session_repository import SessionRepository
 from app.schemas.interview import InterviewState, Turn
 from app.schemas.script import InterviewScript, Question
 from app.db.seed import CORE_QUESTIONS, generalist_script
-from app.services.interview_graph import default_closing
+from app.services.interview_graph import DEFAULT_CLOSING
 from app.services.interview_service import (
     DEFAULT_CLOSING,
     MAX_DECISION_ATTEMPTS,
@@ -34,7 +34,7 @@ def graph_state(interview_state: InterviewState, last_answer: str = "uma respost
     }
 
 
-PERSONA_CLOSING = default_closing("Ana")
+PERSONA_CLOSING = DEFAULT_CLOSING
 
 
 class TestCoreQuestions:
@@ -43,7 +43,7 @@ class TestCoreQuestions:
         assert all(question.strip() for question in CORE_QUESTIONS)
 
     def test_start_asks_the_first_question_of_the_seed(self, state):
-        assert InterviewService.start(state, SCRIPT) == CORE_QUESTIONS[0]
+        assert InterviewService.start(state, SCRIPT).endswith(CORE_QUESTIONS[0])
 
 
 class TestFormatRecentHistory:
@@ -418,12 +418,30 @@ class TestStart:
 
         pergunta = service.start(state, script)
 
-        assert pergunta == "Como você se desloca?"
+        assert pergunta.endswith("Leva uns 5 minutos. Como você se desloca?")
         assert state.script_id == "entrevista-generalista"  # quem liga a sessão é o SessionService
         opening = state.conversation[-1]
         assert (opening.role, opening.text, opening.pergunta_ordem, opening.acao) == (
-            "interviewer", "Como você se desloca?", 10, None,
+            "interviewer", pergunta, 10, None,
         )
+
+    def test_opening_introduces_the_persona_without_gender_and_the_duration(self, state):
+        script = two_question_script()
+        script.persona.nome = "Rafa"
+
+        fala = InterviewService.start(state, script)
+
+        assert fala == (
+            "Oi, aqui é Rafa. Vou te fazer algumas perguntas, uma de cada vez — "
+            "não existe resposta certa ou errada. Leva uns 5 minutos. Como você se desloca?"
+        )
+
+    def test_duration_is_two_minutes_per_question_with_a_floor_of_five(self):
+        script = two_question_script()
+        script.perguntas = [Question(ordem=i, texto=f"P{i}?") for i in range(1, 7)]
+        assert "Leva uns 12 minutos." in InterviewService.opening(script)
+        script.perguntas = script.perguntas[:1]
+        assert "Leva uns 5 minutos." in InterviewService.opening(script)
 
 
 class TestScriptDrivenTurns:

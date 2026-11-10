@@ -61,7 +61,7 @@ class TestCreateSession:
             json={"script_id": script["script_id"], "participant_id": person["participant_id"]},
         ).json()
 
-        assert body["pergunta"] == "Como vem?"
+        assert body["pergunta"].endswith(" Como vem?")
         assert (body["script_id"], body["titulo"], body["perguntas_total"]) == (
             script["script_id"], "Transporte", 2
         )
