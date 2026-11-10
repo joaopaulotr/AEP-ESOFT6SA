@@ -29,15 +29,17 @@ _SHORT_STOP_PHRASES = [
 ]
 # Em mensagem curta, a frase de parada so vale se o resto for so cortesia: assim
 # "nao quero mais onibus lotado" ou "quero parar de fumar" seguem para o LLM.
-_LEAD_WORDS = {"eu", "ah", "ok", "entao", "olha", "desculpa", "bom", "e"}
-_TAIL_WORDS = {"obrigado", "obrigada", "por", "favor", "agora", "aqui", "hoje", "mesmo", "de", "verdade", "pra", "valeu"}
+_LEAD_WORDS = {"eu", "ah", "ok", "entao", "olha", "desculpa", "bom", "e", "por", "favor", "oi", "ola"}
+_TAIL_WORDS = {"obrigado", "obrigada", "por", "favor", "agora", "aqui", "hoje", "mesmo", "de", "verdade", "pra", "valeu", "sim", "tchau", "muito", "tudo", "bem", "ta", "bom", "desculpa", "desculpe", "com", "isso", "vez", "falar", "continuar", "conversa", "entrevista", "mais"}
 _EXPLICIT_STOP_PATTERNS = [
     r"parar a entrevista",
     r"parar essa entrevista",
     r"encerrar a entrevista",
     r"nao quero continuar a entrevista",
     r"quero parar a entrevista",
-    r"para a entrevista",
+    r"encerra a entrevista",
+    r"termina a entrevista",
+    r"^para a entrevista",
 ]
 MAX_STOP_WORDS = 8  # frase curta: pedido de parar; mais longa e ambigua vai para o LLM
 _DISTRESS_PATTERNS = [

@@ -300,7 +300,7 @@ class TestRunTurn:
         second_prompt = fake_llm.last_prompt
         assert "participant: primeira resposta" in second_prompt
         assert "interviewer: Conta mais." in second_prompt
-        assert "segunda resposta" in second_prompt  # no bloco delimitado, fora do histórico
+        assert second_prompt.count("segunda resposta") == 1  # no bloco delimitado, fora do histórico
 
     async def test_walks_through_every_core_question_until_finished(self, service, fake_llm, state):
         for _ in CORE_QUESTIONS:
