@@ -30,16 +30,16 @@ _SHORT_STOP_PHRASES = [
 # Em mensagem curta, a frase de parada so vale se o resto for so cortesia: assim
 # "nao quero mais onibus lotado" ou "quero parar de fumar" seguem para o LLM.
 _LEAD_WORDS = {"eu", "ah", "ok", "entao", "olha", "desculpa", "bom", "e", "por", "favor", "oi", "ola"}
-_TAIL_WORDS = {"obrigado", "obrigada", "por", "favor", "agora", "aqui", "hoje", "mesmo", "de", "verdade", "pra", "valeu", "sim", "tchau", "muito", "tudo", "bem", "ta", "bom", "desculpa", "desculpe", "com", "isso", "vez", "falar", "continuar", "conversa", "entrevista", "mais"}
+_TAIL_WORDS = {"obrigado", "obrigada", "por", "favor", "agora", "aqui", "hoje", "mesmo", "de", "verdade", "pra", "valeu", "sim", "tchau", "muito", "tudo", "bem", "ta", "bom", "desculpa", "desculpe", "com", "isso", "vez", "falar", "continuar", "conversa", "entrevista"}
 _EXPLICIT_STOP_PATTERNS = [
     r"parar a entrevista",
     r"parar essa entrevista",
     r"encerrar a entrevista",
     r"nao quero continuar a entrevista",
     r"quero parar a entrevista",
-    r"encerra a entrevista",
-    r"termina a entrevista",
-    r"^para a entrevista",
+
+
+    r"^(encerra|termina|para) a entrevista",
 ]
 MAX_STOP_WORDS = 8  # frase curta: pedido de parar; mais longa e ambigua vai para o LLM
 _DISTRESS_PATTERNS = [
@@ -75,11 +75,18 @@ def _is_short_stop(normalized: str) -> bool:
     return False
 
 
+def _is_timing_question(normalized: str) -> bool:
+    """Pergunta sobre o fim ("quando termina...?") não é pedido, salvo com pedido em 1ª pessoa."""
+    asks = "quando " in normalized or "que horas" in normalized or normalized.endswith("?")
+    requests = any(w in normalized.split() for w in ("quero", "pode", "vamos")) or "por favor" in normalized
+    return asks and not requests
+
+
 def check_safety(text: str) -> Risco:
     normalized = _normalize(text)
     if _DISTRESS_RE.search(normalized):
         return "sofrimento"
-    if _EXPLICIT_STOP_RE.search(normalized):
+    if _EXPLICIT_STOP_RE.search(normalized) and not _is_timing_question(normalized):
         return "pedido_parar"
     if _is_short_stop(normalized):
         return "pedido_parar"
