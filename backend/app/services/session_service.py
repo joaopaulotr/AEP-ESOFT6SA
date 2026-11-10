@@ -74,8 +74,13 @@ class SessionService:
         return await self._sessions.list_summaries(script_id, status=status, limit=limit)
 
     async def dashboard(self, script_id: str) -> ScriptDashboard:
+        """Painel do roteiro; o custo total inclui o das gerações do relatório cruzado."""
         script = await self._scripts.get_or_raise(script_id)  # roteiro inexistente -> 404
-        return await self._sessions.script_dashboard(script)
+        dashboard = await self._sessions.script_dashboard(script)
+        report = await self._syntheses.get_for_script(script_id)
+        if report is not None and report.metricas.custo_usd:
+            dashboard.custo_total_usd = round(dashboard.custo_total_usd + report.metricas.custo_usd, 6)
+        return dashboard
 
     async def get(self, session_id: str) -> InterviewState:
         return await self._sessions.get_or_raise(session_id)
@@ -87,19 +92,23 @@ class SessionService:
         return details
 
     async def delete(self, session_id: str) -> None:
-        """Apaga a sessão e, em cascata, a síntese dela e as citações dela nos relatórios de
-        roteiro (RK-11). A sessão vai PRIMEIRO: uma síntese de roteiro gerada em paralelo confere
-        depois de salvar se as sessões citadas ainda existem e retira as citações das que sumiram.
+        """Apaga a sessão e, em cascata, a síntese dela e o relatório do roteiro que a usou
+        (RK-11: resumo, pontos e divergências derivam dela; o relatório precisa ser regerado).
+        A sessão vai PRIMEIRO: um relatório gerado em paralelo confere depois de salvar se as
+        sessões usadas ainda existem e se apaga se alguma sumiu.
 
         Idempotente: se a sessão já não existe, ainda roda a limpeza (uma tentativa anterior pode
         ter falhado no meio). 204 se havia algo a limpar; 404 só se não havia nada. Falha na
         limpeza é registrada (id e tipo do erro, sem conteúdo) e repassada para o cliente repetir."""
-        existed = await self._sessions.exists(session_id)
+        session = await self._sessions.get(session_id)
+        existed = session is not None
         if existed:
             await self._sessions.delete(session_id)
         try:
             cleaned = await self._syntheses.delete_for_session(session_id)
-            cleaned += await self._syntheses.pull_citations_of_session(session_id)  # EV-33
+            cleaned += await self._syntheses.delete_script_reports_with_session(  # EV-33
+                session_id, session.script_id if session else None
+            )
         except Exception as exc:
             logger.error(
                 "limpeza_exclusao_sessao_falhou",

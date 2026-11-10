@@ -17,13 +17,7 @@ from app.schemas.api import (
     SessionSummary,
     ThemeCount,
 )
-from app.schemas.interview import (
-    ActionCount,
-    InterviewState,
-    QuestionDeepening,
-    ScriptStats,
-    SessionDetails,
-)
+from app.schemas.interview import InterviewState, SessionDetails
 from app.schemas.participant import Participant
 from app.schemas.script import DEFAULT_SCRIPT_ID, InterviewScript
 
@@ -251,83 +245,6 @@ class SessionRepository(BaseRepository[InterviewState]):
             ),
         )
 
-    # -- agregações (base do dashboard, EV-32) ----------------------------
-
-    async def script_stats(self, script_id: str) -> ScriptStats:
-        match = {"$match": {"script_id": script_id}}
-
-        summary = await self._collection.aggregate(
-            [
-                match,
-                {
-                    "$group": {
-                        "_id": None,
-                        "total": {"$sum": 1},
-                        "concluidas": {"$sum": {"$cond": ["$finished", 1, 0]}},
-                        "media_respostas": {
-                            "$avg": {
-                                "$size": {
-                                    "$filter": {
-                                        "input": "$conversation",
-                                        "as": "turno",
-                                        "cond": {"$eq": ["$$turno.role", "participant"]},
-                                    }
-                                }
-                            }
-                        },
-                    }
-                },
-            ]
-        ).to_list(length=1)
-        if not summary:
-            return ScriptStats(script_id=script_id)
-
-        actions = await self._collection.aggregate(
-            [
-                match,
-                {"$unwind": "$conversation"},
-                {"$match": {"conversation.acao": {"$in": ["deepen", "advance", "finish"]}}},
-                {"$group": {"_id": "$conversation.acao", "total": {"$sum": 1}}},
-                {"$sort": {"_id": 1}},
-            ]
-        ).to_list(length=None)
-
-        deepening = await self._collection.aggregate(
-            [
-                match,
-                {"$unwind": "$conversation"},
-                {"$match": {"conversation.pergunta_ordem": {"$ne": None}}},
-                {
-                    "$group": {
-                        "_id": {
-                            "session_id": "$session_id",
-                            "ordem": "$conversation.pergunta_ordem",
-                        },
-                        "aprofundamentos": {
-                            "$sum": {"$cond": [{"$eq": ["$conversation.acao", "deepen"]}, 1, 0]}
-                        },
-                    }
-                },
-                {"$group": {"_id": "$_id.ordem", "media": {"$avg": "$aprofundamentos"}}},
-                {"$sort": {"_id": 1}},
-            ]
-        ).to_list(length=None)
-
-        total = summary[0]["total"]
-        concluidas = summary[0]["concluidas"]
-        return ScriptStats(
-            script_id=script_id,
-            total_sessoes=total,
-            concluidas=concluidas,
-            taxa_conclusao=round(concluidas / total, 4) if total else 0.0,
-            media_respostas=round(summary[0]["media_respostas"] or 0.0, 2),
-            acoes=[ActionCount(acao=item["_id"], total=item["total"]) for item in actions],
-            aprofundamentos_por_pergunta=[
-                QuestionDeepening(pergunta_ordem=item["_id"], media_aprofundamentos=round(item["media"], 2))
-                for item in deepening
-            ],
-        )
-
     # -- painel do roteiro (EV-32) ----------------------------------------
 
     async def script_dashboard(
@@ -439,7 +356,8 @@ class SessionRepository(BaseRepository[InterviewState]):
             concluidas=concluidas,
             em_andamento=total - concluidas,
             taxa_conclusao=round(concluidas / total, 3) if total else 0.0,
-            duracao_media_min=round(resumo["duracao_ms"] / concluidas / 60000, 1) if concluidas else 0.0,
+            # Sem base (nenhuma concluída / nenhuma com custo medido): None, não um 0 enganoso.
+            duracao_media_min=round(resumo["duracao_ms"] / concluidas / 60000, 1) if concluidas else None,
             media_respostas=round(resumo["respostas"] or 0.0, 2) if resumo else 0.0,
             acoes=[ActionTotal(acao=item["_id"], total=item["total"]) for item in facets["acoes"]],
             aprofundamentos_por_pergunta=[
@@ -450,14 +368,22 @@ class SessionRepository(BaseRepository[InterviewState]):
             ],
             custo_total_usd=round(resumo["custo"], 6) if resumo else 0.0,
             custo_medio_usd=(
-                round(resumo["custo"] / resumo["com_custo"], 6) if resumo and resumo["com_custo"] else 0.0
+                round(resumo["custo"] / resumo["com_custo"], 6) if resumo and resumo["com_custo"] else None
             ),
             temas_mais_citados=self._top_themes(facets["temas"]),
+            sinteses_sessao=self._count_session_syntheses(facets["temas"]),
             sessoes_por_dia=[DayCount(dia=d.isoformat(), total=n) for d, n in sorted(days.items())],
             canais=[
                 ChannelCount(canal=item["_id"], total=item["total"])
                 for item in sorted(facets["canais"], key=lambda c: (-c["total"], c["_id"]))
             ],
+        )
+
+    @staticmethod
+    def _count_session_syntheses(rows: list[dict]) -> int:
+        """Sessões do roteiro com síntese (a base do relatório cruzado; o aviso de "poucas")."""
+        return sum(
+            1 for row in rows if any(s.get("escopo") == "sessao" for s in row.get("sinteses", []))
         )
 
     @staticmethod

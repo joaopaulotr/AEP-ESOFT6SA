@@ -103,31 +103,6 @@ async def test_lookup_joins_three_collections(repos):
     assert alone.participant is None
 
 
-async def test_script_stats_pipeline(repos):
-    def turn(acao, ordem, role="interviewer"):
-        return Turn(role=role, text="x", acao=acao, pergunta_ordem=ordem)
-
-    await repos["sessions"].create(
-        InterviewState(
-            finished=True,
-            conversation=[turn(None, 1), turn(None, 1, "participant"), turn("deepen", 1),
-                          turn(None, 1, "participant"), turn("advance", 2), turn(None, 2, "participant"),
-                          turn("finish", 2)],
-        )
-    )
-    await repos["sessions"].create(InterviewState(conversation=[turn(None, 1)]))
-
-    stats = await repos["sessions"].script_stats("entrevista-generalista")
-
-    assert (stats.total_sessoes, stats.concluidas, stats.taxa_conclusao) == (2, 1, 0.5)
-    assert stats.media_respostas == 1.5
-    assert {a.acao: a.total for a in stats.acoes} == {"advance": 1, "deepen": 1, "finish": 1}
-    assert [(q.pergunta_ordem, q.media_aprofundamentos) for q in stats.aprofundamentos_por_pergunta] == [
-        (1, 0.5),
-        (2, 0.0),
-    ]
-
-
 async def test_one_synthesis_per_session(repos, real_db):
     for resumo in ("v1", "v2"):
         await repos["syntheses"].save_for_session(
@@ -183,30 +158,26 @@ async def test_v010_sessions_are_backfilled(repos, real_db):
     assert "synthesis" not in await real_db["interview_sessions"].find_one({"session_id": "antiga"})
 
 
-async def test_pull_citations_of_session_is_one_atomic_pull_on_real_mongo(repos, real_db):
+async def test_session_delete_removes_the_script_report_that_used_it_on_real_mongo(repos, real_db):
     from app.schemas.synthesis import Citation, Theme
 
     syntheses = repos["syntheses"]
-    report = Synthesis(
-        escopo="roteiro",
-        script_id="r1",
-        resumo="x",
-        temas=[
-            Theme(tema="t1", citacoes=[Citation(texto="fala de a", session_id="a"),
-                                       Citation(texto="fala de b", session_id="b")]),
-            Theme(tema="t2", citacoes=[Citation(texto="outra de a", session_id="a")]),
-            Theme(tema="t3"),
-        ],
+    used = Synthesis(
+        escopo="roteiro", script_id="r1", resumo="derivado de a", sessoes_ids=["a", "b"],
+        temas=[Theme(tema="t1", citacoes=[Citation(texto="fala de b", session_id="b")])],
     )
-    await syntheses.save_for_script(report)
-    before = await syntheses.get_for_script("r1")
+    cites = Synthesis(
+        escopo="roteiro", script_id="r2", resumo="cita a",
+        temas=[Theme(tema="t", citacoes=[Citation(texto="fala de a", session_id="a")])],
+    )
+    other = Synthesis(escopo="roteiro", script_id="r3", resumo="sem a", sessoes_ids=["c", "d"])
+    for report in (used, cites, other):
+        await syntheses.save_for_script(report)
 
-    modified = await syntheses.pull_citations_of_session("a")
+    assert await syntheses.delete_script_reports_with_session("a") == 2
 
-    after = await syntheses.get_for_script("r1")
-    assert modified == 1
-    assert [[c.session_id for c in t.citacoes] for t in after.temas] == [["b"], [], []]
-    assert after.updated_at == before.updated_at
+    assert await syntheses.get_for_script("r1") is None and await syntheses.get_for_script("r2") is None
+    assert await syntheses.get_for_script("r3") is not None
 
 
 @pytest.mark.parametrize("script_id", ["demo-transporte", "demo-saude", "demo-aplicativo"])

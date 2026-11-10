@@ -101,25 +101,3 @@ class SessionDetails(BaseModel):
     session: InterviewState
     script: InterviewScript | None
     participant: Participant | None
-
-
-class ActionCount(BaseModel):
-    acao: Action
-    total: int
-
-
-class QuestionDeepening(BaseModel):
-    pergunta_ordem: int
-    media_aprofundamentos: float
-
-
-class ScriptStats(BaseModel):
-    """Indicadores agregados das sessões de um roteiro (base do dashboard, EV-32)."""
-
-    script_id: str
-    total_sessoes: int = 0
-    concluidas: int = 0
-    taxa_conclusao: float = 0.0
-    media_respostas: float = 0.0
-    acoes: list[ActionCount] = Field(default_factory=list)
-    aprofundamentos_por_pergunta: list[QuestionDeepening] = Field(default_factory=list)
