@@ -1,4 +1,5 @@
 from app.core.errors import ConflictError
+from app.core.links import build_invite_link
 from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
 from app.schemas.api import QuestionCreate, ScriptCreate, ScriptSummary, ScriptUpdate
@@ -34,6 +35,7 @@ class ScriptService:
             summaries.append(
                 ScriptSummary(
                     **script.model_dump(include=_SUMMARY_FIELDS),
+                    link_convite=build_invite_link(script.slug_convite),
                     perguntas_total=len(script.perguntas),
                     sessoes_total=total,
                     concluidas=concluidas,
@@ -46,8 +48,10 @@ class ScriptService:
         return await self._scripts.get_or_raise(script_id)
 
     async def create(self, data: ScriptCreate) -> InterviewScript:
-        fields = data.model_dump(exclude={"perguntas", "persona"})
+        fields = data.model_dump(exclude={"perguntas", "persona", "origem"})
         script = InterviewScript(**fields, perguntas=_questions(data.perguntas))
+        if data.origem is not None:
+            script.origem = data.origem
         if data.persona is not None:
             script.persona = data.persona
         return await self._scripts.create(script)

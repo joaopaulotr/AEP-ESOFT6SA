@@ -307,7 +307,7 @@ Pesquisa resumida (fontes na seção 13):
 
 ## 6. Funcionalidades
 
-### EV-30 — Upload de questionário → roteiro `TODO`
+### EV-30 — Upload de questionário → roteiro `DONE`
 
 O pesquisador **sobe o questionário que já tem** e a plataforma transforma em roteiro de entrevista.
 
@@ -318,11 +318,13 @@ O pesquisador **sobe o questionário que já tem** e a plataforma transforma em 
 - **Revisão humana obrigatória**: tela de edição (reordenar, editar, remover, adicionar) antes de publicar (RK-12).
 - Também é possível criar roteiro do zero no mesmo editor.
 - Arquivo original referenciado em `interview_scripts.origem`.
+- Limites de segurança entregues: arquivo de até 2 MB (`MAX_UPLOAD_BYTES`), `.docx` descompactado até 20 MB, PDF até 50 páginas e extração de texto fora do event loop.
 
-### EV-31 — Link de convite por roteiro `TODO`
+### EV-31 — Link de convite por roteiro `DONE`
 
 - Cada roteiro publicado gera `/e/{slug}` + QR code.
 - Participante entra direto, sem login, escolhe voz ou texto e começa.
+- O participante é criado ao iniciar o convite, com todos os campos opcionais (`apelido`, `faixa_etaria`, `regiao`).
 
 ### EV-32 — Dashboard do pesquisador `TODO`
 
@@ -340,7 +342,7 @@ O pesquisador **sobe o questionário que já tem** e a plataforma transforma em 
 - Pendência: excluir sessão deve remover suas citações das sínteses de roteiro (hoje a cascata só apaga a síntese
   da própria sessão).
 
-### EV-34 — Modo texto `TODO`
+### EV-34 — Modo texto `DONE`
 
 - Alternativa à voz para quem não pode/não quer falar ou tem deficiência auditiva (ODS 10).
 - Mesmo backend de turnos; UI de chat com realismo de digitação (EV-22).
@@ -414,6 +416,7 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 ### EV-85 — Telas novas `TODO`
 
 - ✅ Roteiros, sessões por roteiro e detalhe da entrevista (fase 1). Upload, convite e dashboard nas próximas fases.
+- ✅ Fase 2: editor de roteiro, importação de questionário, convite com link/QR, tela pública do participante e modo texto.
 - Pesquisador: lista de roteiros, editor/upload (EV-30), dashboard (EV-32), sessão (transcrição + síntese),
   síntese cruzada (EV-33).
 - Participante: entrada pelo convite (EV-31), escolha voz/texto, entrevista, agradecimento.

@@ -16,3 +16,19 @@ class ConflictError(DomainError):
 
 class CorruptDocumentError(Exception):
     """Documento gravado no banco não corresponde ao modelo (erro do servidor)."""
+
+
+class FileTooLargeError(DomainError):
+    """Arquivo enviado maior que o limite (413)."""
+
+
+class UnsupportedFileError(DomainError):
+    """Extensão de arquivo fora da lista aceita (415)."""
+
+
+class ImportFileError(DomainError):
+    """O conteúdo do arquivo enviado não pôde ser lido (422)."""
+
+
+class EmptyQuestionnaireError(ImportFileError):
+    """Nenhuma pergunta encontrada no arquivo (422)."""

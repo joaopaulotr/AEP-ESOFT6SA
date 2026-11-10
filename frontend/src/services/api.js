@@ -19,7 +19,14 @@ async function request(path, options = {}) {
         let detail = "";
         try {
             const body = await res.json();
-            detail = typeof body.detail === "string" ? body.detail : "";
+            if (typeof body.detail === "string") {
+                detail = body.detail;
+            } else if (Array.isArray(body.detail)) {
+                detail = body.detail
+                    .map((d) => (typeof d?.msg === "string" ? d.msg : ""))
+                    .filter(Boolean)
+                    .join("; ");
+            }
         } catch {
         
         }
@@ -53,6 +60,50 @@ export const api = {
 
     async getScript(scriptId) {
         const res = await request(`/scripts/${encodeURIComponent(scriptId)}`);
+        return res.json();
+    },
+
+    /** Envia o questionário; devolve um rascunho de roteiro (não grava nada). */
+    async uploadQuestionnaire(file) {
+        const form = new FormData();
+        form.append("file", file); // sem Content-Type manual: o browser define o boundary
+        const res = await request("/scripts/upload", { method: "POST", body: form });
+        return res.json();
+    },
+
+    async createScript(data) {
+        const res = await request("/scripts", postJson(data));
+        return res.json();
+    },
+
+    async updateScript(scriptId, data) {
+        const res = await request(`/scripts/${encodeURIComponent(scriptId)}`, { ...postJson(data), method: "PUT" });
+        return res.json();
+    },
+
+    async deleteScript(scriptId) {
+        await request(`/scripts/${encodeURIComponent(scriptId)}`, { method: "DELETE" });
+    },
+
+    async getInvite(scriptId) {
+        const res = await request(`/scripts/${encodeURIComponent(scriptId)}/convite`);
+        return res.json();
+    },
+
+    /** URL absoluta do QR Code (SVG), para usar direto em <img src>. */
+    qrCodeUrl(scriptId) {
+        return `${BASE_URL}${API_PREFIX}/scripts/${encodeURIComponent(scriptId)}/qrcode.svg`;
+    },
+
+    /** Convite público (sem login): só o que a pessoa convidada precisa ver. */
+    async getPublicInvite(slug) {
+        const res = await request(`/convite/${encodeURIComponent(slug)}`);
+        return res.json();
+    },
+
+    /** Cria participante + sessão pelo convite. Devolve {session_id, pergunta, titulo, ...}. */
+    async startFromInvite(slug, data) {
+        const res = await request(`/convite/${encodeURIComponent(slug)}/sessao`, postJson(data));
         return res.json();
     },
 

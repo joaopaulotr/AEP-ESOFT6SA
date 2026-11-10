@@ -6,3 +6,6 @@ python-dotenv
 openai
 langgraph
 python-multipart
+python-docx
+pypdf
+segno

@@ -1,16 +1,19 @@
-import React from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Mic, List, User } from "lucide-react";
+import { Mic, List, User, Plus, Upload, Pencil, UserPlus } from "lucide-react";
 import SideBar from "../components/SideBar";
+import InviteModal from "../components/InviteModal";
 import EstadoTela from "../components/EstadoTela";
 import { useApiResource } from "../hooks/useApiResource";
 import { api } from "../services/api";
 import { ui, CSS } from "../styles/ui";
+import { limparRascunho } from "./ScriptEditorScreen";
 
 export default function ScriptsScreen() {
     const navigate = useNavigate();
     const { data, carregando, erro, recarregar } = useApiResource(() => api.listScripts(), []);
     const roteiros = data ?? [];
+    const [convite, setConvite] = useState(null);
 
     return (
         <SideBar>
@@ -20,6 +23,15 @@ export default function ScriptsScreen() {
                     <div>
                         <h1 style={ui.h1}>Entrevistas</h1>
                         <p style={ui.sub}>Escolha um roteiro para começar uma entrevista ou ver as que já foram feitas.</p>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                        <button className="ui-btn" style={ui.btnPrimario}
+                            onClick={() => { limparRascunho(); navigate("/roteiros/novo"); }}>
+                            <Plus size={17} aria-hidden="true" /> Novo roteiro
+                        </button>
+                        <button className="ui-btn" style={ui.btnSecundario} onClick={() => navigate("/roteiros/importar")}>
+                            <Upload size={17} aria-hidden="true" /> Subir questionário
+                        </button>
                     </div>
                 </div>
 
@@ -50,12 +62,23 @@ export default function ScriptsScreen() {
                                             onClick={() => navigate(`/entrevistas/${encodeURIComponent(r.script_id)}`)}>
                                             <List size={17} aria-hidden="true" /> Ver entrevistas
                                         </button>
+                                        <button className="ui-btn" style={ui.btnSecundario}
+                                            aria-label={`Convidar para ${r.titulo}`}
+                                            onClick={() => setConvite(r)}>
+                                            <UserPlus size={17} aria-hidden="true" /> Convidar
+                                        </button>
+                                        <button className="ui-btn" style={ui.btnSecundario}
+                                            aria-label={`Editar roteiro ${r.titulo}`}
+                                            onClick={() => navigate(`/roteiros/${encodeURIComponent(r.script_id)}/editar`)}>
+                                            <Pencil size={17} aria-hidden="true" /> Editar
+                                        </button>
                                     </div>
                                 </article>
                             ))}
                         </div>
                     )}
                 </EstadoTela>
+                {convite && <InviteModal roteiro={convite} onClose={() => setConvite(null)} />}
             </div>
         </SideBar>
     );

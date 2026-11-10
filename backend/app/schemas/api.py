@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.schemas.script import Persona
+from app.schemas.script import Persona, ScriptOrigin
 
 
 def _not_blank(value: str, campo: str) -> str:
@@ -31,11 +31,28 @@ class ScriptCreate(BaseModel):
     descricao: str = ""
     perguntas: list[QuestionCreate] = Field(min_length=1)
     persona: Persona | None = None
+    origem: ScriptOrigin | None = None  # o front publica o rascunho mantendo a origem
 
     @field_validator("titulo")
     @classmethod
     def _titulo(cls, value: str) -> str:
         return _not_blank(value, "o título")
+
+
+class DraftQuestion(BaseModel):
+    texto: str
+    objetivo: str = ""
+
+
+class ScriptDraft(BaseModel):
+    """Rascunho de roteiro vindo de um upload; não é gravado até o pesquisador publicar."""
+
+    titulo: str
+    tema: str = ""
+    descricao: str = ""
+    perguntas: list[DraftQuestion]
+    origem: ScriptOrigin
+    avisos: list[str] = Field(default_factory=list)
 
 
 class ScriptUpdate(BaseModel):
@@ -60,6 +77,7 @@ class ScriptSummary(BaseModel):
     tema: str
     descricao: str
     slug_convite: str
+    link_convite: str = ""
     ativo: bool
     perguntas_total: int
     persona: Persona
@@ -99,3 +117,36 @@ class ParticipantUpdate(BaseModel):
 class SessionCreate(BaseModel):
     script_id: str | None = None
     participant_id: str | None = None
+
+
+class InvitePublic(BaseModel):
+    """O que a pessoa convidada vê antes de começar: nada de sessão nem de participante."""
+
+    slug: str
+    titulo: str
+    tema: str
+    descricao: str
+    persona: Persona
+    perguntas_total: int
+    link: str
+
+
+class InviteLink(BaseModel):
+    slug: str
+    link: str
+
+
+class InviteStart(BaseModel):
+    """Entrada sem login: tudo opcional, texto vazio vira ausente."""
+
+    canal: Literal["voz", "texto"] = "voz"
+    apelido: str | None = Field(default=None, max_length=40)
+    faixa_etaria: str | None = Field(default=None, max_length=20)
+    regiao: str | None = Field(default=None, max_length=60)
+
+    @field_validator("apelido", "faixa_etaria", "regiao", mode="before")
+    @classmethod
+    def _strip(cls, value):
+        if isinstance(value, str):
+            return value.strip() or None
+        return value

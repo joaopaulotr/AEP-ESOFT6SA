@@ -1,7 +1,9 @@
 import React from "react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { Mic, Square, Send, Volume2, XCircle, Clock } from "lucide-react";
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Mic, Square, Send, Volume2, XCircle, Clock, PenLine } from "lucide-react";
+import PublicLayout from "../components/PublicLayout";
+import ChatComposer from "../components/ChatComposer";
 import SideBar from "../components/SideBar";
 import Avatar from "../components/Avatar";
 import ThemeToggle from "../components/ThemeToggle";
@@ -15,21 +17,55 @@ import { style, CSS } from "./InterviewScreen.styles";
 
 const INTERVIEWER = "du";
 
-export default function InterviewScreen() {
-    const navigate = useNavigate();
+/**
+ * `publico`: rota `/e/:slug/entrevista` (participante do convite) - sem menu do pesquisador,
+ * sessao ja criada, termina na tela de agradecimento.
+ */
+export default function InterviewScreen({ publico = false }) {
+    const { slug } = useParams();
     const [searchParams] = useSearchParams();
-    const scriptId = searchParams.get("roteiro") || undefined;
+    if (publico && !searchParams.get("sessao")) return <Navigate to={`/e/${encodeURIComponent(slug || "")}`} replace />;
+    return <Entrevista publico={publico} slug={slug} />;
+}
+
+function Entrevista({ publico, slug }) {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const [searchParams] = useSearchParams();
+    const scriptId = publico ? undefined : searchParams.get("roteiro") || undefined;
+    const sessaoId = publico ? searchParams.get("sessao") : null;
+    const estado = location.state;
+    const existente = sessaoId
+        ? {
+              sessionId: sessaoId,
+              perguntaInicial: estado?.sessionId === sessaoId ? estado.perguntaInicial : undefined,
+              titulo: estado?.sessionId === sessaoId ? estado.titulo : undefined,
+          }
+        : undefined;
+    const [modo, setModo] = useState(searchParams.get("canal") === "texto" ? "texto" : "voz");
+    const modoTexto = modo === "texto";
+    const Shell = publico ? PublicLayout : SideBar;
     const [texto, setTexto] = useState("");
     const msgsRef = useRef(null);
     const segundos = useElapsedTime();
 
     const sessao = useInterviewSession({
         scriptId,
-        onFinished: (sessionId, extra) => navigate("/feedback", { state: { sessionId, ...extra } }),
+        existente,
+        voz: !modoTexto,
+        onFinished: (sessionId, extra) =>
+            publico
+                ? navigate(`/e/${encodeURIComponent(slug)}/obrigado`, { replace: true })
+                : navigate("/feedback", { state: { sessionId, ...extra } }),
     });
     const { perguntaAtual, indiceAtual, turno, processando, finalizada, transcricao, erro } = sessao;
 
     const recorder = useRecorder({ onRecorded: sessao.enviarAudio });
+
+    const { pararAudio } = sessao;
+    useEffect(() => {
+        if (modoTexto) pararAudio();
+    }, [modoTexto]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         const el = msgsRef.current;
@@ -42,7 +78,8 @@ export default function InterviewScreen() {
 
     const podeResponder = turno === "voce" && !processando && !finalizada;
     const ouvindo = turno === "voce" && recorder.gravando;
-    const iaFalando = turno === "interviewer" && !processando && !finalizada;
+    const iaFalando = !modoTexto && turno === "interviewer" && !processando && !finalizada;
+    const podeAlternar = !recorder.gravando && !processando && !finalizada && !!sessao.sessionId;
 
     async function comecarGravacao() {
         if (!podeResponder) return;
@@ -69,22 +106,35 @@ export default function InterviewScreen() {
         ? "ENTREVISTA ENCERRADA"
         : "SUA VEZ DE RESPONDER";
 
+    const alternar = (
+        <button
+            className="ui-btn"
+            style={{ ...ui.btnSecundario, opacity: podeAlternar ? 1 : 0.5 }}
+            disabled={!podeAlternar}
+            aria-label={`${modoTexto ? "Prefiro falar" : "Prefiro escrever"}. Modo atual: ${modoTexto ? "escrever" : "falar"}`}
+            onClick={() => setModo(modoTexto ? "voz" : "texto")}
+        >
+            {modoTexto ? <Mic size={16} aria-hidden="true" /> : <PenLine size={16} aria-hidden="true" />}
+            {modoTexto ? "Prefiro falar" : "Prefiro escrever"}
+        </button>
+    );
+
     if (sessao.erroInicio) {
         return (
-            <SideBar>
+            <Shell>
                 <div style={ui.page}>
                     <style>{UI_CSS}</style>
                     <EstadoTela erro={sessao.erroInicio} onRetry={sessao.tentarDeNovo} />
-                    <button className="ui-btn" style={ui.voltar} onClick={() => navigate("/entrevistas")}>
-                        Escolher outra entrevista
+                    <button className="ui-btn" style={ui.voltar} onClick={() => navigate(publico ? `/e/${encodeURIComponent(slug)}` : "/entrevistas")}>
+                        {publico ? "Voltar ao convite" : "Escolher outra entrevista"}
                     </button>
                 </div>
-            </SideBar>
+            </Shell>
         );
     }
 
     return (
-        <SideBar>
+        <Shell>
             <div style={style.root}>
                 <style>{CSS}</style>
 
@@ -95,7 +145,7 @@ export default function InterviewScreen() {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={style.timer}><Clock size={15} /> {mmss(segundos)}</span>
-                        <ThemeToggle />
+                        {!publico && <ThemeToggle />}
                         {sessao.sessionId && (
                             <button style={style.concluirBtn} onClick={sessao.concluir}>
                                 <XCircle size={17} /> Concluir
@@ -104,6 +154,40 @@ export default function InterviewScreen() {
                     </div>
                 </header>
 
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>{alternar}</div>
+
+                {modoTexto ? (
+                    <div style={{ ...style.colRight, maxWidth: 760, margin: "0 auto" }}>
+                        <div
+                            style={{ ...style.msgs, maxHeight: "60vh" }}
+                            ref={msgsRef}
+                            role="log"
+                            aria-live="polite"
+                            aria-label="Conversa da entrevista"
+                        >
+                            {transcricao.length === 0 && <p style={ui.meta}>Conectando à entrevista…</p>}
+                            {transcricao.map((m, i) => (
+                                <div key={i} style={{ alignSelf: m.quem === "ia" ? "flex-start" : "flex-end", maxWidth: "88%" }}>
+                                    <div style={style.msgMeta}>
+                                        {m.quem === "ia" ? INTERVIEWER : "Você"}{m.hora ? ` · ${m.hora}` : ""}
+                                    </div>
+                                    <div style={{ ...style.bubble, ...(m.quem === "voce" ? style.bubbleMe : {}) }}>{m.texto}</div>
+                                </div>
+                            ))}
+                            {processando && (
+                                <div style={{ alignSelf: "flex-start", maxWidth: "88%" }}>
+                                    <div style={style.msgMeta}>{INTERVIEWER}</div>
+                                    <div style={{ ...style.bubble, fontStyle: "italic", color: "var(--color-text-muted)" }}>digitando…</div>
+                                </div>
+                            )}
+                        </div>
+                        <ChatComposer
+                            desabilitado={!sessao.sessionId || finalizada || turno !== "voce"}
+                            enviando={processando}
+                            onSend={sessao.enviarResposta}
+                        />
+                    </div>
+                ) : (
                 <div style={style.row}>
                     <div style={style.colLeft}>
                         <div style={style.aiPanel}>
@@ -195,7 +279,8 @@ export default function InterviewScreen() {
                         </div>
                     </div>
                 </div>
+                )}
             </div>
-        </SideBar>
+        </Shell>
     );
 }
