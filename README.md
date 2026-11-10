@@ -103,6 +103,8 @@ flowchart LR
 | Repositórios | `app/repositories/` | `BaseRepository[T]` genérico (CRUD, `upsert`, índices, `save` com controle otimista de `versao`) e um repositório por coleção; únicos que conhecem o Mongo |
 | Esquemas | `app/schemas/` | Modelos Pydantic de entrada, saída e do estado persistido, incluindo `DecisionResult` (saída validada do LLM) |
 | Banco | `app/db/` | Cliente Motor, nomes das coleções, seed do roteiro padrão e dados de demonstração |
+| Importação | `app/importing/` | `TextExtractor` (classe abstrata) com uma implementação por formato (texto/markdown, CSV, DOCX, PDF), escolhida por extensão em `extractor_for`; `QuestionnaireParser` transforma o texto em rascunho de roteiro pelo LLM, com perguntas abertas |
+| Convite | `app/services/invite_service.py`, `app/core/links.py` | `InviteService` serve o convite público e abre a sessão do participante; `build_invite_link` monta o link a partir de `FRONTEND_URL` |
 | Prompts | `app/prompts/` | Texto dos prompts de condução e de síntese, separado do código que os executa |
 
 Cada serviço e repositório recebe seus colaboradores pelo construtor (provider de IA, banco,
@@ -118,16 +120,21 @@ Todas as rotas abaixo ficam sob `/api/v1`, exceto `GET /health` (raiz, usado pel
 |---|---|---|---|
 | `GET` | `/scripts?ativos=true` | Lista roteiros com contagens (perguntas, sessões, concluídas, em andamento); `ativos=false` inclui os desativados | — |
 | `POST` | `/scripts` | Cria roteiro (`201`); a ordem das perguntas é a posição na lista | — |
+| `POST` | `/scripts/upload` | Questionário (multipart `file`: `.txt`, `.md`, `.csv`, `.docx`, `.pdf`) para **rascunho** de roteiro; não salva nada, a pessoa revisa e publica pelo `POST /scripts` | `413` acima de `MAX_UPLOAD_BYTES`; `415` formato não aceito; `422` arquivo ilegível, sem texto ou sem perguntas |
 | `GET` | `/scripts/{script_id}` | Roteiro completo | `404` |
 | `PUT` | `/scripts/{script_id}` | Edita campos, perguntas e persona | `404`; `409` roteiro padrão (não pode ser desativado nem ter perguntas alteradas), perguntas de roteiro que já tem entrevistas (concluídas ou não; crie um novo roteiro) ou versão velha |
 | `DELETE` | `/scripts/{script_id}` | Sem sessões, apaga; com sessões, só desativa (`204`) | `404`; `409` roteiro padrão |
 | `GET` | `/scripts/{script_id}/sessions?status=&limit=` | Resumo das sessões do roteiro (`status`: `em_andamento` ou `concluida`; `limit` 1 a 200, padrão 50) | `404` roteiro |
+| `GET` | `/scripts/{script_id}/convite` | Slug e link público de convite do roteiro | `404` |
+| `GET` | `/scripts/{script_id}/qrcode.svg` | QR code (SVG) do link de convite | `404` |
 | `GET` | `/participants` | Lista participantes | — |
 | `POST` | `/participants` | Cria participante, sem identificação obrigatória (`201`) | — |
 | `GET` | `/participants/{participant_id}` | Um participante | `404` |
 | `PUT` | `/participants/{participant_id}` | Atualiza campos (vale a última escrita) | `404` |
 | `DELETE` | `/participants/{participant_id}` | Apaga (`204`) | `404`; `409` se tem entrevistas |
 | `POST` | `/session` | Abre sessão num roteiro (corpo opcional `script_id`, `participant_id`; sem corpo usa o roteiro padrão) e devolve `session_id`, 1ª pergunta, título e total de perguntas | `404` roteiro ou participante; `409` roteiro desativado |
+| `GET` | `/convite/{slug}` | **Pública.** Dados do roteiro para a tela de entrada do participante (título, tema, descrição, persona, total de perguntas, link) | `404` convite inválido ou roteiro desativado |
+| `POST` | `/convite/{slug}/sessao` | **Pública.** Cria o participante (todos os campos opcionais: `canal` `voz`/`texto`, `apelido`, `faixa_etaria`, `regiao`) e abre a sessão (`201`, mesma resposta de `POST /session`) | `404` convite inválido ou encerrado |
 | `GET` | `/session/{id}` | Estado completo da entrevista | `404` |
 | `GET` | `/session/{id}/detalhes` | Sessão com roteiro e participante resolvidos (`$lookup`) | `404` |
 | `DELETE` | `/session/{id}` | Apaga a sessão e, em cascata, a síntese dela (`204`) | `404` |
@@ -262,7 +269,7 @@ corrigem o LLM: `finish` antes da última pergunta vira `advance`, e `deepen` al
 
 | Camada | Stack |
 |---|---|
-| Backend | Python 3.11+, FastAPI, Pydantic, LangGraph |
+| Backend | Python 3.11+, FastAPI, Pydantic, LangGraph; `python-docx` e `pypdf` (leitura de questionários), `segno` (QR code) |
 | IA | OpenAI — `whisper-1` (transcrição), `gpt-4o-mini-tts` (voz), modelo de texto (`LLM_MODEL`, padrão `gpt-4o-mini`) para condução e síntese; provider `fake` offline |
 | Banco de dados | MongoDB 7 (NoSQL), acesso assíncrono via Motor |
 | Frontend | React 18, Vite, React Router, `fetch` (cliente único em `services/api.js`), tokens de design em CSS com modo claro e escuro |
@@ -283,6 +290,8 @@ corrigem o LLM: `finish` antes da última pergunta vira `advance`, e `deepen` al
 | `LLM_MODEL` | `gpt-4o-mini` | Modelo de chat usado com `LLM_PROVIDER=openai` |
 | `LLM_TIMEOUT_SECONDS` | `20` | Tempo máximo de cada chamada ao provedor de IA |
 | `MAX_AUDIO_BYTES` | `26214400` (25 MB) | Tamanho máximo do áudio enviado para transcrição |
+| `MAX_UPLOAD_BYTES` | `2097152` (2 MB) | Tamanho máximo do questionário enviado em `/scripts/upload` |
+| `FRONTEND_URL` | `http://localhost:5173` | Endereço público do frontend, usado para montar o link e o QR do convite |
 
 No frontend, `VITE_API_URL` (padrão `http://localhost:8000`) aponta para a API.
 
@@ -350,8 +359,8 @@ Os testes automatizados do backend rodam sem chamadas reais à OpenAI (providers
 dublês ou pelo `fake`) e sem MongoDB instalado: o banco é simulado em memória com
 `mongomock-motor`, que executa filtros, índices únicos e pipelines de agregação.
 
-Estado atual: **356 testes passando, 9 pulados** (os de integração, que exigem `MONGO_TEST_URI`),
-**cobertura de 98,8%** (mínimo exigido: 70%, com medição de branches).
+Estado atual: **410 testes passando, 9 pulados** (os de integração, que exigem `MONGO_TEST_URI`),
+**cobertura de 98,7%** (mínimo exigido: 70%, com medição de branches).
 
 Verificação completa da entrega (pytest com cobertura mínima + build do frontend + higiene de
 arquivos proibidos):
@@ -398,6 +407,13 @@ cd backend && .venv/bin/python -m pytest --cov-report=html
 | `/entrevistas/:scriptId` | Entrevistas do roteiro | Dados do roteiro (tema, perguntas, entrevistadora), lista de sessões com filtro por status e botão para nova entrevista |
 | `/sessao/:sessionId` | Detalhe da entrevista | Conversa transcrita, participante, síntese salva (ou botão para gerá-la, se ainda não existe) e exclusão da sessão |
 | `/entrevista?roteiro=` | Entrevista | Conduz a entrevista por voz no roteiro indicado (sem `roteiro`, usa o padrão); ao concluir, vai para a devolutiva |
+| `/roteiros/novo` | Novo roteiro | Editor para criar roteiro do zero: tema, perguntas (reordenar, editar, remover, adicionar) e entrevistadora |
+| `/roteiros/importar` | Importar questionário | Envia `.txt`, `.md`, `.csv`, `.docx` ou `.pdf`, mostra o rascunho gerado e abre o editor para revisão antes de publicar |
+| `/roteiros/:scriptId/editar` | Editar roteiro | Mesmo editor, com o roteiro existente |
+| (modal em `/entrevistas`) | Convite | Link de convite e QR code do roteiro, com botão para copiar |
+| `/e/:slug` | Convite (público) | Entrada do participante, sem login: apresenta a pesquisa, pede apelido, faixa etária e região (opcionais) e deixa escolher voz ou texto |
+| `/e/:slug/entrevista` | Entrevista (pública) | Mesma entrevista, por voz ou em **modo texto** (chat digitado), para quem não pode ou não quer falar |
+| `/e/:slug/obrigado` | Agradecimento | Tela final do participante |
 | `/feedback` | Devolutiva | Pede e mostra a síntese da entrevista recém-concluída, com atalho para o detalhe |
 
 O visual usa tokens CSS (`src/styles/tokens.css`) com modo claro e escuro (`useTheme`, que respeita
@@ -411,15 +427,17 @@ backend/
   app/
     api/deps.py         # fábricas de serviços, repositórios e providers para o Depends
     api/v1/router.py    # monta o prefixo /api/v1
-    api/v1/endpoints/   # rotas: scripts.py, participants.py, session.py, turns.py e voice.py
+    api/v1/endpoints/   # rotas: scripts.py, invites.py, participants.py, session.py, turns.py e voice.py
     core/config.py      # configurações via variáveis de ambiente
+    core/links.py       # monta o link público do convite a partir de FRONTEND_URL
     core/errors.py      # erros de domínio (NotFoundError, ConflictError, CorruptDocumentError)
+    importing/          # extratores por formato (TextExtractor) e QuestionnaireParser
     db/                 # mongodb.py, collections.py, seed.py (roteiro padrão), demo_seed.py e demo_content.py
     prompts/            # prompts de condução e de síntese
     providers/          # LLMProvider/SpeechProvider: base, openai_provider, fake e factory
     repositories/       # BaseRepository[T] + Script, Participant, Session, Synthesis
     schemas/            # modelos Pydantic das 4 coleções, decisão do LLM, API e voz
-    services/           # Script, Participant, Session, Interview, Synthesis
+    services/           # Script, Import, Invite, Participant, Session, Interview, Synthesis
     main.py             # aplicação FastAPI, lifespan (índices + seed + migração), CORS e handlers
   scripts/seed_demo.py  # carga de dados de demonstração
   tests/                # testes automatizados e dublês (conftest.py)
@@ -522,8 +540,11 @@ Toda entrega segue a rotina `/entregar` (`.claude/skills/entregar/SKILL.md`):
 - **Rotas do pesquisador sem autenticação** — `/scripts`, `/participants` e as rotas de sessão
   (inclusive apagar sessão e ler a transcrição) são abertas, e o CORS aceita qualquer origem.
   Resolver antes do deploy público (RK-11).
-- Só a síntese por sessão é gerada; síntese cruzada por roteiro, dashboard, upload de questionário
-  e link de convite são fases seguintes (`docs/EVOLUCOES.md`).
+- Só a síntese por sessão é gerada; síntese cruzada por roteiro e dashboard são fases seguintes
+  (`docs/EVOLUCOES.md`).
+- **Rotas de convite públicas por desenho** — `/convite/{slug}` e `/convite/{slug}/sessao` não têm login
+  (o participante entra só pelo link); quem tem o link inicia entrevistas no roteiro. As rotas do
+  pesquisador (inclusive upload e QR) continuam sem autenticação (RK-11).
 - A tela de login não autentica: apenas navega para as boas-vindas.
 - `metricas` da sessão (tokens, áudio, custo) existem no modelo, mas ficam zeradas (EV-62), e a
   `persona` do roteiro ainda não entra no prompt (EV-21).
