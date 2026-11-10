@@ -59,7 +59,15 @@ class TestCrud:
         raw = await sessions.find_one({"session_id": state.session_id})
 
         assert raw["status"] == "concluida"
-        assert raw["metricas"] == {"tokens": 0, "segundos_audio": 0.0, "custo_usd": 0.0}
+        assert raw["metricas"] == {
+            "llm_input_tokens": 0,
+            "llm_output_tokens": 0,
+            "stt_seconds": 0.0,
+            "tts_chars": 0,
+            "tokens": 0,
+            "segundos_audio": 0.0,
+            "custo_usd": 0.0,
+        }
 
     async def test_save_refreshes_updated_at_and_status(self, repository, sessions, monkeypatch):
         state = InterviewState()

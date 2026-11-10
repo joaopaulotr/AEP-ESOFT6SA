@@ -127,6 +127,7 @@ async def test_transcribe_sends_portuguese_and_domain_prompt(fake_async_openai):
     call = fake_async_openai.last_transcription_call
     assert text == "eu trabalho à noite"
     assert call["model"] == "whisper-1" and call["language"] == "pt" and call["temperature"] == 0
+    assert call["response_format"] == "verbose_json"
     assert call["file"].name == "r.webm"
     assert call["prompt"] == "Entrevista qualitativa em português sobre o dia a dia de trabalho."
 

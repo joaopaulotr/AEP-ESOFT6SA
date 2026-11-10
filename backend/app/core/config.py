@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     max_audio_bytes: int = 25 * 1024 * 1024
     max_upload_bytes: int = 2 * 1024 * 1024
     frontend_url: str = "http://localhost:5173"
+    # Preços de referência (USD) para ESTIMAR o custo por entrevista (gpt-4o-mini, whisper-1, tts).
+    # São estimativas configuráveis, não a fatura da OpenAI.
+    price_llm_input_per_1m: float = 0.15
+    price_llm_output_per_1m: float = 0.60
+    price_stt_per_minute: float = 0.006
+    price_tts_per_1m_chars: float = 15.0
 
     class Config:
         env_file = ".env"

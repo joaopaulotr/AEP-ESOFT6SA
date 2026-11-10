@@ -105,6 +105,8 @@ class _AsyncFakeCompletions:
         self._owner = owner
         self.responses: list[str] = []
         self.calls: list[dict] = []
+        self.prompt_tokens = 100
+        self.completion_tokens = 30
 
     async def create(self, **kwargs) -> SimpleNamespace:
         self.calls.append(kwargs)
@@ -112,7 +114,12 @@ class _AsyncFakeCompletions:
         if not self.responses:
             raise _UnexpectedCall("Chamada inesperada à OpenAI: nenhuma resposta enfileirada.")
         content = self.responses.pop(0)
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+            usage=SimpleNamespace(
+                prompt_tokens=self.prompt_tokens, completion_tokens=self.completion_tokens
+            ),
+        )
 
 
 class _AsyncFakeTranscriptions:
@@ -120,13 +127,14 @@ class _AsyncFakeTranscriptions:
         self._owner = owner
         self.responses: list[str] = []
         self.calls: list[dict] = []
+        self.duration = 3.5
 
     async def create(self, **kwargs) -> SimpleNamespace:
         self.calls.append(kwargs)
         self._owner._raise_if_failing()
         if not self.responses:
             raise _UnexpectedCall("Chamada inesperada à transcrição: nada enfileirado.")
-        return SimpleNamespace(text=self.responses.pop(0))
+        return SimpleNamespace(text=self.responses.pop(0), duration=self.duration)
 
 
 class _AsyncFakeSpeech:
@@ -298,3 +306,31 @@ def turns():
         ]
 
     return _make
+
+
+REAL_ATOMIC_PULL = SynthesisRepository._atomic_pull_citations
+
+
+@pytest.fixture(autouse=True)
+def _mongomock_pull_shim(monkeypatch, request):
+    """O mongomock ignora `$pull` com `temas.$[].citacoes` (no-op silencioso). Só nos testes,
+    o `$pull` atômico de produção vira um equivalente em Python; o teste de repositório
+    confere a consulta real contra um stub."""
+
+    if request.node.get_closest_marker("mongo"):
+        return  # MongoDB real: roda o $pull atômico de verdade
+
+    async def _python_pull(self, session_id: str) -> int:
+        changed = 0
+        for document in await self._collection.find({"escopo": "roteiro"}).to_list(length=None):
+            temas = document.get("temas", [])
+            pruned = [
+                {**t, "citacoes": [c for c in t.get("citacoes", []) if c.get("session_id") != session_id]}
+                for t in temas
+            ]
+            if pruned != temas:
+                await self._collection.update_one({"_id": document["_id"]}, {"$set": {"temas": pruned}})
+                changed += 1
+        return changed
+
+    monkeypatch.setattr(SynthesisRepository, "_atomic_pull_citations", _python_pull)

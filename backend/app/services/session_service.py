@@ -1,13 +1,19 @@
+import logging
+
 from app.core.errors import ConflictError, NotFoundError
+from app.core.usage import record_usage_safely, track_usage
 from app.repositories.participant_repository import ParticipantRepository
 from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.synthesis_repository import SynthesisRepository
-from app.schemas.api import SessionSummary
+from app.schemas.api import ScriptDashboard, SessionSummary
 from app.schemas.interview import InterviewState, SessionDetails, SessionResponse
 from app.schemas.script import InterviewScript
 from app.services.interview_graph import deepenings_so_far
 from app.services.interview_service import InterviewService
+
+
+logger = logging.getLogger(__name__)
 
 
 class SessionService:
@@ -67,6 +73,10 @@ class SessionService:
         await self._scripts.get_or_raise(script_id)  # roteiro inexistente -> 404
         return await self._sessions.list_summaries(script_id, status=status, limit=limit)
 
+    async def dashboard(self, script_id: str) -> ScriptDashboard:
+        script = await self._scripts.get_or_raise(script_id)  # roteiro inexistente -> 404
+        return await self._sessions.script_dashboard(script)
+
     async def get(self, session_id: str) -> InterviewState:
         return await self._sessions.get_or_raise(session_id)
 
@@ -77,24 +87,45 @@ class SessionService:
         return details
 
     async def delete(self, session_id: str) -> None:
-        """Apaga a sessão e, em cascata, a síntese dela: a síntese deriva da fala do
-        participante e não pode sobrar sem a sessão (RK-11). Síntese primeiro: se algo
-        falhar no meio, sobra uma sessão sem síntese, que é regenerável."""
-        await self._sessions.get_or_raise(session_id)
-        await self._syntheses.delete_for_session(session_id)
-        await self._sessions.delete(session_id)
+        """Apaga a sessão e, em cascata, a síntese dela e as citações dela nos relatórios de
+        roteiro (RK-11). A sessão vai PRIMEIRO: uma síntese de roteiro gerada em paralelo confere
+        depois de salvar se as sessões citadas ainda existem e retira as citações das que sumiram.
+
+        Idempotente: se a sessão já não existe, ainda roda a limpeza (uma tentativa anterior pode
+        ter falhado no meio). 204 se havia algo a limpar; 404 só se não havia nada. Falha na
+        limpeza é registrada (id e tipo do erro, sem conteúdo) e repassada para o cliente repetir."""
+        existed = await self._sessions.exists(session_id)
+        if existed:
+            await self._sessions.delete(session_id)
+        try:
+            cleaned = await self._syntheses.delete_for_session(session_id)
+            cleaned += await self._syntheses.pull_citations_of_session(session_id)  # EV-33
+        except Exception as exc:
+            logger.error(
+                "limpeza_exclusao_sessao_falhou",
+                extra={"session_id": session_id, "error_type": type(exc).__name__},
+            )
+            raise
+        if not existed and not cleaned:
+            raise NotFoundError(SessionRepository.not_found_message)
 
     async def take_turn(self, session_id: str, text: str) -> tuple[InterviewState, str]:
         session = await self._sessions.get_or_raise(session_id)
         if session.finished:
             raise ConflictError("A entrevista já foi encerrada.")
         script = await self._scripts.get(session.script_id)
-        if script is None:
-            # Roteiro apagado com a sessão em andamento: guarda a resposta e encerra.
-            session, fala = self._interview.close_with_answer(session, text)
-        else:
-            session, fala = await self._interview.run_turn(session, script, text)
-        await self._persist(session)
+        # O medidor nasce aqui (e não no endpoint) para valer também na task protegida do SSE.
+        # Soma mesmo se o turno falhar: chamadas que já custaram (retries) entram na conta.
+        with track_usage() as meter:
+            try:
+                if script is None:
+                    # Roteiro apagado com a sessão em andamento: guarda a resposta e encerra.
+                    session, fala = self._interview.close_with_answer(session, text)
+                else:
+                    session, fala = await self._interview.run_turn(session, script, text)
+                await self._persist(session)
+            finally:
+                await record_usage_safely(self._sessions, session_id, meter)
         return session, fala
 
     async def turn_meta(self, session: InterviewState) -> dict:

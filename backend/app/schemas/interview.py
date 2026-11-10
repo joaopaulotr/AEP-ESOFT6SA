@@ -32,8 +32,12 @@ class Turn(BaseModel):
 
 
 class SessionMetrics(BaseModel):
-    """Consumo da sessão (preenchido pelo EV-62)."""
+    """Consumo da sessão (EV-62): `tokens`, `segundos_audio` e `custo_usd` derivam dos detalhes."""
 
+    llm_input_tokens: int = Field(default=0, ge=0)
+    llm_output_tokens: int = Field(default=0, ge=0)
+    stt_seconds: float = Field(default=0.0, ge=0)
+    tts_chars: int = Field(default=0, ge=0)
     tokens: int = Field(default=0, ge=0)
     segundos_audio: float = Field(default=0.0, ge=0)
     custo_usd: float = Field(default=0.0, ge=0)

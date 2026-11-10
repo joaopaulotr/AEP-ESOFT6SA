@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Mic, FileText, MessageSquare } from "lucide-react";
+import { ArrowLeft, Mic, FileText, MessageSquare, BarChart3 } from "lucide-react";
 import SideBar from "../components/SideBar";
 import StatusBadge from "../components/StatusBadge";
 import EstadoTela from "../components/EstadoTela";
@@ -66,9 +66,15 @@ export default function ScriptSessionsScreen() {
                             </p>
                         )}
                     </div>
-                    <button className="ui-btn" style={ui.btnPrimario} onClick={iniciar}>
-                        <Mic size={17} aria-hidden="true" /> Iniciar entrevista
-                    </button>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                        <button className="ui-btn" style={ui.btnSecundario}
+                            onClick={() => navigate(`/entrevistas/${encodeURIComponent(scriptId)}/painel`)}>
+                            <BarChart3 size={17} aria-hidden="true" /> Painel
+                        </button>
+                        <button className="ui-btn" style={ui.btnPrimario} onClick={iniciar}>
+                            <Mic size={17} aria-hidden="true" /> Iniciar entrevista
+                        </button>
+                    </div>
                 </div>
 
                 <div role="group" aria-label="Filtrar por situação" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>

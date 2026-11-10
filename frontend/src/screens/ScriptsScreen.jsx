@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Mic, List, User, Plus, Upload, Pencil, UserPlus } from "lucide-react";
+import { Mic, List, User, Plus, Upload, Pencil, UserPlus, BarChart3 } from "lucide-react";
 import SideBar from "../components/SideBar";
 import InviteModal from "../components/InviteModal";
 import EstadoTela from "../components/EstadoTela";
@@ -61,6 +61,11 @@ export default function ScriptsScreen() {
                                         <button className="ui-btn" style={ui.btnSecundario}
                                             onClick={() => navigate(`/entrevistas/${encodeURIComponent(r.script_id)}`)}>
                                             <List size={17} aria-hidden="true" /> Ver entrevistas
+                                        </button>
+                                        <button className="ui-btn" style={ui.btnSecundario}
+                                            aria-label={`Painel do roteiro ${r.titulo}`}
+                                            onClick={() => navigate(`/entrevistas/${encodeURIComponent(r.script_id)}/painel`)}>
+                                            <BarChart3 size={17} aria-hidden="true" /> Painel
                                         </button>
                                         <button className="ui-btn" style={ui.btnSecundario}
                                             aria-label={`Convidar para ${r.titulo}`}

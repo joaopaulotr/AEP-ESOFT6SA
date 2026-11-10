@@ -156,3 +156,9 @@ async def test_reset_removes_only_demo_documents(
     assert await session_repository.count() == 15
     assert await synthesis_repository.count() == 11
     assert await participant_repository.count() == 10
+
+
+def test_script_synthesis_uses_the_fixed_id_the_api_reads(data):
+    roteiro = next(s for s in data.syntheses if s.escopo == "roteiro")
+
+    assert roteiro.synthesis_id == f"roteiro:{roteiro.script_id}"

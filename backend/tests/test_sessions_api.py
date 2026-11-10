@@ -279,7 +279,7 @@ class TestSynthesisRoutes:
         )
         try:
             session_id = self._sessao_concluida(client)
-            fake_llm.queue_payload("v1").queue_payload("v2")
+            fake_llm.queue_payload({"resumo": "v1"}).queue_payload({"resumo": "v2"})
 
             first = client.post(f"{API}/session/{session_id}/synthesis").json()
             second = client.post(f"{API}/session/{session_id}/synthesis").json()

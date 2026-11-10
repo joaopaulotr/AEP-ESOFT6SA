@@ -169,4 +169,26 @@ export const api = {
         const res = await request(`/session/${sessionId}/synthesis${qs}`, { method: "POST" });
         return res.json();
     },
+
+    async getDashboard(scriptId) {
+        const res = await request(`/scripts/${encodeURIComponent(scriptId)}/painel`);
+        return res.json();
+    },
+
+    /** Relatório cruzado salvo do roteiro; null se ainda não foi gerado (404). */
+    async getScriptSynthesis(scriptId) {
+        try {
+            const res = await request(`/scripts/${encodeURIComponent(scriptId)}/sintese`);
+            return await res.json();
+        } catch (e) {
+            if (e instanceof ApiError && e.status === 404) return null;
+            throw e;
+        }
+    },
+
+    async generateScriptSynthesis(scriptId, { refresh = false } = {}) {
+        const qs = refresh ? "?refresh=true" : "";
+        const res = await request(`/scripts/${encodeURIComponent(scriptId)}/sintese${qs}`, { method: "POST" });
+        return res.json();
+    },
 };

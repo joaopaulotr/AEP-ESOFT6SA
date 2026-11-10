@@ -1,4 +1,4 @@
-from pymongo import ASCENDING, IndexModel
+from pymongo import ASCENDING, DESCENDING, IndexModel
 
 from app.db import collections
 from app.repositories.base import BaseRepository
@@ -28,6 +28,53 @@ class SynthesisRepository(BaseRepository[Synthesis]):
 
     async def list_for_script(self, script_id: str, *, limit: int = 100) -> list[Synthesis]:
         return await self.list({"script_id": script_id}, limit=limit)
+
+    @staticmethod
+    def script_synthesis_id(script_id: str) -> str:
+        """Id fixo do relatório cruzado de um roteiro (um por roteiro)."""
+        return f"roteiro:{script_id}"
+
+    async def get_for_script(self, script_id: str) -> Synthesis | None:
+        return await self.get(self.script_synthesis_id(script_id))
+
+    async def list_session_syntheses(self, script_id: str, *, limit: int = 30) -> list[Synthesis]:
+        """Sínteses de sessão do roteiro, as mais recentemente atualizadas primeiro."""
+        cursor = (
+            self._collection.find({"escopo": "sessao", "script_id": script_id})
+            .sort([("updated_at", DESCENDING), (self.id_field, ASCENDING)])
+            .limit(limit)
+        )
+        return [self._to_model(document) for document in await cursor.to_list(length=limit)]
+
+    async def save_for_script(self, synthesis: Synthesis) -> Synthesis:
+        """Upsert atômico do relatório do roteiro (id fixo; preserva created_at ao regerar)."""
+        if synthesis.escopo != "roteiro":
+            raise ValueError("save_for_script só aceita síntese de roteiro.")
+        synthesis_id = self.script_synthesis_id(synthesis.script_id)
+        document = self._to_document(synthesis)
+        created_at = document.pop("created_at")
+        document.pop("synthesis_id")
+        await self._collection.update_one(
+            {self.id_field: synthesis_id},
+            {"$set": document, "$setOnInsert": {self.id_field: synthesis_id, "created_at": created_at}},
+            upsert=True,
+        )
+        return await self.get_or_raise(synthesis_id)
+
+    async def pull_citations_of_session(self, session_id: str) -> int:
+        """Tira as citações da sessão de todos os relatórios de roteiro (cascata da exclusão).
+        Devolve quantos relatórios foram alterados."""
+        return await self._atomic_pull_citations(session_id)
+
+    async def _atomic_pull_citations(self, session_id: str) -> int:
+        """`$pull` atômico em todos os temas de todos os relatórios de roteiro (uma operação
+        no servidor, sem ler-e-gravar). O mongomock dos testes ignora `$[]`; lá o conftest
+        troca este método por um equivalente em Python."""
+        result = await self._collection.update_many(
+            {"escopo": "roteiro"},
+            {"$pull": {"temas.$[].citacoes": {"session_id": session_id}}},
+        )
+        return result.modified_count
 
     @staticmethod
     def session_synthesis_id(session_id: str) -> str:

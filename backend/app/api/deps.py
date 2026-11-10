@@ -94,7 +94,10 @@ def get_participant_service() -> ParticipantService:
 @lru_cache(maxsize=1)
 def get_synthesis_service() -> SynthesisService:
     return SynthesisService(
-        get_session_repository(), get_synthesis_repository(), get_llm_provider()
+        get_session_repository(),
+        get_synthesis_repository(),
+        get_llm_provider(),
+        get_script_repository(),
     )
 
 

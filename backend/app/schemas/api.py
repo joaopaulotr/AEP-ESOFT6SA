@@ -150,3 +150,49 @@ class InviteStart(BaseModel):
         if isinstance(value, str):
             return value.strip() or None
         return value
+
+
+class ActionTotal(BaseModel):
+    acao: str
+    total: int
+
+
+class QuestionDeepeningAvg(BaseModel):
+    pergunta_ordem: int
+    texto: str
+    media: float
+
+
+class ThemeCount(BaseModel):
+    tema: str
+    sessoes: int
+
+
+class DayCount(BaseModel):
+    dia: str  # AAAA-MM-DD no fuso America/Sao_Paulo
+    total: int
+
+
+class ChannelCount(BaseModel):
+    canal: str
+    total: int
+
+
+class ScriptDashboard(BaseModel):
+    """Painel do roteiro (EV-32): números agregados no banco a partir das sessões."""
+
+    script_id: str
+    titulo: str
+    total_sessoes: int = 0
+    concluidas: int = 0
+    em_andamento: int = 0
+    taxa_conclusao: float = 0.0
+    duracao_media_min: float = 0.0
+    media_respostas: float = 0.0
+    acoes: list[ActionTotal] = Field(default_factory=list)
+    aprofundamentos_por_pergunta: list[QuestionDeepeningAvg] = Field(default_factory=list)
+    custo_total_usd: float = 0.0
+    custo_medio_usd: float = 0.0
+    temas_mais_citados: list[ThemeCount] = Field(default_factory=list)
+    sessoes_por_dia: list[DayCount] = Field(default_factory=list)
+    canais: list[ChannelCount] = Field(default_factory=list)

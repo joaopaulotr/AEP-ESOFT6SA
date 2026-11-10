@@ -69,7 +69,7 @@ class TestSynthesize:
         self, synthesis, repository, fake_llm, finished_state
     ):
         await repository.create(finished_state)
-        fake_llm.queue_payload("Relatório de síntese da entrevista.")
+        fake_llm.queue_payload({"resumo": "Relatório de síntese da entrevista."})
 
         result = await synthesis.synthesize(finished_state.session_id)
 
@@ -79,7 +79,7 @@ class TestSynthesize:
         self, synthesis, repository, fake_llm, finished_state
     ):
         await repository.create(finished_state)
-        fake_llm.queue_payload("texto")
+        fake_llm.queue_payload({"resumo": "texto"})
 
         await synthesis.synthesize(finished_state.session_id)
 
@@ -92,7 +92,7 @@ class TestSynthesize:
         self, synthesis, repository, fake_llm, finished_state
     ):
         await repository.create(finished_state)
-        fake_llm.queue_payload("texto")
+        fake_llm.queue_payload({"resumo": "texto"})
 
         await synthesis.synthesize(finished_state.session_id)
 
@@ -103,19 +103,19 @@ class TestSynthesize:
         self, synthesis, repository, fake_llm, finished_state
     ):
         await repository.create(finished_state)
-        fake_llm.queue_payload("texto")
+        fake_llm.queue_payload({"resumo": "texto"})
 
         await synthesis.synthesize(finished_state.session_id)
 
         prompt = fake_llm.last_prompt
-        assert "Resumo geral" in prompt
+        assert "citacoes" in prompt
         assert "Não invente informação" in prompt
 
     async def test_reads_the_session_through_the_repository(
         self, synthesis, repository, fake_llm, finished_state
     ):
         await repository.create(finished_state)
-        fake_llm.queue_payload("texto")
+        fake_llm.queue_payload({"resumo": "texto"})
 
         result = await synthesis.synthesize(finished_state.session_id)
 
@@ -157,7 +157,7 @@ class TestStorage:
         self, synthesis, repository, synthesis_repository, fake_llm, finished_state
     ):
         await repository.create(finished_state)
-        fake_llm.queue_payload("Relatório.")
+        fake_llm.queue_payload({"resumo": "Relatório."})
 
         await synthesis.synthesize(finished_state.session_id)
 
@@ -171,7 +171,7 @@ class TestStorage:
         self, synthesis, repository, synthesis_repository, fake_llm, finished_state
     ):
         await repository.create(finished_state)
-        fake_llm.queue_payload("v1").queue_payload("v2")
+        fake_llm.queue_payload({"resumo": "v1"}).queue_payload({"resumo": "v2"})
 
         await synthesis.synthesize(finished_state.session_id)
         await synthesis.synthesize(finished_state.session_id, refresh=True)
@@ -183,7 +183,7 @@ class TestStorage:
         self, synthesis, repository, sessions, fake_llm, finished_state
     ):
         await repository.create(finished_state)
-        fake_llm.queue_payload("Relatório.")
+        fake_llm.queue_payload({"resumo": "Relatório."})
 
         await synthesis.synthesize(finished_state.session_id)
 
@@ -206,7 +206,7 @@ class TestSavedSynthesisIsReused:
         self, synthesis, repository, fake_llm, finished_state
     ):
         await repository.create(finished_state)
-        fake_llm.queue_payload("v1")
+        fake_llm.queue_payload({"resumo": "v1"})
         await synthesis.synthesize(finished_state.session_id)
         calls = len(fake_llm.prompts)
 
@@ -219,7 +219,7 @@ class TestSavedSynthesisIsReused:
         self, synthesis, repository, fake_llm, finished_state
     ):
         await repository.create(finished_state)
-        fake_llm.queue_payload("v1").queue_payload("v2")
+        fake_llm.queue_payload({"resumo": "v1"}).queue_payload({"resumo": "v2"})
         await synthesis.synthesize(finished_state.session_id)
 
         result = await synthesis.synthesize(finished_state.session_id, refresh=True)
@@ -231,7 +231,7 @@ class TestSavedSynthesisIsReused:
 class TestGet:
     async def test_returns_the_saved_synthesis(self, synthesis, repository, fake_llm, finished_state):
         await repository.create(finished_state)
-        fake_llm.queue_payload("v1")
+        fake_llm.queue_payload({"resumo": "v1"})
         await synthesis.synthesize(finished_state.session_id)
 
         saved = await synthesis.get(finished_state.session_id)
@@ -254,14 +254,14 @@ class TestSessionDeletedWhileGenerating:
         self, synthesis, repository, synthesis_repository, fake_llm, finished_state
     ):
         await repository.create(finished_state)
-        original = fake_llm.complete_text
+        original = fake_llm.complete_json
 
         async def slow_text(prompt):
             await repository.delete(finished_state.session_id)  # apagada durante a geração
             return await original(prompt)
 
-        fake_llm.complete_text = slow_text
-        fake_llm.queue_payload("texto")
+        fake_llm.complete_json = slow_text
+        fake_llm.queue_payload({"resumo": "texto"})
 
         with pytest.raises(NotFoundError, match="Sessão não encontrada."):
             await synthesis.synthesize(finished_state.session_id)

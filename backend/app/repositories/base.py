@@ -26,6 +26,8 @@ class BaseRepository(ABC, Generic[ModelT]):
     duplicate_message: ClassVar[str] = "Registro já existe."
     stale_message: ClassVar[str] = "O registro foi alterado por outra ação. Tente de novo."
     extra_indexes: ClassVar[tuple[IndexModel, ...]] = ()
+    # Campos que `save` nunca regrava (atualizados à parte, p.ex. por $inc atômico).
+    save_exclude: ClassVar[tuple[str, ...]] = ()
     default_sort: ClassVar[tuple[str, int]] = ("created_at", DESCENDING)
 
     def __init__(self, database: Any) -> None:
@@ -120,6 +122,8 @@ class BaseRepository(ABC, Generic[ModelT]):
             query["versao"] = {"$in": [0, None]} if expected == 0 else expected
 
         document = self._to_document(entity)
+        for field in self.save_exclude:
+            document.pop(field, None)
         if hasattr(entity, "updated_at"):
             document["updated_at"] = datetime.now(timezone.utc)
         if versioned:

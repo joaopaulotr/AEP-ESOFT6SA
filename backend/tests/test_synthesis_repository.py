@@ -1,6 +1,7 @@
 import pytest
 
 from app.schemas.synthesis import Synthesis
+from tests.conftest import REAL_ATOMIC_PULL
 
 pytestmark = pytest.mark.anyio
 
@@ -73,3 +74,21 @@ def test_declares_reference_indexes(synthesis_repository):
     names = {index.document["name"] for index in synthesis_repository.indexes()}
 
     assert names == {"synthesis_id_unico", "session_id", "script_id_escopo"}
+
+
+async def test_pull_uses_one_atomic_pull_on_script_reports_without_touching_updated_at(synthesis_repository):
+    calls = []
+
+    class Stub:
+        async def update_many(self, flt, update):
+            calls.append((flt, update))
+            return type("R", (), {"modified_count": 2})()
+
+    synthesis_repository._collection = Stub()
+
+    changed = await REAL_ATOMIC_PULL(synthesis_repository, "s1")
+
+    assert changed == 2
+    assert calls == [
+        ({"escopo": "roteiro"}, {"$pull": {"temas.$[].citacoes": {"session_id": "s1"}}})
+    ]
