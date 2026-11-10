@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
 from app.db import collections
@@ -65,35 +63,18 @@ class SynthesisRepository(BaseRepository[Synthesis]):
 
     async def pull_citations_of_session(self, session_id: str) -> int:
         """Tira as citações da sessão de todos os relatórios de roteiro (cascata da exclusão).
+        Devolve quantos relatórios foram alterados."""
+        return await self._atomic_pull_citations(session_id)
 
-        Equivale a `$pull` em `temas.$[].citacoes`, mas feito por documento em Python: o
-        mongomock dos testes ignora `$[]` em silêncio, e assim o comportamento fica igual
-        nos dois bancos. Cada gravação confere `updated_at` (otimista): se um relatório foi
-        regerado entre a leitura e a escrita, relê e tenta de novo. Devolve quantos alterou."""
-        changed = 0
-        cursor = self._collection.find(
-            {"escopo": "roteiro", "temas.citacoes.session_id": session_id}, {self.id_field: 1}
+    async def _atomic_pull_citations(self, session_id: str) -> int:
+        """`$pull` atômico em todos os temas de todos os relatórios de roteiro (uma operação
+        no servidor, sem ler-e-gravar). O mongomock dos testes ignora `$[]`; lá o conftest
+        troca este método por um equivalente em Python."""
+        result = await self._collection.update_many(
+            {"escopo": "roteiro"},
+            {"$pull": {"temas.$[].citacoes": {"session_id": session_id}}},
         )
-        for header in await cursor.to_list(length=None):
-            for _ in range(3):
-                document = await self._collection.find_one({self.id_field: header[self.id_field]})
-                if document is None:
-                    break
-                temas = document.get("temas", [])
-                pruned = [
-                    {**tema, "citacoes": [c for c in tema.get("citacoes", []) if c.get("session_id") != session_id]}
-                    for tema in temas
-                ]
-                if pruned == temas:
-                    break
-                result = await self._collection.update_one(
-                    {self.id_field: document[self.id_field], "updated_at": document.get("updated_at")},
-                    {"$set": {"temas": pruned, "updated_at": datetime.now(timezone.utc)}},  # muda o token otimista
-                )
-                if result.modified_count:
-                    changed += 1
-                    break
-        return changed
+        return result.modified_count
 
     @staticmethod
     def session_synthesis_id(session_id: str) -> str:

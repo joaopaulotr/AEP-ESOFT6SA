@@ -306,3 +306,28 @@ def turns():
         ]
 
     return _make
+
+
+REAL_ATOMIC_PULL = SynthesisRepository._atomic_pull_citations
+
+
+@pytest.fixture(autouse=True)
+def _mongomock_pull_shim(monkeypatch):
+    """O mongomock ignora `$pull` com `temas.$[].citacoes` (no-op silencioso). Só nos testes,
+    o `$pull` atômico de produção vira um equivalente em Python; o teste de repositório
+    confere a consulta real contra um stub."""
+
+    async def _python_pull(self, session_id: str) -> int:
+        changed = 0
+        for document in await self._collection.find({"escopo": "roteiro"}).to_list(length=None):
+            temas = document.get("temas", [])
+            pruned = [
+                {**t, "citacoes": [c for c in t.get("citacoes", []) if c.get("session_id") != session_id]}
+                for t in temas
+            ]
+            if pruned != temas:
+                await self._collection.update_one({"_id": document["_id"]}, {"$set": {"temas": pruned}})
+                changed += 1
+        return changed
+
+    monkeypatch.setattr(SynthesisRepository, "_atomic_pull_citations", _python_pull)

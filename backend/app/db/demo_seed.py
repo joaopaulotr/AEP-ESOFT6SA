@@ -256,7 +256,7 @@ def _syntheses(sessions: list[InterviewState]) -> list[Synthesis]:
     created = _at(21, 9, 0)
     result.append(
         Synthesis(
-            synthesis_id="demo-sintese-transporte",
+            synthesis_id=SynthesisRepository.script_synthesis_id(script_id),
             escopo="roteiro",
             script_id=script_id,
             resumo=resumo,
@@ -322,7 +322,7 @@ async def seed_demo(database: Any, *, reset: bool = False) -> dict[str, int]:
         await scripts.delete_by_id_prefix(DEMO_PREFIX)
         await participants.delete_by_id_prefix(DEMO_PREFIX)
         await sessions.delete_by_id_prefix(DEMO_PREFIX)
-        await syntheses.delete_by_id_prefix(DEMO_PREFIX)  # roteiro: demo-...
+        await syntheses.delete_by_id_prefix(f"roteiro:{DEMO_PREFIX}")  # roteiro: roteiro:demo-...
         await syntheses.delete_by_id_prefix(f"sessao:{DEMO_PREFIX}")  # sessão: sessao:demo-...
 
     return {

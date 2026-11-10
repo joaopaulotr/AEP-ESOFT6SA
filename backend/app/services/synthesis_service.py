@@ -14,7 +14,11 @@ from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.synthesis_repository import SynthesisRepository
 from app.schemas.synthesis import Citation, Synthesis, Theme
-from app.services.citation_check import filter_known_citations, filter_literal_citations
+from app.services.citation_check import (
+    filter_known_citations,
+    filter_literal_citations,
+    sanitize,
+)
 from app.services.interview_service import format_full_conversation
 
 NO_ANSWERS_MESSAGE = "A entrevista não tem respostas para resumir."
@@ -24,6 +28,7 @@ MIN_SESSIONS_MESSAGE = (
 SCRIPT_REPORT_NOT_READY = "Relatório do roteiro ainda não gerado."
 MIN_SESSIONS_FOR_SCRIPT = 2
 MAX_SESSIONS_FOR_SCRIPT = 30
+MAX_SCRIPT_PROMPT_CHARS = 12_000  # entradas das sínteses no prompt do roteiro
 STRUCTURED_ATTEMPTS = 2  # a 1ª tentativa + 1 retry quando o JSON vem inválido
 
 
@@ -131,7 +136,7 @@ class SynthesisService:
             raise ValueError(NO_ANSWERS_MESSAGE)  # nada do participante para resumir
 
         prompt_args = {
-            "conversation": format_full_conversation(interview_state.conversation),
+            "conversation": sanitize(format_full_conversation(interview_state.conversation)),
             "profile": interview_state.profile,
         }
         with track_usage() as meter:
@@ -145,7 +150,9 @@ class SynthesisService:
                 else:
                     resumo, gaps = parsed.resumo, parsed.lacunas
                     participant_texts = [
-                        turn.text for turn in interview_state.conversation if turn.role == "participant"
+                        sanitize(turn.text)
+                        for turn in interview_state.conversation
+                        if turn.role == "participant"
                     ]
                     themes = self._build_themes(parsed, interview_state.session_id, participant_texts)
             finally:
@@ -190,15 +197,19 @@ class SynthesisService:
         if len(inputs) < MIN_SESSIONS_FOR_SCRIPT:
             raise ConflictError(MIN_SESSIONS_MESSAGE)
 
+        inputs = self._fit_to_prompt_cap(inputs)
         payload = [
             {
                 "session_id": item.session_id,
-                "resumo": item.resumo,
+                "resumo": sanitize(item.resumo),
                 "temas": [
                     {
-                        "tema": theme.tema,
-                        "pontos": theme.pontos,
-                        "citacoes": [c.model_dump() for c in theme.citacoes],
+                        "tema": sanitize(theme.tema),
+                        "pontos": [sanitize(p) for p in theme.pontos],
+                        "citacoes": [
+                            {"texto": sanitize(c.texto), "session_id": c.session_id}
+                            for c in theme.citacoes
+                        ],
                     }
                     for theme in item.temas
                 ],
@@ -241,6 +252,20 @@ class SynthesisService:
                 pulled = await self._syntheses.pull_citations_of_session(item.session_id)
                 removed = removed or pulled > 0
         return await self._syntheses.get_for_script(script_id) if removed else saved
+
+    @staticmethod
+    def _fit_to_prompt_cap(inputs: list[Synthesis]) -> list[Synthesis]:
+        """`inputs` vem das mais recentes para as mais antigas: corta as antigas que passam do
+        limite de caracteres do prompt (sempre mantém pelo menos 2)."""
+        kept: list[Synthesis] = []
+        total = 0
+        for item in inputs:
+            size = len(item.model_dump_json(include={"resumo", "temas"}))
+            if len(kept) >= MIN_SESSIONS_FOR_SCRIPT and total + size > MAX_SCRIPT_PROMPT_CHARS:
+                break
+            kept.append(item)
+            total += size
+        return kept
 
     async def _require_script(self, script_id: str) -> None:
         if self._scripts is not None:

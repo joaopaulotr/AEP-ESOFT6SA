@@ -77,3 +77,36 @@ def test_llm_provider_default_model_name_is_the_class_name():
 
 async def test_fake_speech_ignores_tom():
     assert await FakeSpeechProvider().synthesize("olá", "acolhedor") == b""
+
+
+async def test_fake_llm_returns_valid_structured_session_synthesis_with_literal_quote():
+    from app.prompts.synthesis_prompts import SYNTHESIS_PROMPT
+    from app.services.citation_check import filter_literal_citations
+    from app.services.synthesis_service import _LLMSessionSynthesis
+
+    fala = "Pego dois ônibus todo dia. Demoro muito."
+    prompt = SYNTHESIS_PROMPT.format(
+        conversation=f"interviewer: Como vem?\nparticipant: {fala}", profile={}
+    )
+
+    data = _LLMSessionSynthesis.model_validate(await FakeLLMProvider().complete_json(prompt))
+
+    assert data.temas and data.temas[0].citacoes
+    assert filter_literal_citations(data.temas[0].citacoes, [fala]) == data.temas[0].citacoes
+
+
+async def test_fake_llm_script_synthesis_reuses_input_citations():
+    import json
+
+    from app.prompts.synthesis_prompts import SCRIPT_SYNTHESIS_PROMPT
+
+    inputs = [
+        {"session_id": "a", "resumo": "r", "temas": [
+            {"tema": "t", "pontos": [], "citacoes": [{"texto": "frase original", "session_id": "a"}]}]},
+        {"session_id": "b", "resumo": "r", "temas": []},
+    ]
+    prompt = SCRIPT_SYNTHESIS_PROMPT.format(syntheses=json.dumps(inputs, ensure_ascii=False))
+
+    data = await FakeLLMProvider().complete_json(prompt)
+
+    assert data["temas"][0]["citacoes"] == [{"texto": "frase original", "session_id": "a"}]

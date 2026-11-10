@@ -78,13 +78,13 @@ class SessionService:
         return details
 
     async def delete(self, session_id: str) -> None:
-        """Apaga a sessão e, em cascata, a síntese dela e as citações dela nos relatórios de roteiro: a síntese deriva da fala do
-        participante e não pode sobrar sem a sessão (RK-11). Síntese primeiro: se algo
-        falhar no meio, sobra uma sessão sem síntese, que é regenerável."""
+        """Apaga a sessão e, em cascata, a síntese dela e as citações dela nos relatórios de
+        roteiro (RK-11). A sessão vai PRIMEIRO: uma síntese de roteiro gerada em paralelo confere
+        depois de salvar se as sessões citadas ainda existem e retira as citações das que sumiram."""
         await self._sessions.get_or_raise(session_id)
+        await self._sessions.delete(session_id)
         await self._syntheses.delete_for_session(session_id)
         await self._syntheses.pull_citations_of_session(session_id)  # relatórios de roteiro (EV-33)
-        await self._sessions.delete(session_id)
 
     async def take_turn(self, session_id: str, text: str) -> tuple[InterviewState, str]:
         session = await self._sessions.get_or_raise(session_id)

@@ -5,7 +5,15 @@ from collections.abc import Iterable
 
 from app.schemas.synthesis import Citation
 
+MIN_CITATION_CHARS = 8
 _QUOTES = "\"'“”‘’«»`"
+_MARKER_TAGS = re.compile(r"</?\s*(?:transcricao|sinteses)\s*>", re.IGNORECASE)
+
+
+def sanitize(text: str) -> str:
+    """Tira as marcas que delimitam os dados nos prompts, para a fala do participante
+    não conseguir fechar o bloco e se passar por instrução."""
+    return _MARKER_TAGS.sub("", text)
 
 
 def normalize(text: str) -> str:
@@ -18,27 +26,41 @@ def strip_quotes(text: str) -> str:
     return text.strip().strip(_QUOTES).strip()
 
 
+def _original_slice(quote: str, texts: list[str]) -> str | None:
+    """Trecho ORIGINAL (caixa e espaços da fala) que corresponde à citação, ou None."""
+    words = quote.split()
+    if not words:
+        return None
+    pattern = re.compile(r"\s+".join(re.escape(word) for word in words), re.IGNORECASE)
+    for text in texts:
+        if match := pattern.search(text):
+            return match.group(0)
+    return None
+
+
 def filter_literal_citations(citacoes: Iterable[str], participant_texts: Iterable[str]) -> list[str]:
-    """Mantém só as citações que são trecho literal de UMA fala do participante
-    (após normalizar espaços e caixa). Devolve o texto sem aspas, como o LLM o escreveu."""
-    haystacks = [normalize(text) for text in participant_texts]
+    """Mantém só as citações que são trecho literal de UMA fala do participante (espaços e
+    caixa normalizados) e têm ao menos 8 caracteres. Devolve o trecho original da fala."""
+    texts = list(participant_texts)
     kept: list[str] = []
     for raw in citacoes:
         if not isinstance(raw, str):
             continue
         quote = strip_quotes(raw)
-        needle = normalize(quote)
-        if needle and any(needle in haystack for haystack in haystacks):
-            kept.append(quote)
+        if len(normalize(quote)) < MIN_CITATION_CHARS:
+            continue
+        if (original := _original_slice(quote, texts)) is not None:
+            kept.append(original)
     return kept
 
 
 def filter_known_citations(citacoes: Iterable[Citation], known: Iterable[Citation]) -> list[Citation]:
-    """Mantém só as citações iguais (mesma sessão, mesmo texto normalizado) a uma de entrada."""
-    allowed = {(c.session_id, normalize(c.texto)) for c in known}
+    """Mantém só as citações iguais (mesma sessão, texto normalizado) a uma de entrada,
+    guardando o texto da citação de entrada (original), não o do LLM."""
+    allowed = {(c.session_id, normalize(c.texto)): c for c in known}
     kept: list[Citation] = []
     for citation in citacoes:
-        quote = strip_quotes(citation.texto)
-        if quote and (citation.session_id, normalize(quote)) in allowed:
-            kept.append(Citation(texto=quote, session_id=citation.session_id))
+        source = allowed.get((citation.session_id, normalize(strip_quotes(citation.texto))))
+        if source is not None and len(normalize(source.texto)) >= MIN_CITATION_CHARS:
+            kept.append(Citation(texto=source.texto, session_id=source.session_id))
     return kept
