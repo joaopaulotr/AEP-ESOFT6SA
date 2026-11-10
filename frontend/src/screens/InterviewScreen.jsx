@@ -1,4 +1,3 @@
-import React from "react";
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Mic, Square, Send, Volume2, XCircle, Clock, PenLine } from "lucide-react";
@@ -18,6 +17,7 @@ import { mmss } from "../utils/tempo";
 import EstadoTela from "../components/EstadoTela";
 import { ui, CSS as UI_CSS } from "../styles/ui";
 import { style, CSS } from "./InterviewScreen.styles";
+import { E2E } from "../utils/e2e";
 
 const INTERVIEWER = "du";
 const SILENCIO_INCENTIVO_MS = 12000;
@@ -88,10 +88,12 @@ function Entrevista({ publico, slug }) {
             descartarPendente();
             liberarMicrofone();
         }
-    }, [modoTexto]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dispara só ao entrar no modo texto; as funções de áudio são recriadas a cada render
+    }, [modoTexto]);
     useEffect(() => {
         if (finalizada) liberarMicrofone();
-    }, [finalizada]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dispara só ao finalizar; `liberarMicrofone` não precisa reiniciar o efeito
+    }, [finalizada]);
 
     useEffect(() => {
         const el = msgsRef.current;
@@ -112,14 +114,15 @@ function Entrevista({ publico, slug }) {
         setIncentivo(false);
     }, [ordemAtual]);
     useEffect(() => {
-        if (!aguardando || incentivadoRef.current === ordemAtual) return undefined;
+        if (E2E || !aguardando || incentivadoRef.current === ordemAtual) return undefined;
         const t = setTimeout(() => {
             incentivadoRef.current = ordemAtual; // uma vez por pergunta
             setIncentivo(true);
             falarAviso(INCENTIVO);
         }, SILENCIO_INCENTIVO_MS);
         return () => clearTimeout(t);
-    }, [aguardando, ordemAtual, digitou]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `digitou` só reinicia a espera; `falarAviso` é recriada a cada render e não deve zerar o timer
+    }, [aguardando, ordemAtual, digitou]);
 
     const podeResponder = turno === "voce" && !processando && !finalizada && !pendente;
     const ouvindo = recorder.gravando; // inclui a gravação iniciada por barge-in (turno ainda é da IA)

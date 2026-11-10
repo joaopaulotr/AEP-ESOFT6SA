@@ -1,4 +1,3 @@
-import React from "react";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import SideBar from "../components/SideBar";
@@ -22,6 +21,7 @@ export default function FeedbackScreen() {
         if (pediuRef.current) return;
         pediuRef.current = true;
         gerarSintese();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- pede a síntese uma única vez ao montar (guardado por pediuRef)
     }, []);
 
     async function gerarSintese() {

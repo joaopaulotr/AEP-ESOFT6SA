@@ -1,5 +1,3 @@
-import { useState } from "react";
-import React from "react";
 import LoginScreen from "./screens/LoginScreen";
 import WelcomeScreen from "./screens/WelcomeScreen";
 import InterviewScreen from "./screens/InterviewScreen";

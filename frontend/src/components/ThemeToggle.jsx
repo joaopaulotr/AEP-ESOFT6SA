@@ -1,5 +1,4 @@
 import { useTheme } from '../hooks/useTheme'
-import React from "react";
 
 
 export default function ThemeToggle() {

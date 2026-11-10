@@ -1,4 +1,3 @@
-import React from "react";
 import { ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
 import { ui } from "../styles/ui";
 

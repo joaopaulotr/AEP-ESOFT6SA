@@ -1,5 +1,3 @@
-import React from "react";
-
 /**
  * Legenda ao vivo da fala da IA: mostra a frase que está tocando. `aria-live="polite"` para
  * leitor de tela acompanhar sem interromper; `aria-atomic` para ler a frase inteira.

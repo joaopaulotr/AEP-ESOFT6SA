@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pencil, Send } from "lucide-react";
 
 export const CONFIRMA_MS = 3000;
@@ -50,7 +50,7 @@ export default function TranscriptConfirm({ texto, onEnviar, editarInicial = fal
     return (
         <div style={s.caixa} role="group" aria-label="Confirmar o que foi entendido">
             <p style={s.texto} aria-live="polite">
-                <span style={s.rotulo}>Entendi assim (envio em 3 s):</span> "{texto}"
+                <span style={s.rotulo}>Entendi assim (envio em 3 s):</span> &ldquo;{texto}&rdquo;
             </p>
             <button className="ui-btn" style={s.btnCorrigir} onClick={() => { setRascunho(texto); setEditando(true); }}>
                 <Pencil size={16} aria-hidden="true" /> Corrigir

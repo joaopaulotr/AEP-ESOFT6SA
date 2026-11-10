@@ -1,6 +1,3 @@
-import { useState } from "react";
-import React from "react";
-
 export default function Pointer({ size = 14, cor = "rgb(226, 90, 0)", style: extraStyle }) {
     return (
         <>

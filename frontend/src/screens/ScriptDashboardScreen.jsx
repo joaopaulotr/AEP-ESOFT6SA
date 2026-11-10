@@ -1,4 +1,3 @@
-import React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, UserPlus } from "lucide-react";
 import SideBar from "../components/SideBar";

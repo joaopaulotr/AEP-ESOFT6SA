@@ -1,5 +1,3 @@
-import React from "react";
-
 /** Tabela de dados de um gráfico (alternativa textual, aberta por "Ver dados"). */
 export default function DataTable({ legenda, colunas, linhas }) {
     return (

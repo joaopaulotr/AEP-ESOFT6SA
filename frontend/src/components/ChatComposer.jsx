@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Send } from "lucide-react";
 
 const MAX_LINHAS = 6;

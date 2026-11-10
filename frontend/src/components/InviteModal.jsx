@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Copy, ExternalLink, X } from "lucide-react";
 import { api } from "../services/api";
 import { ui, CSS } from "../styles/ui";

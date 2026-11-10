@@ -5,6 +5,7 @@ import { useAudioPlayer } from "./useAudioPlayer";
 import { useTurnStream } from "./useTurnStream";
 import { useFillers, ESPERA_FILLER_MS } from "./useFillers";
 import { useTypewriter } from "./useTypewriter";
+import { E2E } from "../utils/e2e";
 
 
 /**
@@ -193,7 +194,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     async function lerTurno(id, msg) {
         const vozAtiva = vozRef.current;
         const frases = [];
-        const naoAntesDe = Date.now() + atrasoDePensar(msg.length); // a 1ª frase não toca antes disso
+        const naoAntesDe = Date.now() + (E2E ? 0 : atrasoDePensar(msg.length)); // a 1ª frase não toca antes disso
         let fim = null;
         let detalheErro = "";
         let falhou = false;
@@ -208,7 +209,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             primeira = false;
             cadeia = cadeia.then(async () => {
                 if (cancelado || !montadoRef.current) return;
-                await digitador.revelar(t, { depoisDe, instantaneo: instantaneoRef.current });
+                await digitador.revelar(t, { depoisDe, instantaneo: E2E || instantaneoRef.current });
                 if (!cancelado && montadoRef.current) setAnuncio(t);
             });
         };
@@ -216,7 +217,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         try {
             await stream.enviar(id, msg, {
                 onPensando: () => {
-                    if (!vozAtiva) return;
+                    if (!vozAtiva || E2E) return;
                     // Demorou: talvez um "Hmm, entendi…". Entra na mesma fila, então a 1ª frase
                     // só começa depois que ele terminar (nunca sobrepõe).
                     timerFiller = setTimeout(() => {
@@ -389,12 +390,14 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             instantaneoRef.current = true;
             digitador.concluirAgora();
         }
-    }, [voz]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reage só à troca para voz; `digitador` muda a cada render e reexecutaria o efeito
+    }, [voz]);
 
     useEffect(() => {
         montadoRef.current = true;
         return () => {
             montadoRef.current = false;
+            // eslint-disable-next-line react-hooks/exhaustive-deps -- queremos os timers vigentes na desmontagem, não os do momento do efeito
             timersRef.current.forEach(clearTimeout);
         };
     }, []);
@@ -403,6 +406,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         if (iniciadoRef.current) return;
         iniciadoRef.current = true;
         iniciar();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- inicia a entrevista uma única vez ao montar (guardado por iniciadoRef)
     }, []);
 
     return {

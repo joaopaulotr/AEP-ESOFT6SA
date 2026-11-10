@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Verificação determinística de entrega do AEP ESOFT6S.
-# Uso: bash scripts/verify-delivery.sh [--backend | --frontend]
+# Uso: bash scripts/verify-delivery.sh [--backend | --frontend | --integration | --e2e]
+#   --integration  pytest -m mongo (exige MONGO_TEST_URI)
+#   --e2e          Playwright no frontend (exige frontend/playwright.config.js)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,10 +33,29 @@ verify_backend() {
   fi
 }
 
+verify_integration() {
+  local py
+  py="$(python_bin)"
+  [ -n "${MONGO_TEST_URI:-}" ] \
+    || fail "defina MONGO_TEST_URI (ex.: mongodb://127.0.0.1:27017/x) para rodar --integration"
+  step "Backend: integração com MongoDB real (pytest -m mongo)"
+  (cd "$ROOT/backend" && OPENAI_API_KEY="${OPENAI_API_KEY:-test-key}" \
+    "$py" -m pytest -q -m mongo --no-cov) || fail "testes de integração com MongoDB"
+}
+
 verify_frontend() {
-  step "Frontend: instalar dependências e build (vite)"
-  (cd "$ROOT/frontend" && npm ci --no-audit --no-fund --silent && npm run build --silent) \
-    || fail "build do frontend"
+  step "Frontend: instalar dependências, lint (se houver) e build (vite)"
+  (cd "$ROOT/frontend" && npm ci --no-audit --no-fund --silent \
+    && npm run lint --if-present --silent && npm run build --silent) \
+    || fail "lint ou build do frontend"
+}
+
+verify_e2e() {
+  [ -f "$ROOT/frontend/playwright.config.js" ] \
+    || fail "frontend/playwright.config.js não existe — E2E ainda não configurado"
+  step "Frontend: testes E2E (Playwright)"
+  (cd "$ROOT/frontend" && npm ci --no-audit --no-fund --silent && npx playwright test) \
+    || fail "testes E2E"
 }
 
 verify_hygiene() {
@@ -45,10 +66,12 @@ verify_hygiene() {
 }
 
 case "$MODE" in
-  --backend)  verify_backend ;;
-  --frontend) verify_frontend ;;
-  all)        verify_hygiene; verify_backend; verify_frontend ;;
-  *)          fail "opção desconhecida: $MODE (use --backend, --frontend ou nada)" ;;
+  --backend)     verify_backend ;;
+  --frontend)    verify_frontend ;;
+  --integration) verify_integration ;;
+  --e2e)         verify_e2e ;;
+  all)           verify_hygiene; verify_backend; verify_frontend ;;
+  *)             fail "opção desconhecida: $MODE (use --backend, --frontend, --integration, --e2e ou nada)" ;;
 esac
 
 printf '\n[OK] verificação concluída (%s)\n' "$MODE"

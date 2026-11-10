@@ -1,4 +1,3 @@
-import React from "react";
 import { Heart } from "lucide-react";
 import PublicLayout from "../components/PublicLayout";
 import { ui } from "../styles/ui";
