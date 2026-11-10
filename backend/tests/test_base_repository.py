@@ -84,6 +84,13 @@ class TestCrud:
 
         assert await notes.get("a") == Note(note_id="a", texto="oi")
 
+    async def test_upsert_creates_then_replaces_by_identity(self, notes):
+        await notes.upsert(Note(note_id="n1", texto="a"))
+        await notes.upsert(Note(note_id="n1", texto="b"))
+
+        assert await notes.count() == 1
+        assert (await notes.get("n1")).texto == "b"
+
     async def test_get_missing_returns_none(self, notes):
         assert await notes.get("x") is None
 
@@ -213,3 +220,20 @@ class TestList:
 
     async def test_empty_collection_returns_empty_list(self, notes):
         assert await notes.list() == []
+
+
+class TestDeleteByIdPrefix:
+    async def test_deletes_only_ids_with_the_prefix_and_counts_them(self, notes):
+        for note_id in ("demo-1", "demo-2", "real-demo-3", "x"):
+            await notes.create(Note(note_id=note_id, texto="t"))
+
+        assert await notes.delete_by_id_prefix("demo-") == 2
+
+        assert {n.note_id for n in await notes.list()} == {"real-demo-3", "x"}
+
+    async def test_prefix_is_literal_not_a_pattern(self, notes):
+        await notes.create(Note(note_id="a.b", texto="t"))
+        await notes.create(Note(note_id="axb", texto="t"))
+
+        assert await notes.delete_by_id_prefix("a.") == 1
+        assert await notes.get("axb") is not None

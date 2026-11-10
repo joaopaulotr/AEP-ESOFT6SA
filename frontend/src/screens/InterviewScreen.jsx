@@ -1,6 +1,6 @@
 import React from "react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Mic, Square, Send, Volume2, XCircle, Clock } from "lucide-react";
 import SideBar from "../components/SideBar";
 import Avatar from "../components/Avatar";
@@ -9,18 +9,23 @@ import { useInterviewSession } from "../hooks/useInterviewSession";
 import { useRecorder } from "../hooks/useRecorder";
 import { useElapsedTime } from "../hooks/useElapsedTime";
 import { mmss } from "../utils/tempo";
+import EstadoTela from "../components/EstadoTela";
+import { ui, CSS as UI_CSS } from "../styles/ui";
 import { style, CSS } from "./InterviewScreen.styles";
 
 const INTERVIEWER = "du";
 
 export default function InterviewScreen() {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const scriptId = searchParams.get("roteiro") || undefined;
     const [texto, setTexto] = useState("");
     const msgsRef = useRef(null);
     const segundos = useElapsedTime();
 
     const sessao = useInterviewSession({
-        onFinished: (sessionId) => navigate("/feedback", { state: { sessionId } }),
+        scriptId,
+        onFinished: (sessionId, extra) => navigate("/feedback", { state: { sessionId, ...extra } }),
     });
     const { perguntaAtual, indiceAtual, turno, processando, finalizada, transcricao, erro } = sessao;
 
@@ -64,6 +69,20 @@ export default function InterviewScreen() {
         ? "ENTREVISTA ENCERRADA"
         : "SUA VEZ DE RESPONDER";
 
+    if (sessao.erroInicio) {
+        return (
+            <SideBar>
+                <div style={ui.page}>
+                    <style>{UI_CSS}</style>
+                    <EstadoTela erro={sessao.erroInicio} onRetry={sessao.tentarDeNovo} />
+                    <button className="ui-btn" style={ui.voltar} onClick={() => navigate("/entrevistas")}>
+                        Escolher outra entrevista
+                    </button>
+                </div>
+            </SideBar>
+        );
+    }
+
     return (
         <SideBar>
             <div style={style.root}>
@@ -72,13 +91,16 @@ export default function InterviewScreen() {
                 <header style={style.topbar}>
                     <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                         <span style={style.recTag}><span className="rec-dot" /> ENTREVISTA EM ANDAMENTO</span>
+                        {sessao.tituloRoteiro && <span style={style.roteiroTitulo}>{sessao.tituloRoteiro}</span>}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={style.timer}><Clock size={15} /> {mmss(segundos)}</span>
                         <ThemeToggle />
-                        <button style={style.concluirBtn} onClick={sessao.concluir}>
-                            <XCircle size={17} /> Concluir
-                        </button>
+                        {sessao.sessionId && (
+                            <button style={style.concluirBtn} onClick={sessao.concluir}>
+                                <XCircle size={17} /> Concluir
+                            </button>
+                        )}
                     </div>
                 </header>
 

@@ -65,12 +65,12 @@ def test_graph_is_compiled_once():
 
 def test_full_interview_runs_offline_with_fake_providers():
     with TestClient(app) as client:
-        session_id = client.post("/session").json()["session_id"]
+        session_id = client.post("/api/v1/session").json()["session_id"]
         replies = [
-            client.post(f"/turn/{session_id}", json={"texto": "resposta"}).json()
+            client.post(f"/api/v1/turn/{session_id}", json={"texto": "resposta"}).json()
             for _ in CORE_QUESTIONS
         ]
-        sintese = client.post(f"/session/{session_id}/synthesis").json()
+        sintese = client.post(f"/api/v1/session/{session_id}/synthesis").json()
     assert [r["finalizada"] for r in replies] == [False, False, False, True]
     assert replies[-1]["fala"] == DEFAULT_CLOSING
     assert sintese == {"sintese": "Síntese gerada em modo offline (provider fake)."}

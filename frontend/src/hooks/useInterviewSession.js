@@ -4,7 +4,7 @@ import { agora } from "../utils/tempo";
 import { useAudioPlayer } from "./useAudioPlayer";
 
 
-export function useInterviewSession({ onFinished } = {}) {
+export function useInterviewSession({ scriptId, onFinished } = {}) {
     const [sessionId, setSessionId] = useState(null);
     const [perguntaAtual, setPerguntaAtual] = useState("");
     const [indiceAtual, setIndiceAtual] = useState(0);
@@ -13,6 +13,8 @@ export function useInterviewSession({ onFinished } = {}) {
     const [finalizada, setFinalizada] = useState(false);
     const [transcricao, setTranscricao] = useState([]);
     const [erro, setErro] = useState(null); 
+    const [erroInicio, setErroInicio] = useState("");
+    const [tituloRoteiro, setTituloRoteiro] = useState("");
 
     const player = useAudioPlayer();
 
@@ -20,6 +22,7 @@ export function useInterviewSession({ onFinished } = {}) {
     const sessionIdRef = useRef(null);
     const processandoRef = useRef(false);
     const iniciadoRef = useRef(false);
+    const respostasRef = useRef(0);
     const onFinishedRef = useRef(onFinished);
     onFinishedRef.current = onFinished;
 
@@ -33,6 +36,7 @@ export function useInterviewSession({ onFinished } = {}) {
     }
 
     function adicionarMensagem(quem, texto) {
+        if (quem === "voce") respostasRef.current += 1;
         setTranscricao((prev) => [...prev, { quem, texto, hora: agora() }]);
     }
 
@@ -62,13 +66,15 @@ export function useInterviewSession({ onFinished } = {}) {
     }
 
     async function iniciar() {
+        setErroInicio("");
         try {
-            const data = await api.createSession();
+            const data = await api.createSession({ scriptId });
+            setTituloRoteiro(data.titulo || "");
             sessionIdRef.current = data.session_id;
             setSessionId(data.session_id);
             await apresentarFala(data.pergunta, 0, false);
-        } catch {
-            falhar("Não consegui iniciar a entrevista. O backend está no ar?");
+        } catch (e) {
+            setErroInicio(e?.detail || "Não consegui iniciar a entrevista. O servidor está no ar?");
         }
     }
 
@@ -106,6 +112,11 @@ export function useInterviewSession({ onFinished } = {}) {
     }
 
     async function concluir() {
+        const respostas = respostasRef.current;
+        const aviso = respostas === 0
+            ? "Você ainda não respondeu nada. Encerrar mesmo assim?"
+            : "Encerrar a entrevista agora?";
+        if (!window.confirm(aviso)) return;
         player.stop();
         const id = sessionIdRef.current;
         if (id) {
@@ -115,7 +126,7 @@ export function useInterviewSession({ onFinished } = {}) {
                 // Mesmo com erro, leva para o feedback.
             }
         }
-        onFinishedRef.current?.(id);
+        onFinishedRef.current?.(id, { respostas });
     }
 
     useEffect(() => {
@@ -127,6 +138,7 @@ export function useInterviewSession({ onFinished } = {}) {
 
     return {
         sessionId,
+        tituloRoteiro,
         perguntaAtual,
         indiceAtual,
         turno,
@@ -134,6 +146,8 @@ export function useInterviewSession({ onFinished } = {}) {
         finalizada,
         transcricao,
         erro,
+        erroInicio,
+        tentarDeNovo: iniciar,
         audioTocando: player.tocando, 
         enviarResposta,
         enviarAudio,

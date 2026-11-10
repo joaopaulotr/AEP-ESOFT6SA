@@ -21,6 +21,11 @@ class SynthesisRepository(BaseRepository[Synthesis]):
         document = await self._collection.find_one({"escopo": "sessao", "session_id": session_id})
         return None if document is None else self._to_model(document)
 
+    async def delete_for_session(self, session_id: str) -> int:
+        """Apaga a síntese da sessão (cascata da exclusão da sessão). Devolve quantas apagou."""
+        result = await self._collection.delete_many({"escopo": "sessao", "session_id": session_id})
+        return result.deleted_count
+
     async def list_for_script(self, script_id: str, *, limit: int = 100) -> list[Synthesis]:
         return await self.list({"script_id": script_id}, limit=limit)
 

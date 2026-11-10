@@ -11,6 +11,8 @@ from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.synthesis_repository import SynthesisRepository
 from app.services.interview_service import InterviewService
+from app.services.participant_service import ParticipantService
+from app.services.script_service import ScriptService
 from app.services.session_service import SessionService
 from app.services.synthesis_service import SynthesisService
 
@@ -72,7 +74,18 @@ def get_session_service() -> SessionService:
         scripts=get_script_repository(),
         participants=get_participant_repository(),
         interview=get_interview_service(),
+        syntheses=get_synthesis_repository(),
     )
+
+
+@lru_cache(maxsize=1)
+def get_script_service() -> ScriptService:
+    return ScriptService(get_script_repository(), get_session_repository())
+
+
+@lru_cache(maxsize=1)
+def get_participant_service() -> ParticipantService:
+    return ParticipantService(get_participant_repository(), get_session_repository())
 
 
 @lru_cache(maxsize=1)
@@ -94,6 +107,8 @@ def reset_dependencies() -> None:
         get_speech_provider,
         get_interview_service,
         get_session_service,
+        get_script_service,
+        get_participant_service,
         get_synthesis_service,
     ):
         getter.cache_clear()

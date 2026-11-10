@@ -4,6 +4,9 @@ import LoginScreen from "./screens/LoginScreen";
 import WelcomeScreen from "./screens/WelcomeScreen";
 import InterviewScreen from "./screens/InterviewScreen";
 import FeedbackScreen from "./screens/FeedbackScreen";
+import ScriptsScreen from "./screens/ScriptsScreen";
+import ScriptSessionsScreen from "./screens/ScriptSessionsScreen";
+import SessionDetailScreen from "./screens/SessionDetailScreen";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 
@@ -13,6 +16,9 @@ export default function App() {
             <Routes>
                 <Route path="/" element={<LoginScreen />} />
                 <Route path="/welcome" element={<WelcomeScreen />} />
+                <Route path="/entrevistas" element={<ScriptsScreen />} />
+                <Route path="/entrevistas/:scriptId" element={<ScriptSessionsScreen />} />
+                <Route path="/sessao/:sessionId" element={<SessionDetailScreen />} />
                 <Route path="/entrevista" element={<InterviewScreen />} />
                 <Route path="/feedback" element={<FeedbackScreen />} />
             </Routes>

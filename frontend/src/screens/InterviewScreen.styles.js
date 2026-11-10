@@ -15,6 +15,12 @@ button:focus-visible,textarea:focus-visible{outline:3px solid var(--color-focus)
 `;
  
 export const style = {
+    roteiroTitulo: {
+        fontFamily: "var(--font-sans)",
+        fontSize: 14,
+        fontWeight: 600,
+        color: "var(--color-text-2)",
+    },
     root: {
         width: "100%",
         boxSizing: "border-box",

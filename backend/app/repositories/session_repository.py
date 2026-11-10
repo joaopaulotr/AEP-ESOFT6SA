@@ -1,9 +1,11 @@
+from datetime import datetime, timezone
 from collections.abc import Awaitable, Callable
 
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
 from app.db import collections
 from app.repositories.base import BaseRepository
+from app.schemas.api import SessionSummary
 from app.schemas.interview import (
     ActionCount,
     InterviewState,
@@ -26,11 +28,105 @@ class SessionRepository(BaseRepository[InterviewState]):
     stale_message = "A sessão foi alterada por outra ação. Tente de novo."
     extra_indexes = (
         IndexModel([("script_id", ASCENDING), ("created_at", DESCENDING)], name="script_id_data"),
+        IndexModel([("script_id", ASCENDING), ("updated_at", DESCENDING)], name="script_id_atualizada"),
         IndexModel([("participant_id", ASCENDING)], name="participant_id"),
     )
 
     async def list_by_script(self, script_id: str, *, limit: int = 100) -> list[InterviewState]:
         return await self.list({"script_id": script_id}, limit=limit)
+
+    async def count_by_script(self, script_ids: list[str]) -> dict[str, tuple[int, int]]:
+        """script_id -> (total, concluídas) dos roteiros pedidos, numa só agregação."""
+        rows = await self._collection.aggregate(
+            [
+                {"$match": {"script_id": {"$in": script_ids}}},
+                {
+                    "$group": {
+                        "_id": "$script_id",
+                        "total": {"$sum": 1},
+                        "concluidas": {"$sum": {"$cond": ["$finished", 1, 0]}},
+                    }
+                }
+            ]
+        ).to_list(length=None)
+        return {row["_id"]: (row["total"], row["concluidas"]) for row in rows}
+
+    async def has_for_script(self, script_id: str) -> bool:
+        return await self.count({"script_id": script_id}) > 0
+
+    async def has_for_participant(self, participant_id: str) -> bool:
+        return await self.count({"participant_id": participant_id}) > 0
+
+    async def list_summaries(
+        self, script_id: str, *, status: str | None = None, limit: int = 50
+    ) -> list[SessionSummary]:
+        """Sessões do roteiro, mais recentes primeiro, com o apelido do participante e a
+        existência de síntese resolvidos por $lookup (sem consulta extra por sessão)."""
+        match: dict = {"script_id": script_id}
+        if status is not None:
+            match["status"] = status
+        pipeline = [
+            {"$match": match},
+            {"$sort": {"updated_at": -1, "session_id": 1}},
+            {"$limit": limit},
+            {
+                "$lookup": {
+                    "from": collections.PARTICIPANTS,
+                    "localField": "participant_id",
+                    "foreignField": "participant_id",
+                    "as": "participante_doc",
+                }
+            },
+            {
+                "$lookup": {
+                    "from": collections.SYNTHESES,
+                    "localField": "session_id",
+                    "foreignField": "session_id",
+                    "as": "sinteses",
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "session_id": 1,
+                    "script_id": 1,
+                    "participant_id": 1,
+                    "status": 1,
+                    "created_at": 1,
+                    "updated_at": 1,
+                    "participante_doc.apelido": 1,
+                    "respostas": {
+                        "$size": {
+                            "$filter": {
+                                "input": {"$ifNull": ["$conversation", []]},
+                                "as": "turno",
+                                "cond": {"$eq": ["$$turno.role", "participant"]},
+                            }
+                        }
+                    },
+                    "tem_sintese": {
+                        "$gt": [
+                            {
+                                "$size": {
+                                    "$filter": {
+                                        "input": "$sinteses",
+                                        "as": "s",
+                                        "cond": {"$eq": ["$$s.escopo", "sessao"]},
+                                    }
+                                }
+                            },
+                            0,
+                        ]
+                    },
+                }
+            },
+        ]
+        summaries = []
+        for document in await self._collection.aggregate(pipeline).to_list(length=limit):
+            owner = document.pop("participante_doc", None) or []
+            document["participante"] = owner[0].get("apelido") if owner else None
+            summaries.append(self._validate(SessionSummary, document, self.collection_name))
+        return summaries
 
     async def list_by_participant(
         self, participant_id: str, *, limit: int = 100
@@ -52,6 +148,7 @@ class SessionRepository(BaseRepository[InterviewState]):
             {"script_id": {"$exists": False}},
             {"session_id": 1, "finished": 1, "synthesis": 1},
         ).to_list(length=None)
+        now = datetime.now(timezone.utc)
         for document in legacy:
             session_id = document["session_id"]
             old_synthesis = document.get("synthesis")
@@ -69,6 +166,12 @@ class SessionRepository(BaseRepository[InterviewState]):
                     "$unset": {"synthesis": ""},
                 },
             )
+            # Sem datas, a sessão não valida em SessionSummary nem ordena na listagem.
+            for date_field in ("created_at", "updated_at"):
+                await self._collection.update_one(
+                    {"session_id": session_id, date_field: {"$exists": False}},
+                    {"$set": {date_field: now}},
+                )
         return len(legacy)
 
     # -- consultas relacionais ($lookup) ----------------------------------

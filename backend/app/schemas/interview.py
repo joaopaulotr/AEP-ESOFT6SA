@@ -56,6 +56,9 @@ class SynthesisResponse(BaseModel):
 class SessionResponse(BaseModel):
     session_id: str
     pergunta: str
+    script_id: str
+    titulo: str
+    perguntas_total: int
 
 
 class InterviewState(BaseModel):
