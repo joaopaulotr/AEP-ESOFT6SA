@@ -21,6 +21,7 @@ import { style, CSS } from "./InterviewScreen.styles";
 
 const INTERVIEWER = "du";
 const SILENCIO_INCENTIVO_MS = 12000;
+const SO_LEITOR = { position: "absolute", width: 1, height: 1, margin: -1, padding: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 };
 const INCENTIVO = "Pode ficar à vontade, sem pressa.";
 
 /**
@@ -94,7 +95,7 @@ function Entrevista({ publico, slug }) {
     useEffect(() => {
         const el = msgsRef.current;
         if (el) el.scrollTop = el.scrollHeight;
-    }, [transcricao]);
+    }, [transcricao, sessao.digitado]);
 
     useEffect(() => {
         if (erro) alert(erro.mensagem);
@@ -209,7 +210,7 @@ function Entrevista({ publico, slug }) {
                             style={{ ...style.msgs, maxHeight: "60vh" }}
                             ref={msgsRef}
                             role="log"
-                            aria-live="polite"
+                            aria-live="off"
                             aria-label="Conversa da entrevista"
                         >
                             {transcricao.length === 0 && <p style={ui.meta}>Conectando à entrevista…</p>}
@@ -222,12 +223,18 @@ function Entrevista({ publico, slug }) {
                                 </div>
                             ))}
                             {processando && (
-                                <div style={{ alignSelf: "flex-start", maxWidth: "88%" }}>
+                                <div style={{ alignSelf: "flex-start", maxWidth: "88%" }} aria-hidden="true">
                                     <div style={style.msgMeta}>{INTERVIEWER}</div>
-                                    <div style={{ ...style.bubble, fontStyle: "italic", color: "var(--color-text-muted)" }}>digitando…</div>
+                                    {sessao.digitado ? (
+                                        <div style={style.bubble}>{sessao.digitado}</div>
+                                    ) : (
+                                        <div style={{ ...style.bubble, fontStyle: "italic", color: "var(--color-text-muted)" }}>digitando…</div>
+                                    )}
                                 </div>
                             )}
                         </div>
+                        {/* Única região ao vivo do modo texto: recebe a frase pronta (não cada caractere). */}
+                        <div style={SO_LEITOR} role="status" aria-live="polite" aria-label="Fala do entrevistador">{sessao.anuncio}</div>
                         {incentivo && aguardando && <p style={{ ...style.incentivo, padding: "0 14px" }} role="status">{INCENTIVO}</p>}
                         <ChatComposer
                             desabilitado={!sessao.sessionId || finalizada || turno !== "voce"}

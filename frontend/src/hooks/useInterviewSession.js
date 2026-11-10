@@ -4,6 +4,7 @@ import { agora, atrasoDePensar } from "../utils/tempo";
 import { useAudioPlayer } from "./useAudioPlayer";
 import { useTurnStream } from "./useTurnStream";
 import { useFillers, ESPERA_FILLER_MS } from "./useFillers";
+import { useTypewriter } from "./useTypewriter";
 
 
 /**
@@ -31,6 +32,9 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     const player = useAudioPlayer();
     const stream = useTurnStream();
     const fillers = useFillers();
+    const digitador = useTypewriter(); // modo texto: revela a fala da IA no ritmo de digitação
+    const [anuncio, setAnuncio] = useState(""); // última frase da IA pronta, para leitores de tela (1 vez por frase)
+    const instantaneoRef = useRef(false); // trocou para voz no meio da revelação: o resto aparece de uma vez
 
     const sessionIdRef = useRef(null);
     const processandoRef = useRef(false);
@@ -120,6 +124,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         setPerguntaAtual(fala);
         if (typeof indice === "number") setIndiceAtual(indice);
         adicionarMensagem("ia", fala);
+        setAnuncio(fala);
         setTurno("interviewer");
         falarFrase(fala);
         await concluirFala(terminou);
@@ -194,6 +199,20 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         let falhou = false;
         let encerrado = false; // turno acabou (fim/erro/exceção): nenhum filler tardio
         let timerFiller = null;
+        // Modo texto: cada frase entra numa cadeia que a revela em ordem (a 1ª só após o atraso de pensar).
+        let cadeia = Promise.resolve();
+        let cancelado = false;
+        let primeira = true;
+        const revelarFrase = (t) => {
+            const depoisDe = primeira ? naoAntesDe : undefined;
+            primeira = false;
+            cadeia = cadeia.then(async () => {
+                if (cancelado || !montadoRef.current) return;
+                await digitador.revelar(t, { depoisDe, instantaneo: instantaneoRef.current });
+                if (!cancelado && montadoRef.current) setAnuncio(t);
+            });
+        };
+        if (!vozAtiva) digitador.novoTurno();
         try {
             await stream.enviar(id, msg, {
                 onPensando: () => {
@@ -210,6 +229,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
                 },
                 onFrase: ({ texto }) => {
                     frases.push(texto);
+                    if (!vozAtiva) revelarFrase(texto);
                     if (!vozAtiva || interrompidoRef.current) return;
                     falarFrase(texto, {
                         naoAntesDe: frases.length === 1 ? naoAntesDe : undefined,
@@ -241,6 +261,9 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         }
         if (!montadoRef.current) return { erro: "", silencioso: true };
         if (!fim || falhou) {
+            cancelado = true;
+            digitador.parar();
+            digitador.limpar();
             player.stop();
             setLegenda("");
             // "Concluir" (ou sair) aborta o stream de propósito: não é erro para mostrar.
@@ -248,6 +271,11 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         }
         if (vozAtiva && !frases.length && !interrompidoRef.current) {
             falarFrase(fim.fala, { naoAntesDe, aoIniciar: () => setProcessando(false) });
+        }
+        if (!vozAtiva) {
+            if (!frases.length) revelarFrase(fim.fala);
+            await cadeia;
+            if (!montadoRef.current) return { erro: "", silencioso: true };
         }
         return { fim };
     }
@@ -259,6 +287,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         if (!montadoRef.current || processandoRef.current || encerrandoRef.current) return false;
 
         interrompidoRef.current = false;
+        instantaneoRef.current = false;
         // Começou em texto e passou para voz: prepara os fillers agora (valem do próximo turno).
         if (vozRef.current && !fillers.preparadoRef.current) fillers.preparar(tomRef.current);
         adicionarMensagem("voce", msg);
@@ -284,6 +313,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
                     acao: fim.acao || null,
                 }));
                 adicionarMensagem("ia", fim.fala);
+                digitador.limpar(); // a bolha em construção vira a mensagem definitiva
                 await concluirFala(fim.finalizada);
             })
             .finally(() => {
@@ -348,6 +378,14 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         if (montadoRef.current) onFinishedRef.current?.(id, { respostas });
     }
 
+    // Passou para voz no meio da revelação: termina o texto na hora (sem timers pendentes).
+    useEffect(() => {
+        if (voz) {
+            instantaneoRef.current = true;
+            digitador.concluirAgora();
+        }
+    }, [voz]); // eslint-disable-line react-hooks/exhaustive-deps
+
     useEffect(() => {
         montadoRef.current = true;
         return () => {
@@ -374,6 +412,8 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         erro,
         erroInicio,
         legenda,
+        digitado: digitador.texto,
+        anuncio,
         encerrando,
         audioReproduzindo: player.tocando,
         progresso,
