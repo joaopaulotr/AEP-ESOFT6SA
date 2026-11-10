@@ -117,9 +117,9 @@ Todas as rotas abaixo ficam sob `/api/v1`, exceto `GET /health` (raiz, usado pel
 | Método | Rota | Responsabilidade | Erros principais |
 |---|---|---|---|
 | `GET` | `/scripts?ativos=true` | Lista roteiros com contagens (perguntas, sessões, concluídas, em andamento); `ativos=false` inclui os desativados | — |
-| `POST` | `/scripts` | Cria roteiro (`201`); a ordem das perguntas é a posição na lista | `409` identificador ou link de convite duplicado |
+| `POST` | `/scripts` | Cria roteiro (`201`); a ordem das perguntas é a posição na lista | — |
 | `GET` | `/scripts/{script_id}` | Roteiro completo | `404` |
-| `PUT` | `/scripts/{script_id}` | Edita campos, perguntas e persona | `404`; `409` roteiro padrão (não pode ser desativado nem ter perguntas alteradas), perguntas com entrevistas em andamento ou versão velha |
+| `PUT` | `/scripts/{script_id}` | Edita campos, perguntas e persona | `404`; `409` roteiro padrão (não pode ser desativado nem ter perguntas alteradas), perguntas de roteiro que já tem entrevistas (concluídas ou não; crie um novo roteiro) ou versão velha |
 | `DELETE` | `/scripts/{script_id}` | Sem sessões, apaga; com sessões, só desativa (`204`) | `404`; `409` roteiro padrão |
 | `GET` | `/scripts/{script_id}/sessions?status=&limit=` | Resumo das sessões do roteiro (`status`: `em_andamento` ou `concluida`; `limit` 1 a 200, padrão 50) | `404` roteiro |
 | `GET` | `/participants` | Lista participantes | — |
@@ -339,7 +339,9 @@ cd backend && .venv/Scripts/python -m scripts.seed_demo --reset   # apaga só os
 
 Cria 3 roteiros novos (transporte na periferia, UBS, trabalho por aplicativo) além do generalista,
 10 participantes, 14 sessões e as sínteses (por sessão e uma por roteiro), em português e
-alinhadas à ODS 10. Todos os ids começam com `demo-`; rodar de novo não duplica nada e o `--reset`
+alinhadas à ODS 10. Serve só para um banco de demonstração: parte das sessões entra no roteiro
+"Entrevista generalista" e passa a contar nas totais dele, e as sínteses são texto escrito à mão
+(modelo `demo`), não geradas pela IA. Todos os ids começam com `demo-`; rodar de novo não duplica nada e o `--reset`
 nunca toca em dados reais.
 
 ## 6. Testes e cobertura

@@ -184,10 +184,10 @@ Decisões da implementação:
 
 | Recurso | Rotas |
 |---|---|
-| Roteiros | `GET/POST /scripts`, `GET/PUT/DELETE /scripts/{id}`, `POST /scripts/upload` (EV-30) |
+| Roteiros | `GET/POST /scripts`, `GET/PUT/DELETE /scripts/{id}`; `POST /scripts/upload` fica para o EV-30 (próxima fase) |
 | Participantes | `GET/POST /participants`, `GET/PUT/DELETE /participants/{id}` |
-| Sessões | `POST /session` recebe `script_id` (+ `participant_id` opcional); `GET /scripts/{id}/sessions`; `GET /sessions/{id}/detalhes` (`$lookup`) |
-| Sínteses | `GET /syntheses/session/{id}`, `POST /syntheses/script/{id}` (EV-33) |
+| Sessões | `POST /session` recebe `script_id` (+ `participant_id` opcional); `GET /scripts/{id}/sessions`; `GET /session/{id}/detalhes` (`$lookup`); `DELETE /session/{id}` (cascata na síntese); `POST /session/{id}/finish` |
+| Sínteses | Entregue: `GET/POST /session/{id}/synthesis` (por sessão). As rotas da síntese de roteiro (`/syntheses/...`) ficam para o EV-33 (próxima fase) |
 
 Todas sob o prefixo `/api/v1` (EV-15).
 
@@ -195,10 +195,10 @@ Pendências registradas na revisão do EV-01/EV-02 (resolver junto com as rotas)
 
 - ✅ resolvido — **Excluir sessão apaga a síntese dela** (cascata no `SessionService`, com teste): a síntese deriva da fala
   do participante e não pode ficar órfã (RK-11).
-- ✅ resolvido — **Editar perguntas de roteiro com sessões em andamento:** a sessão aponta para a posição da pergunta
-  (`current_index`), então inserir/reordenar perguntas no meio desloca quem está respondendo. Opções:
-  bloquear (409) edição de perguntas de roteiro com sessões `em_andamento`, ou congelar uma cópia do roteiro
-  na sessão. Excluir roteiro com sessões: preferir `ativo=false`.
+- ✅ resolvido — **Editar perguntas de roteiro com sessões:** a conversa guarda a posição da pergunta, então mudar as
+  perguntas embaralharia a transcrição de entrevistas já feitas. Regra entregue: as perguntas só mudam se o roteiro
+  não tem **nenhuma** sessão (409 "Este roteiro já tem entrevistas. Crie um novo roteiro para mudar as perguntas.").
+  Excluir roteiro com sessões só o desativa (`ativo=false`).
 
 ### EV-04 — Quadro de tarefas `TODO` (R4, RK-02)
 
@@ -288,6 +288,8 @@ Pesquisa resumida (fontes na seção 13):
 - **Detecção de fim de fala (VAD)** no navegador: para de gravar após silêncio (~1,2 s) em vez de exigir clique.
 - **Barge-in**: se o participante começa a falar enquanto a IA fala, o áudio da IA para.
 - Silêncio longo do participante → incentivo gentil ("pode ficar à vontade, sem pressa").
+- Pendência vinda do EV-17: o `useRecorder` ainda não tem VAD (grava e envia por clique) e o `useAudioPlayer` não
+  tem barge-in (só `play`/`stop`).
 
 ### EV-25 — Memória e coerência `TODO`
 
@@ -335,6 +337,8 @@ O pesquisador **sobe o questionário que já tem** e a plataforma transforma em 
   literais com link para a sessão de origem, lacunas.
 - Salvo em `syntheses` com `escopo: roteiro`. Map-reduce: usa as sínteses individuais já salvas como entrada.
 - Síntese individual passa a ser estruturada (JSON → `temas[]`, `citacoes[]`) e cacheada (EV-13).
+- Pendência: excluir sessão deve remover suas citações das sínteses de roteiro (hoje a cascata só apaga a síntese
+  da própria sessão).
 
 ### EV-34 — Modo texto `TODO`
 
@@ -371,6 +375,7 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 - `POST /api/v1/turn/{id}/stream` devolve Server-Sent Events: tokens do texto conforme gerados;
   TTS por frase assim que a primeira frase fecha → áudio começa antes da resposta inteira existir (RK-08).
 - Base para o efeito de digitação do modo texto (EV-22).
+- Inclui o hook `useTurnStream` no front (consumo do SSE), que não existe ainda.
 
 ### EV-62 — Logs estruturados e métricas de custo `TODO`
 
@@ -414,7 +419,8 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 
 ### EV-17 — Refatoração da `InterviewScreen` `DONE`
 
-- Hooks: `useRecorder` (MediaRecorder + VAD), `useAudioPlayer` (fila + barge-in), `useInterviewSession`, `useTurnStream` (SSE).
+- Entregue: hooks `useRecorder` (MediaRecorder, envio por clique), `useAudioPlayer` (`play`/`stop`) e
+  `useInterviewSession`, mais `useApiResource` para as telas de lista. VAD e barge-in estão no EV-24; `useTurnStream` (SSE) no EV-60.
 - Client HTTP único em `services/api.js`; nada de `fetch` espalhado nas telas.
 
 ---
