@@ -13,6 +13,7 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
     const [finalizada, setFinalizada] = useState(false);
     const [transcricao, setTranscricao] = useState([]);
     const [erro, setErro] = useState(null); 
+    const [erroInicio, setErroInicio] = useState("");
     const [tituloRoteiro, setTituloRoteiro] = useState("");
 
     const player = useAudioPlayer();
@@ -21,6 +22,7 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
     const sessionIdRef = useRef(null);
     const processandoRef = useRef(false);
     const iniciadoRef = useRef(false);
+    const respostasRef = useRef(0);
     const onFinishedRef = useRef(onFinished);
     onFinishedRef.current = onFinished;
 
@@ -34,6 +36,7 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
     }
 
     function adicionarMensagem(quem, texto) {
+        if (quem === "voce") respostasRef.current += 1;
         setTranscricao((prev) => [...prev, { quem, texto, hora: agora() }]);
     }
 
@@ -63,6 +66,7 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
     }
 
     async function iniciar() {
+        setErroInicio("");
         try {
             const data = await api.createSession({ scriptId });
             setTituloRoteiro(data.titulo || "");
@@ -70,7 +74,7 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
             setSessionId(data.session_id);
             await apresentarFala(data.pergunta, 0, false);
         } catch (e) {
-            falhar(e?.detail || "Não consegui iniciar a entrevista. O backend está no ar?");
+            setErroInicio(e?.detail || "Não consegui iniciar a entrevista. O servidor está no ar?");
         }
     }
 
@@ -108,6 +112,11 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
     }
 
     async function concluir() {
+        const respostas = respostasRef.current;
+        const aviso = respostas === 0
+            ? "Você ainda não respondeu nada. Encerrar mesmo assim?"
+            : "Encerrar a entrevista agora?";
+        if (!window.confirm(aviso)) return;
         player.stop();
         const id = sessionIdRef.current;
         if (id) {
@@ -117,7 +126,7 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
                 // Mesmo com erro, leva para o feedback.
             }
         }
-        onFinishedRef.current?.(id);
+        onFinishedRef.current?.(id, { respostas });
     }
 
     useEffect(() => {
@@ -137,6 +146,8 @@ export function useInterviewSession({ scriptId, onFinished } = {}) {
         finalizada,
         transcricao,
         erro,
+        erroInicio,
+        tentarDeNovo: iniciar,
         audioTocando: player.tocando, 
         enviarResposta,
         enviarAudio,

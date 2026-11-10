@@ -9,6 +9,8 @@ import { useInterviewSession } from "../hooks/useInterviewSession";
 import { useRecorder } from "../hooks/useRecorder";
 import { useElapsedTime } from "../hooks/useElapsedTime";
 import { mmss } from "../utils/tempo";
+import EstadoTela from "../components/EstadoTela";
+import { ui, CSS as UI_CSS } from "../styles/ui";
 import { style, CSS } from "./InterviewScreen.styles";
 
 const INTERVIEWER = "du";
@@ -23,7 +25,7 @@ export default function InterviewScreen() {
 
     const sessao = useInterviewSession({
         scriptId,
-        onFinished: (sessionId) => navigate("/feedback", { state: { sessionId } }),
+        onFinished: (sessionId, extra) => navigate("/feedback", { state: { sessionId, ...extra } }),
     });
     const { perguntaAtual, indiceAtual, turno, processando, finalizada, transcricao, erro } = sessao;
 
@@ -67,6 +69,20 @@ export default function InterviewScreen() {
         ? "ENTREVISTA ENCERRADA"
         : "SUA VEZ DE RESPONDER";
 
+    if (sessao.erroInicio) {
+        return (
+            <SideBar>
+                <div style={ui.page}>
+                    <style>{UI_CSS}</style>
+                    <EstadoTela erro={sessao.erroInicio} onRetry={sessao.tentarDeNovo} />
+                    <button className="ui-btn" style={ui.voltar} onClick={() => navigate("/entrevistas")}>
+                        Escolher outra entrevista
+                    </button>
+                </div>
+            </SideBar>
+        );
+    }
+
     return (
         <SideBar>
             <div style={style.root}>
@@ -80,9 +96,11 @@ export default function InterviewScreen() {
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={style.timer}><Clock size={15} /> {mmss(segundos)}</span>
                         <ThemeToggle />
-                        <button style={style.concluirBtn} onClick={sessao.concluir}>
-                            <XCircle size={17} /> Concluir
-                        </button>
+                        {sessao.sessionId && (
+                            <button style={style.concluirBtn} onClick={sessao.concluir}>
+                                <XCircle size={17} /> Concluir
+                            </button>
+                        )}
                     </div>
                 </header>
 

@@ -126,6 +126,8 @@ export default function SessionDetailScreen() {
     const detalhes = useApiResource(() => api.getSessionDetails(sessionId), [sessionId]);
     const [excluindo, setExcluindo] = useState(false);
     const [erroExcluir, setErroExcluir] = useState("");
+    const [encerrando, setEncerrando] = useState(false);
+    const [erroEncerrar, setErroEncerrar] = useState("");
 
     const d = detalhes.data;
     const sessao = d?.session;
@@ -133,6 +135,20 @@ export default function SessionDetailScreen() {
     const scriptId = sessao?.script_id;
     const pessoa = d?.participant?.apelido || "Anônimo";
     const voltarPara = scriptId ? `/entrevistas/${encodeURIComponent(scriptId)}` : "/entrevistas";
+
+    async function encerrar() {
+        if (!window.confirm("Encerrar esta entrevista? Depois não dá para continuar a conversa.")) return;
+        setEncerrando(true);
+        setErroEncerrar("");
+        try {
+            await api.finishSession(sessionId);
+            await detalhes.recarregar();
+        } catch (e) {
+            setErroEncerrar(e.detail || "Não consegui encerrar a entrevista.");
+        } finally {
+            setEncerrando(false);
+        }
+    }
 
     async function excluir() {
         if (!window.confirm("Excluir esta entrevista? Isso apaga a conversa e a síntese, e não dá para desfazer.")) return;
@@ -169,7 +185,13 @@ export default function SessionDetailScreen() {
                             {sessao.status === "em_andamento" && (
                                 <p role="status" style={{ ...ui.card, margin: "0 0 16px", display: "flex", gap: 8, alignItems: "center", fontSize: 15, color: "var(--color-text)" }}>
                                     <Info size={16} aria-hidden="true" /> Entrevista em andamento.
+                                    <button className="ui-btn" style={ui.btnSecundario} onClick={encerrar} disabled={encerrando}>
+                                        {encerrando ? "Encerrando…" : "Encerrar entrevista"}
+                                    </button>
                                 </p>
+                            )}
+                            {erroEncerrar && (
+                                <p role="alert" style={{ margin: "0 0 16px", color: "var(--color-error)", fontSize: 14 }}>{erroEncerrar}</p>
                             )}
 
                             <section style={ui.card} aria-labelledby="titulo-conversa">

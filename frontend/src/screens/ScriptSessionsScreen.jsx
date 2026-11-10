@@ -15,6 +15,8 @@ const FILTROS = [
     { valor: "concluida", rotulo: "Concluídas" },
 ];
 
+const LIMITE = 50;
+
 export default function ScriptSessionsScreen() {
     const { scriptId } = useParams();
     const navigate = useNavigate();
@@ -23,23 +25,40 @@ export default function ScriptSessionsScreen() {
     const roteiro = useApiResource(() => api.getScript(scriptId), [scriptId]);
     const sessoes = useApiResource(() => api.listScriptSessions(scriptId, { status }), [scriptId, status]);
     const lista = sessoes.data ?? [];
+    const limiteAtingido = lista.length >= LIMITE;
 
     function iniciar() {
         navigate(`/entrevista?roteiro=${encodeURIComponent(scriptId)}`);
+    }
+
+    const voltar = (
+        <button className="ui-btn" style={ui.voltar} onClick={() => navigate("/entrevistas")}>
+            <ArrowLeft size={16} aria-hidden="true" /> Todos os roteiros
+        </button>
+    );
+
+    if (roteiro.erro) {
+        // Roteiro que não existe (ou falhou ao carregar): só o erro, sem "Iniciar".
+        return (
+            <SideBar>
+                <div style={ui.page}>
+                    <style>{CSS}</style>
+                    <EstadoTela erro={roteiro.erro} onRetry={roteiro.recarregar} />
+                    {voltar}
+                </div>
+            </SideBar>
+        );
     }
 
     return (
         <SideBar>
             <div style={ui.page}>
                 <style>{CSS}{LISTA}</style>
-                <button className="ui-btn" style={ui.voltar} onClick={() => navigate("/entrevistas")}>
-                    <ArrowLeft size={16} aria-hidden="true" /> Todos os roteiros
-                </button>
+                {voltar}
 
                 <div style={ui.topo}>
                     <div>
                         <h1 style={ui.h1}>{roteiro.data?.titulo ?? "Entrevistas do roteiro"}</h1>
-                        {roteiro.erro && <p style={{ ...ui.sub, color: "var(--color-error)" }} role="alert">{roteiro.erro}</p>}
                         {roteiro.data?.tema && <p style={ui.sub}>{roteiro.data.tema}</p>}
                         {roteiro.data && (
                             <p style={ui.sub}>
@@ -74,6 +93,12 @@ export default function ScriptSessionsScreen() {
                             </button>
                         </div>
                     ) : (
+                        <>
+                        {limiteAtingido && (
+                            <p style={{ ...ui.sub, marginBottom: 12 }} role="status">
+                                Mostrando as {LIMITE} entrevistas mais recentes.
+                            </p>
+                        )}
                         <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
                             {lista.map((s) => (
                                 <li key={s.session_id}>
@@ -98,6 +123,7 @@ export default function ScriptSessionsScreen() {
                                 </li>
                             ))}
                         </ul>
+                        </>
                     )}
                 </EstadoTela>
             </div>

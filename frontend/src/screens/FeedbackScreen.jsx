@@ -11,6 +11,7 @@ export default function FeedbackScreen() {
     const location = useLocation();
     
     const sessionId = location.state?.sessionId ?? null;
+    const semRespostas = location.state?.respostas === 0;
 
     const [sintese, setSintese] = useState("");
     const [carregando, setCarregando] = useState(true);
@@ -26,6 +27,12 @@ export default function FeedbackScreen() {
     async function gerarSintese() {
         if (!sessionId) {
             setErro("Nenhuma sessão encontrada. Volte e faça uma entrevista até o fim.");
+            setCarregando(false);
+            return;
+        }
+        if (semRespostas) {
+            // Nada do participante para resumir: nem pede ao servidor.
+            setErro("A entrevista não tem respostas para resumir.");
             setCarregando(false);
             return;
         }
@@ -56,8 +63,8 @@ export default function FeedbackScreen() {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <ThemeToggle />
-                        <button style={style.voltarBtn} onClick={() => navigate("/")}>
-                            <ArrowLeft size={16} /> Voltar
+                        <button style={style.voltarBtn} onClick={() => navigate("/entrevistas")}>
+                            <ArrowLeft size={16} aria-hidden="true" /> Ver todas as entrevistas
                         </button>
                     </div>
                 </header>
@@ -74,7 +81,7 @@ export default function FeedbackScreen() {
                         <div style={style.estado}>
                             <AlertCircle size={22} style={{ color: "var(--color-error)" }} />
                             <p style={{ ...style.estadoTexto, color: "var(--color-error)" }}>{erro}</p>
-                            {sessionId && (
+                            {sessionId && !semRespostas && (
                                 <button style={style.retryBtn} onClick={gerarSintese}>
                                     <RefreshCw size={15} /> Tentar de novo
                                 </button>

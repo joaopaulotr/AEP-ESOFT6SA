@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * Carrega um recurso da API: { data, carregando, erro, recarregar }.
+ * `recarregar()` mantém o dado atual até a nova resposta; mudar `deps` limpa o dado.
  * `carregar` deve ser estável por `deps`; refaz a busca quando as deps mudam.
  */
 export function useApiResource(carregar, deps = []) {
@@ -10,9 +11,9 @@ export function useApiResource(carregar, deps = []) {
     const [erro, setErro] = useState("");
     const versaoRef = useRef(0);
 
-    const recarregar = useCallback(async () => {
+    const carregarDados = useCallback(async (limpar) => {
         const versao = ++versaoRef.current;
-        setData(null);
+        if (limpar) setData(null); // só quando a chave muda; recarregar mantém o que já está na tela
         setCarregando(true);
         setErro("");
         try {
@@ -29,9 +30,11 @@ export function useApiResource(carregar, deps = []) {
     }, deps);
 
     useEffect(() => {
-        recarregar();
+        carregarDados(true);
         return () => { versaoRef.current++; };
-    }, [recarregar]);
+    }, [carregarDados]);
+
+    const recarregar = useCallback(() => carregarDados(false), [carregarDados]);
 
     return { data, carregando, erro, recarregar };
 }

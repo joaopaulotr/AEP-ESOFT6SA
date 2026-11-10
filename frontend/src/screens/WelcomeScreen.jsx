@@ -4,9 +4,9 @@ import SideBar from "../components/SideBar";
 import Avatar from "../components/Avatar";
 import { useNavigate } from "react-router-dom";
 import { Mic, Clock, MessageCircle, Check, ArrowRight } from "lucide-react";
+import { ui, CSS as UI_CSS } from "../styles/ui";
 
 const INTERVIEWER = "du";
-const NOME = "duda";
 
 
 export default function WelcomeScreen() {
@@ -31,42 +31,37 @@ export default function WelcomeScreen() {
 
     return (
         <SideBar>
-            <style>{FONTS}</style>
+            <style>{FONTS}{UI_CSS}</style>
 
             <div style={style.root}>
               
                 <div style={style.card}>
                     <Avatar size={92} />
-                    <p style={style.saudacao}>Olá, {NOME}</p>
-                    <h1 style={style.title}>Pronto para iniciar sua próxima entrevista?</h1>
+                    <p style={style.saudacao}>Olá! Que bom ter você aqui.</p>
+                    <h1 style={style.title}>Pronto para começar a entrevista?</h1>
                     <p style={style.subtittle}>
-                        Ao longo da conversa, você terá a oportunidade de apresentar sua trajetória, demonstrar seus conhecimentos e destacar as competências mais relevantes para a posição.
+                        Vamos conversar sobre a sua experiência. Não há resposta certa ou errada: queremos ouvir o que você realmente viveu e pensa. Você pode responder falando ou escrevendo.
                     </p>
 
                   
                     <div style={style.actions}>
                         <button
+                            className="ui-btn"
                             onClick={askMicPermission}
                             disabled={micStatus === "ok"}
                             style={{
-                                ...style.micBtn,
+                                ...ui.btnSecundario,
                                 ...(micStatus === "ok" ? style.micBtnOk : {}),
                                 cursor: micStatus === "ok" ? "default" : "pointer",
                             }}
                         >
                             {micStatus === "ok"
-                                ? (<><Check size={18} /> Microfone pronto</>)
-                                : (<><Mic size={18} /> Testar microfone (opcional)</>)}
+                                ? (<><Check size={18} aria-hidden="true" /> Microfone pronto</>)
+                                : (<><Mic size={18} aria-hidden="true" /> Testar microfone (opcional)</>)}
                         </button>
 
-                        <button
-                            onClick={() => navigate("/entrevistas")}
-                            style={{
-                                ...style.startBtn,
-                                cursor: "pointer",
-                            }}
-                        >
-                            Escolher entrevista <ArrowRight size={18} />
+                        <button className="ui-btn" onClick={() => navigate("/entrevistas")} style={ui.btnPrimario}>
+                            Escolher entrevista <ArrowRight size={18} aria-hidden="true" />
                         </button>
                     </div>
 
@@ -158,40 +153,9 @@ const style = {
         flexWrap: "wrap",
         justifyContent: "center",
     },
-    micBtn: {
-        height: 50,
-        padding: "0 22px",
-        backgroundColor: "var(--color-surface)",
-        borderRadius: 18,
-        border: "1px solid var(--color-primary-border)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 8,
-        color: "var(--color-primary)",
-        fontFamily: "var(--font-sans)",
-        fontWeight: 600,
-        fontSize: 15,
-    },
     micBtnOk: {
         backgroundColor: "var(--color-accent-soft)",
         border: "1px solid var(--color-accent-soft-border)",
-    },
-    startBtn: {
-        height: 50,
-        padding: "0 26px",
-        backgroundColor: "var(--color-primary)",
-        borderRadius: 18,
-        border: "none",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 9,
-        color: "var(--color-on-primary)",
-        fontFamily: "var(--font-sans)",
-        fontWeight: 600,
-        fontSize: 15,
-        boxShadow: "var(--shadow-button)",
     },
     aviso: {
         margin: "16px 0 0",

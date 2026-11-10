@@ -7,7 +7,7 @@ export default function EstadoTela({ carregando, erro, onRetry, children }) {
     if (carregando) {
         return (
             <div style={ui.estado} role="status" aria-live="polite">
-                <RefreshCw size={20} className="girando" />
+                <RefreshCw size={20} className="girando" aria-hidden="true" />
                 <p style={ui.estadoTexto}>Carregando…</p>
             </div>
         );
@@ -15,9 +15,9 @@ export default function EstadoTela({ carregando, erro, onRetry, children }) {
     if (erro) {
         return (
             <div style={ui.estado} role="alert">
-                <AlertCircle size={20} style={{ color: "var(--color-error)" }} />
+                <AlertCircle size={20} aria-hidden="true" style={{ color: "var(--color-error)" }} />
                 <p style={{ ...ui.estadoTexto, color: "var(--color-error)" }}>{erro}</p>
-                {onRetry && <button style={ui.btnSecundario} onClick={onRetry}>Tentar de novo</button>}
+                {onRetry && <button className="ui-btn" style={ui.btnSecundario} onClick={onRetry}>Tentar de novo</button>}
             </div>
         );
     }
