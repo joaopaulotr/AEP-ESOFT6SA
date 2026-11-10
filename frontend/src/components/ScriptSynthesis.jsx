@@ -22,9 +22,21 @@ function Lista({ titulo, itens }) {
     );
 }
 
-/** Relatório cruzado do roteiro (EV-33): resumo, temas com citações linkadas, divergências e lacunas. */
-export default function ScriptSynthesis({ scriptId, concluidas = null }) {
-    const { data, carregando, erro, recarregar } = useApiResource(() => api.getScriptSynthesis(scriptId), [scriptId]);
+/** `sessoes_usadas` é um número (versões antigas mandavam a lista) → "Baseado em 1 entrevista" / "3 entrevistas". */
+export function baseadoEm(sessoesUsadas) {
+    const n = Array.isArray(sessoesUsadas) ? sessoesUsadas.length : Number(sessoesUsadas) || 0;
+    return `Baseado em ${n} ${n === 1 ? "entrevista" : "entrevistas"}`;
+}
+
+/**
+ * Relatório cruzado do roteiro (EV-33): resumo, temas com citações linkadas, divergências e lacunas.
+ * `sinteses`: nº de entrevistas com síntese (base do relatório; null = desconhecido).
+ */
+export default function ScriptSynthesis({ scriptId, sinteses = null }) {
+    const { data, carregando, erro, recarregar, definir } = useApiResource(() => api.getScriptSynthesis(scriptId), [scriptId]);
+    const tituloRef = useRef(null);
+    const [focarTitulo, setFocarTitulo] = useState(0);
+    useEffect(() => { if (focarTitulo) tituloRef.current?.focus(); }, [focarTitulo]);
     const [gerando, setGerando] = useState(false);
     const [erroGerar, setErroGerar] = useState("");
     const [bloqueio, setBloqueio] = useState("");
@@ -32,7 +44,7 @@ export default function ScriptSynthesis({ scriptId, concluidas = null }) {
     const alertaRef = useRef(null);
     const mensagemErro = bloqueio || erroGerar;
     useEffect(() => { if (mensagemErro) alertaRef.current?.focus(); }, [mensagemErro, falhas]);
-    const poucas = concluidas !== null && concluidas < 2;
+    const poucas = sinteses !== null && sinteses < 2;
 
     async function gerar(refresh) {
         if (refresh && !window.confirm("Gerar o relatório de novo? O atual será substituído.")) return;
@@ -40,10 +52,12 @@ export default function ScriptSynthesis({ scriptId, concluidas = null }) {
         setBloqueio("");
         setErroGerar("");
         try {
-            await api.generateScriptSynthesis(scriptId, { refresh });
+            // A resposta do POST já é o relatório: mostra direto (sem nova busca) e leva o foco ao título.
+            const novo = await api.generateScriptSynthesis(scriptId, { refresh });
             setBloqueio("");
             setErroGerar("");
-            await recarregar();
+            definir(novo);
+            setFocarTitulo((n) => n + 1);
         } catch (e) {
             setFalhas((n) => n + 1);
             if (e instanceof ApiError && e.status === 409) { setBloqueio(e.detail); setErroGerar(""); }
@@ -55,7 +69,8 @@ export default function ScriptSynthesis({ scriptId, concluidas = null }) {
 
     return (
         <section style={{ ...ui.card, marginTop: 20 }} aria-labelledby="titulo-relatorio">
-            <h2 id="titulo-relatorio" style={{ margin: "0 0 14px", fontSize: 18, color: "var(--color-heading)", fontFamily: "var(--font-heading)" }}>Relatório do roteiro</h2>
+            <h2 id="titulo-relatorio" ref={tituloRef} tabIndex={-1} style={{ margin: "0 0 14px", fontSize: 18, color: "var(--color-heading)", fontFamily: "var(--font-heading)" }}>Relatório do roteiro</h2>
+            <p role="status" aria-live="polite" style={SR}>{gerando ? "Gerando o relatório…" : ""}</p>
             <EstadoTela carregando={carregando} erro={erro} onRetry={recarregar} data={data}>
                 {data ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -77,7 +92,7 @@ export default function ScriptSynthesis({ scriptId, concluidas = null }) {
                         <Lista titulo="Divergências entre entrevistas" itens={data.divergencias} />
                         <Lista titulo="O que ficou sem resposta" itens={data.lacunas} />
                         <p style={{ ...ui.meta, margin: 0 }}>
-                            Baseado em {data.sessoes_usadas?.length ?? 0} entrevistas{data.updated_at ? ` · gerado em ${dataHora(data.updated_at)}` : ""}
+                            {baseadoEm(data.sessoes_usadas)}{data.updated_at ? ` · gerado em ${dataHora(data.updated_at)}` : ""}
                         </p>
                         <div>
                             <button className="ui-btn" style={{ ...ui.btnSecundario, opacity: gerando ? 0.6 : 1 }} onClick={() => gerar(true)} disabled={gerando}>
