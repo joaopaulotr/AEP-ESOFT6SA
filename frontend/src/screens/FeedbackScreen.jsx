@@ -4,6 +4,7 @@ import SideBar from "../components/SideBar";
 import { FileText, ArrowLeft, RefreshCw, AlertCircle, ListChecks } from "lucide-react";
 import { api } from "../services/api";
 import ThemeToggle from "../components/ThemeToggle";
+import CvvAviso from "../components/CvvAviso";
 
 export default function FeedbackScreen() {
     const navigate = useNavigate();
@@ -11,6 +12,7 @@ export default function FeedbackScreen() {
     
     const sessionId = location.state?.sessionId ?? null;
     const semRespostas = location.state?.respostas === 0;
+    const acolhimento = location.state?.acolhimento === true; // a entrevista terminou em acolhimento
 
     const [sintese, setSintese] = useState("");
     const [carregando, setCarregando] = useState(true);
@@ -68,6 +70,8 @@ export default function FeedbackScreen() {
                         </button>
                     </div>
                 </header>
+
+                {acolhimento && <CvvAviso />}
 
                 <div style={style.card} aria-live="polite">
                     {carregando && (

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Mic, Square, Send, Volume2, XCircle, Clock, PenLine } from "lucide-react";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Mic, MicOff, Square, Send, Volume2, XCircle, Clock, PenLine } from "lucide-react";
 import PublicLayout from "../components/PublicLayout";
 import ChatComposer from "../components/ChatComposer";
 import SideBar from "../components/SideBar";
@@ -10,6 +10,9 @@ import LiveCaption from "../components/LiveCaption";
 import InterviewProgress from "../components/InterviewProgress";
 import TranscriptConfirm from "../components/TranscriptConfirm";
 import ThemeToggle from "../components/ThemeToggle";
+import CvvAviso from "../components/CvvAviso";
+import { api } from "../services/api";
+import { lerSessaoPublica, guardarCanalPublico } from "../utils/sessaoPublica";
 import { useInterviewSession } from "../hooks/useInterviewSession";
 import { useRecorder } from "../hooks/useRecorder";
 import { useElapsedTime } from "../hooks/useElapsedTime";
@@ -26,30 +29,22 @@ const INCENTIVO = "Pode ficar à vontade, sem pressa.";
 
 /**
  * `publico`: rota `/e/:slug/entrevista` (participante do convite) - sem menu do pesquisador,
- * sessao ja criada, termina na tela de agradecimento.
+ * sessão já criada (id guardado no sessionStorage por slug, nunca na URL), termina na tela de
+ * agradecimento.
  */
 export default function InterviewScreen({ publico = false }) {
     const { slug } = useParams();
-    const [searchParams] = useSearchParams();
-    if (publico && !searchParams.get("sessao")) return <Navigate to={`/e/${encodeURIComponent(slug || "")}`} replace />;
-    return <Entrevista publico={publico} slug={slug} />;
+    const [guardada] = useState(() => (publico ? lerSessaoPublica(slug) : null));
+    if (publico && !guardada) return <Navigate to={`/e/${encodeURIComponent(slug || "")}`} replace />;
+    return <Entrevista publico={publico} slug={slug} guardada={guardada} />;
 }
 
-function Entrevista({ publico, slug }) {
+function Entrevista({ publico, slug, guardada }) {
     const navigate = useNavigate();
-    const location = useLocation();
     const [searchParams] = useSearchParams();
     const scriptId = publico ? undefined : searchParams.get("roteiro") || undefined;
-    const sessaoId = publico ? searchParams.get("sessao") : null;
-    const estado = location.state;
-    const existente = sessaoId
-        ? {
-              sessionId: sessaoId,
-              perguntaInicial: estado?.sessionId === sessaoId ? estado.perguntaInicial : undefined,
-              titulo: estado?.sessionId === sessaoId ? estado.titulo : undefined,
-          }
-        : undefined;
-    const [modo, setModo] = useState(searchParams.get("canal") === "texto" ? "texto" : "voz");
+    const [existente] = useState(() => (guardada ? { sessionId: guardada.sessionId, slug } : undefined));
+    const [modo, setModo] = useState(guardada?.canal === "texto" ? "texto" : "voz");
     const modoTexto = modo === "texto";
     const Shell = publico ? PublicLayout : SideBar;
     const [texto, setTexto] = useState("");
@@ -62,9 +57,10 @@ function Entrevista({ publico, slug }) {
         voz: !modoTexto,
         onFinished: (sessionId, extra) =>
             publico
-                ? navigate(`/e/${encodeURIComponent(slug)}/obrigado`, { replace: true })
+                ? navigate(`/e/${encodeURIComponent(slug)}/obrigado`, { replace: true, state: { acolhimento: !!extra?.acolhimento } })
                 : navigate("/feedback", { state: { sessionId, ...extra } }),
     });
+    const [erroMic, setErroMic] = useState("");
     const { perguntaAtual, indiceAtual, turno, processando, finalizada, transcricao, erro, progresso, pendente } = sessao;
 
     const { pararAudio, falarAviso, descartarPendente } = sessao;
@@ -127,14 +123,26 @@ function Entrevista({ publico, slug }) {
     const podeResponder = turno === "voce" && !processando && !finalizada && !pendente;
     const ouvindo = recorder.gravando; // inclui a gravação iniciada por barge-in (turno ainda é da IA)
     const iaFalando = !modoTexto && turno === "interviewer" && !processando && !finalizada;
-    const podeAlternar = !recorder.gravando && !processando && !finalizada && !!sessao.sessionId;
+    const podeAlternar = !recorder.gravando && !processando && !finalizada && !sessao.encerrando && !!sessao.sessionId;
+    const podeConcluir = !!sessao.sessionId && !sessao.encerrando && !finalizada;
 
     async function comecarGravacao() {
         if (!podeResponder) return;
+        setErroMic("");
         try {
             await recorder.start();
         } catch {
-            alert("Não consegui acessar o microfone.");
+            setErroMic("Não consegui acessar o microfone. Libere o microfone no navegador ou toque em “Prefiro escrever”.");
+        }
+    }
+
+    function alternarModo() {
+        const novo = modoTexto ? "voz" : "texto";
+        setModo(novo);
+        setErroMic("");
+        if (publico && sessao.sessionId) {
+            guardarCanalPublico(slug, novo);
+            api.setPublicChannel(slug, sessao.sessionId, novo).catch(() => {}); // só estatística: falha não atrapalha
         }
     }
 
@@ -146,6 +154,15 @@ function Entrevista({ publico, slug }) {
 
     const estadoOnda = ouvindo ? "ouvindo" : processando ? "pensando" : sessao.audioTocando ? "falando" : "parado";
     const legendaTexto = processando ? "" : sessao.legenda || perguntaAtual;
+    // Única região ao vivo do modo voz (montada desde o início): o que foi entendido, "pensando" e a fala.
+    const anuncioVoz = pendente
+        ? `Entendi assim: ${pendente.texto}. Envio automático em 8 segundos.`
+        : processando
+        ? "Pensando…"
+        : incentivo && aguardando
+        ? INCENTIVO
+        : sessao.legenda;
+    const anuncioTexto = processando && !sessao.digitado ? "Pensando…" : sessao.anuncio;
 
     const statusTexto = processando
         ? "PROCESSANDO…"
@@ -163,7 +180,7 @@ function Entrevista({ publico, slug }) {
             style={{ ...ui.btnSecundario, opacity: podeAlternar ? 1 : 0.5 }}
             disabled={!podeAlternar}
             aria-label={`${modoTexto ? "Prefiro falar" : "Prefiro escrever"}. Modo atual: ${modoTexto ? "escrever" : "falar"}`}
-            onClick={() => setModo(modoTexto ? "voz" : "texto")}
+            onClick={alternarModo}
         >
             {modoTexto ? <Mic size={16} aria-hidden="true" /> : <PenLine size={16} aria-hidden="true" />}
             {modoTexto ? "Prefiro falar" : "Prefiro escrever"}
@@ -198,14 +215,30 @@ function Entrevista({ publico, slug }) {
                         <span style={style.timer}><Clock size={15} /> {mmss(segundos)}</span>
                         {!publico && <ThemeToggle />}
                         {sessao.sessionId && (
-                            <button style={style.concluirBtn} onClick={sessao.concluir}>
-                                <XCircle size={17} /> Concluir
+                            <button style={{ ...style.concluirBtn, opacity: podeConcluir ? 1 : 0.5 }} onClick={sessao.concluir} disabled={!podeConcluir}>
+                                <XCircle size={17} aria-hidden="true" /> Concluir
                             </button>
                         )}
                     </div>
                 </header>
 
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>{alternar}</div>
+                {sessao.acolhimento && (
+                    <CvvAviso focar aoContinuar={sessao.continuar} podeContinuar={finalizada} />
+                )}
+
+                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                    {!modoTexto && recorder.microfoneAberto && !recorder.gravando && (
+                        <>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13.5, fontWeight: 600, color: "var(--color-status)" }}>
+                                <Mic size={15} aria-hidden="true" /> Microfone ligado
+                            </span>
+                            <button className="ui-btn" style={ui.btnSecundario} onClick={recorder.liberar}>
+                                <MicOff size={16} aria-hidden="true" /> Desligar microfone
+                            </button>
+                        </>
+                    )}
+                    {alternar}
+                </div>
 
                 {modoTexto ? (
                     <div style={{ ...style.colRight, maxWidth: 760, margin: "0 auto" }}>
@@ -237,9 +270,14 @@ function Entrevista({ publico, slug }) {
                                 </div>
                             )}
                         </div>
-                        {/* Única região ao vivo do modo texto: recebe a frase pronta (não cada caractere). */}
-                        <div style={SO_LEITOR} role="status" aria-live="polite" aria-label="Fala do entrevistador">{sessao.anuncio}</div>
-                        {incentivo && aguardando && <p style={{ ...style.incentivo, padding: "0 14px" }} role="status">{INCENTIVO}</p>}
+                        {processando && sessao.digitado && (
+                            <div style={{ padding: "0 14px" }}>
+                                <button className="ui-btn" style={ui.btnSecundario} onClick={sessao.mostrarTudo}>Mostrar tudo</button>
+                            </div>
+                        )}
+                        {/* Única região ao vivo do modo texto: "Pensando…" e a frase pronta (não cada caractere). */}
+                        <div style={SO_LEITOR} role="status" aria-live="polite" aria-label="Fala do entrevistador">{anuncioTexto}</div>
+                        {incentivo && aguardando && <p style={{ ...style.incentivo, padding: "0 14px" }}>{INCENTIVO}</p>}
                         <ChatComposer
                             desabilitado={!sessao.sessionId || finalizada || turno !== "voce"}
                             enviando={processando}
@@ -260,15 +298,18 @@ function Entrevista({ publico, slug }) {
                                 <Avatar size={128} ativo={estadoOnda !== "parado"} />
                             </div>
 
-                            <p style={style.status} role="status">{statusTexto}</p>
-                            {incentivo && aguardando && <p style={style.incentivo} role="status">{INCENTIVO}</p>}
+                            <p style={style.status}>{statusTexto}</p>
+                            {incentivo && aguardando && <p style={style.incentivo}>{INCENTIVO}</p>}
 
                             <Waveform estado={estadoOnda} nivelRef={recorder.nivelRef} />
 
                             <div style={style.questionCard}>
                                 <LiveCaption texto={legendaTexto} vazio={processando ? "…" : undefined} />
                             </div>
+                            <div style={SO_LEITOR} role="status" aria-live="polite" aria-atomic="true" aria-label="Fala do entrevistador">{anuncioVoz}</div>
                         </div>
+
+                        {erroMic && <p role="alert" style={{ margin: 0, color: "var(--color-error)", fontSize: 14.5 }}>{erroMic}</p>}
 
                         {pendente && <TranscriptConfirm key={`${pendente.texto}|${pendente.editar ? "e" : "a"}`} texto={pendente.texto} editarInicial={!!pendente.editar} onEnviar={sessao.confirmarTranscricao} />}
 

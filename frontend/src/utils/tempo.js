@@ -32,3 +32,9 @@ export function atrasoDePensar(tamanhoResposta, aleatorio = Math.random) {
     const jitter = (aleatorio() * 2 - 1) * 250;
     return Math.round(Math.min(2500, Math.max(600, base + jitter)));
 }
+
+/** Duração estimada da entrevista: uns 2 minutos por pergunta (mínimo 2). */
+export function estimativaMinutos(perguntasTotal) {
+    const n = Number.isFinite(perguntasTotal) && perguntasTotal > 0 ? Math.round(perguntasTotal) : 1;
+    return n * 2;
+}

@@ -5,6 +5,8 @@ import PublicLayout from "../components/PublicLayout";
 import EstadoTela from "../components/EstadoTela";
 import { api, ApiError } from "../services/api";
 import { ui } from "../styles/ui";
+import { estimativaMinutos } from "../utils/tempo";
+import { guardarSessaoPublica } from "../utils/sessaoPublica";
 
 const FAIXAS = ["até 17", "18–29", "30–44", "45–59", "60+"];
 
@@ -39,12 +41,6 @@ export default function InviteScreen() {
     const [erroInicio, setErroInicio] = useState("");
     const travaRef = useRef(false);
 
-    function pular() {
-        setApelido("");
-        setFaixa("");
-        setRegiao("");
-    }
-
     async function comecar() {
         if (travaRef.current) return;
         travaRef.current = true;
@@ -57,10 +53,9 @@ export default function InviteScreen() {
                 faixa_etaria: faixa || undefined,
                 regiao: regiao.trim() || undefined,
             });
-            const url = `/e/${encodeURIComponent(slug)}/entrevista?sessao=${encodeURIComponent(dados.session_id)}&canal=${canal === "texto" ? "texto" : "voz"}`;
-            navigate(url, {
-                state: { sessionId: dados.session_id, perguntaInicial: dados.pergunta, titulo: dados.titulo },
-            });
+            // O id da sessão fica no sessionStorage (por slug), nunca na URL.
+            guardarSessaoPublica(slug, { sessionId: dados.session_id, canal: canal === "texto" ? "texto" : "voz" });
+            navigate(`/e/${encodeURIComponent(slug)}/entrevista`);
         } catch (e) {
             setErroInicio(e?.detail || "Não consegui começar agora. Tente de novo em instantes.");
             travaRef.current = false;
@@ -88,7 +83,7 @@ export default function InviteScreen() {
                             {convite.tema && <p style={ui.sub}>Tema: {convite.tema}</p>}
                             {convite.descricao && <p style={ui.sub}>{convite.descricao}</p>}
                             <p style={{ ...ui.sub, color: "var(--color-text)" }}>
-                                Leva uns 10 minutos. Não há resposta certa ou errada: só conte o que você pensa.
+                                Leva uns {estimativaMinutos(convite.perguntas_total)} minutos. Não há resposta certa ou errada: só conte o que você pensa.
                             </p>
 
                             <h2 style={s.h2} id="como-responder">Como você prefere responder?</h2>
@@ -102,7 +97,7 @@ export default function InviteScreen() {
                             </div>
 
                             <h2 style={s.h2}>Se quiser, conte um pouco sobre você</h2>
-                            <p style={{ ...ui.meta, margin: "0 0 10px" }}>É opcional. Você pode pular.</p>
+                            <p style={{ ...ui.meta, margin: "0 0 10px" }}>É opcional: pode deixar em branco.</p>
                             <label style={s.label}>
                                 Como prefere ser chamado(a)?
                                 <input style={s.input} value={apelido} maxLength={40} onChange={(e) => setApelido(e.target.value)} autoComplete="off" />
@@ -118,7 +113,6 @@ export default function InviteScreen() {
                                 Cidade ou bairro
                                 <input style={s.input} value={regiao} maxLength={60} onChange={(e) => setRegiao(e.target.value)} autoComplete="off" />
                             </label>
-                            <button type="button" className="ui-btn" style={{ ...ui.voltar, marginBottom: 8 }} onClick={pular}>Pular</button>
 
                             {erroInicio && <p role="alert" style={{ color: "var(--color-error)", margin: "8px 0" }}>{erroInicio}</p>}
                             <button type="button" className="ui-btn" style={{ ...ui.btnPrimario, width: "100%", fontSize: 17, opacity: enviando ? 0.6 : 1 }} disabled={enviando} onClick={comecar}>
