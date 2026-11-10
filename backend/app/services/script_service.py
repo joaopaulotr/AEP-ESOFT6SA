@@ -1,5 +1,5 @@
 from app.core.errors import ConflictError
-from app.services.invite_service import build_invite_link
+from app.core.links import build_invite_link
 from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
 from app.schemas.api import QuestionCreate, ScriptCreate, ScriptSummary, ScriptUpdate

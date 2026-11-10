@@ -65,6 +65,14 @@ class TestPublicInvite:
         assert response.status_code == 404
         assert response.json()["detail"] == "Convite inválido ou encerrado."
 
+    def test_slug_is_normalized_on_lookup(self, client):
+        script = _roteiro(client)
+
+        response = client.get(f"{API}/convite/{script['slug_convite'].upper()}")
+
+        assert response.status_code == 200
+        assert response.json()["slug"] == script["slug_convite"]
+
     def test_inactive_script_is_404(self, client):
         script = _roteiro(client)
         client.put(f"{API}/scripts/{script['script_id']}", json={"ativo": False})
@@ -165,3 +173,23 @@ class TestOrganizerLinkAndQr:
     def test_unknown_script_is_404_for_link_and_qr(self, client):
         assert client.get(f"{API}/scripts/nada/convite").status_code == 404
         assert client.get(f"{API}/scripts/nada/qrcode.svg").status_code == 404
+
+
+class TestStartRace:
+    def test_deactivated_between_lookup_and_open_removes_participant(self, client, monkeypatch):
+        from app.core.errors import ConflictError
+        from app.services.session_service import SessionService
+
+        script = _roteiro(client)
+        participants = deps.get_participant_repository()
+        antes = client.portal.call(participants.count)
+
+        async def _conflito(self, *args, **kwargs):
+            raise ConflictError("Este roteiro não está recebendo entrevistas.")
+
+        monkeypatch.setattr(SessionService, "open", _conflito)
+        response = client.post(f"{API}/convite/{script['slug_convite']}/sessao", json={})
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Convite inválido ou encerrado."
+        assert client.portal.call(participants.count) == antes
