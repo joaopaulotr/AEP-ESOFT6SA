@@ -57,9 +57,9 @@ class TestFilterLiteralCitations:
         assert filter_literal_citations(["Eu odeio o metrô"], ["Pego dois ônibus."]) == []
 
     def test_strips_surrounding_quotes_before_checking(self):
-        assert filter_literal_citations(['"dois ônibus"', "“dois ônibus”"], ["Pego dois ônibus."]) == [
-            "dois ônibus",
-            "dois ônibus",
+        assert filter_literal_citations(['"pego dois ônibus"', "“pego dois ônibus”"], ["Pego dois ônibus."]) == [
+            "Pego dois ônibus",
+            "Pego dois ônibus",
         ]
 
     def test_original_slice_keeps_participant_casing_and_spacing(self):
@@ -67,8 +67,14 @@ class TestFilterLiteralCitations:
 
         assert result == ["Pego Dois   Ônibus"]
 
-    def test_drops_quotes_shorter_than_8_chars(self):
-        assert filter_literal_citations(["ônibus", "dois ônibus"], ["Pego dois ônibus."]) == ["dois ônibus"]
+    def test_drops_quotes_shorter_than_8_chars_or_3_words(self):
+        assert filter_literal_citations(["ônibus", "dois ônibus"], ["Pego dois ônibus."]) == []
+        assert filter_literal_citations(["pego dois ônibus"], ["Pego dois ônibus."]) == ["Pego dois ônibus"]
+
+    def test_must_match_whole_words_at_the_edges(self):
+        fala = ["Os trens lotados atrasam todo dia."]
+        assert filter_literal_citations(["s trens lotados atrasa"], fala) == []
+        assert filter_literal_citations(["trens lotados atrasam"], fala) == ["trens lotados atrasam"]
 
     def test_drops_empty_and_quote_only(self):
         assert filter_literal_citations(["", "   ", '""'], ["algo"]) == []

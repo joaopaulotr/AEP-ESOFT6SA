@@ -4,6 +4,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.interview import SessionMetrics
+
 
 class Citation(BaseModel):
     """Trecho literal do participante, com a sessão de origem."""
@@ -34,6 +36,11 @@ class Synthesis(BaseModel):
     divergencias: list[str] = Field(default_factory=list)
     lacunas: list[str] = Field(default_factory=list)
     sessoes_usadas: int = 0
+    # Relatório do roteiro: as sessões cujas sínteses entraram no prompt. Se uma delas for
+    # apagada, o relatório inteiro é apagado (o texto deriva dela; RK-11).
+    sessoes_ids: list[str] = Field(default_factory=list)
+    # Relatório do roteiro: consumo do LLM somado por $inc a cada geração (EV-62).
+    metricas: SessionMetrics = Field(default_factory=SessionMetrics)
     modelo: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
