@@ -64,13 +64,14 @@ function Entrevista({ publico, slug }) {
                 ? navigate(`/e/${encodeURIComponent(slug)}/obrigado`, { replace: true })
                 : navigate("/feedback", { state: { sessionId, ...extra } }),
     });
-    const { perguntaAtual, turno, processando, finalizada, transcricao, erro, progresso, pendente } = sessao;
+    const { perguntaAtual, indiceAtual, turno, processando, finalizada, transcricao, erro, progresso, pendente } = sessao;
 
     const { pararAudio, falarAviso, descartarPendente } = sessao;
     const recorder = useRecorder({
         onRecorded: sessao.enviarAudio,
         // Barge-in: a pessoa começou a falar por cima da IA → corta o áudio e já grava.
-        bargeInAtivo: !modoTexto && sessao.audioTocando && !finalizada,
+        // só com um <audio> de fato tocando, e nunca na mensagem final (encerramento/acolhimento)
+        bargeInAtivo: !modoTexto && sessao.audioReproduzindo && !sessao.encerrando && !finalizada,
         aoBargeIn: () => {
             pararAudio();
             recorder.start().catch(() => {});
@@ -101,19 +102,22 @@ function Entrevista({ publico, slug }) {
 
     // Incentivo: 12 s esperando a pessoa sem que ela fale -> uma vez por pergunta.
     const [incentivo, setIncentivo] = useState(false);
-    const perguntasIA = transcricao.filter((m) => m.quem === "ia").length;
     const aguardando = turno === "voce" && !processando && !finalizada && !recorder.gravando && !pendente;
+    const incentivadoRef = useRef(null); // pergunta (ordem) que já recebeu o incentivo
+    const [digitou, setDigitou] = useState(0); // cada tecla no modo texto reinicia a espera
+    const ordemAtual = progresso.ordem || indiceAtual + 1;
     useEffect(() => {
         setIncentivo(false);
-    }, [perguntasIA]);
+    }, [ordemAtual]);
     useEffect(() => {
-        if (!aguardando) return undefined;
+        if (!aguardando || incentivadoRef.current === ordemAtual) return undefined;
         const t = setTimeout(() => {
+            incentivadoRef.current = ordemAtual; // uma vez por pergunta
             setIncentivo(true);
             falarAviso(INCENTIVO);
         }, SILENCIO_INCENTIVO_MS);
         return () => clearTimeout(t);
-    }, [aguardando, perguntasIA]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [aguardando, ordemAtual, digitou]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const podeResponder = turno === "voce" && !processando && !finalizada && !pendente;
     const ouvindo = recorder.gravando; // inclui a gravação iniciada por barge-in (turno ainda é da IA)
@@ -229,6 +233,7 @@ function Entrevista({ publico, slug }) {
                             desabilitado={!sessao.sessionId || finalizada || turno !== "voce"}
                             enviando={processando}
                             onSend={sessao.enviarResposta}
+                            aoDigitar={() => setDigitou((n) => n + 1)}
                         />
                     </div>
                 ) : (
@@ -254,7 +259,7 @@ function Entrevista({ publico, slug }) {
                             </div>
                         </div>
 
-                        {pendente && <TranscriptConfirm key={pendente.texto} texto={pendente.texto} onEnviar={sessao.confirmarTranscricao} />}
+                        {pendente && <TranscriptConfirm key={`${pendente.texto}|${pendente.editar ? "e" : "a"}`} texto={pendente.texto} editarInicial={!!pendente.editar} onEnviar={sessao.confirmarTranscricao} />}
 
                         <div style={style.bottomBar}>
                             <div style={{ flex: 1 }}>
@@ -284,7 +289,8 @@ function Entrevista({ publico, slug }) {
                             <span style={style.pill}>Tempo Real</span>
                         </div>
 
-                        <div style={style.msgs} ref={msgsRef} aria-live="polite" aria-label="Transcrição da entrevista">
+                        {/* Sem aria-live: no modo voz a fala da IA já é anunciada pela legenda (uma só região ao vivo). */}
+                        <div style={style.msgs} ref={msgsRef} role="log" aria-live="off" aria-label="Transcrição da entrevista">
                             {transcricao.map((m, i) => (
                                 <div key={i} style={{ alignSelf: m.quem === "ia" ? "flex-start" : "flex-end", maxWidth: "88%" }}>
                                     <div style={style.msgMeta}>

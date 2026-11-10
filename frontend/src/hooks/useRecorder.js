@@ -14,41 +14,58 @@ export function useRecorder({ onRecorded, bargeInAtivo = false, aoBargeIn } = {}
     const [gravando, setGravando] = useState(false);
     const [stream, setStream] = useState(null);
     const [ecoCancelado, setEcoCancelado] = useState(false);
+    const [contexto, setContexto] = useState(null);
 
     const recorderRef = useRef(null);
     const streamRef = useRef(null);
     const chunksRef = useRef([]);
     const canceladoRef = useRef(false);
     const montadoRef = useRef(true);
+    const contextoRef = useRef(null);
+    const ecoRef = useRef(false);
+    const geracaoMicRef = useRef(0); // cada liberar() invalida um getUserMedia ainda pendente
 
     const onRecordedRef = useRef(onRecorded);
     onRecordedRef.current = onRecorded;
 
+    // Fecha trilhas e AudioContext (sem descartar o que já foi gravado).
+    const fecharMicrofone = useCallback(() => {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        contextoRef.current?.close?.().catch(() => {});
+        contextoRef.current = null;
+        if (montadoRef.current) {
+            setStream(null);
+            setContexto(null);
+        }
+    }, []);
+
     const liberar = useCallback(() => {
+        geracaoMicRef.current += 1;
         const recorder = recorderRef.current;
         if (recorder && recorder.state !== "inactive") {
             canceladoRef.current = true; // descarta o que foi gravado
             recorder.stop();
         }
         recorderRef.current = null;
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-        if (montadoRef.current) {
-            setStream(null);
-            setGravando(false);
-        }
-    }, []);
+        fecharMicrofone();
+        if (montadoRef.current) setGravando(false);
+    }, [fecharMicrofone]);
 
     const abrirMicrofone = useCallback(async () => {
         if (streamRef.current) return streamRef.current;
+        const geracao = geracaoMicRef.current;
         const s = await navigator.mediaDevices.getUserMedia(RESTRICOES_MIC);
-        if (!montadoRef.current) {
+        // Trocou para texto / saiu da tela enquanto a permissão era pedida: não deixa o mic aberto.
+        if (!montadoRef.current || geracao !== geracaoMicRef.current) {
             s.getTracks().forEach((t) => t.stop());
-            throw new Error("tela fechada");
+            throw new Error("microfone liberado");
         }
         streamRef.current = s;
-        setEcoCancelado(s.getAudioTracks()[0]?.getSettings?.().echoCancellation === true);
+        ecoRef.current = s.getAudioTracks()[0]?.getSettings?.().echoCancellation === true;
+        setEcoCancelado(ecoRef.current);
         setStream(s);
+        setContexto(contextoRef.current);
         return s;
     }, []);
 
@@ -60,7 +77,24 @@ export function useRecorder({ onRecorded, bargeInAtivo = false, aoBargeIn } = {}
 
     const start = useCallback(async () => {
         if (recorderRef.current) return;
-        const s = await abrirMicrofone();
+        // O AudioContext nasce aqui, dentro do gesto do usuário (clique no microfone).
+        if (!contextoRef.current) {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (Ctx) {
+                contextoRef.current = new Ctx();
+                contextoRef.current.resume?.().catch(() => {});
+            }
+        }
+        let s;
+        try {
+            s = await abrirMicrofone();
+        } catch (e) {
+            if (!streamRef.current) {
+                contextoRef.current?.close?.().catch(() => {});
+                contextoRef.current = null;
+            }
+            throw e;
+        }
         if (recorderRef.current) return;
 
         const recorder = new MediaRecorder(s);
@@ -73,6 +107,8 @@ export function useRecorder({ onRecorded, bargeInAtivo = false, aoBargeIn } = {}
         recorder.onstop = () => {
             if (recorderRef.current === recorder) recorderRef.current = null;
             if (canceladoRef.current) return;
+            // Sem cancelamento de eco o barge-in não existe: não há motivo para manter o mic aberto.
+            if (!ecoRef.current) fecharMicrofone();
             const blob = new Blob(chunksRef.current, { type: "audio/webm" });
             onRecordedRef.current?.(blob);
         };
@@ -80,12 +116,13 @@ export function useRecorder({ onRecorded, bargeInAtivo = false, aoBargeIn } = {}
         recorder.start();
         recorderRef.current = recorder;
         setGravando(true);
-    }, [abrirMicrofone]);
+    }, [abrirMicrofone, fecharMicrofone]);
 
     const bargeInPossivel = ecoCancelado && !!stream;
     const modo = gravando ? "gravacao" : bargeInAtivo && bargeInPossivel ? "barge" : "ocioso";
     const { nivelRef } = useVoiceActivity({
         stream,
+        contexto,
         modo,
         aoSilencio: stop,
         aoFalaContinua: () => aoBargeIn?.(),

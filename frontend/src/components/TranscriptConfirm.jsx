@@ -7,8 +7,8 @@ export const CONFIRMA_MS = 3000;
  * Mostra o que foi entendido da fala por 3 s e envia sozinho; "Corrigir" abre o texto para editar
  * e só envia no botão "Enviar". O envio automático para quando a pessoa começa a corrigir.
  */
-export default function TranscriptConfirm({ texto, onEnviar }) {
-    const [editando, setEditando] = useState(false);
+export default function TranscriptConfirm({ texto, onEnviar, editarInicial = false }) {
+    const [editando, setEditando] = useState(editarInicial);
     const [rascunho, setRascunho] = useState(texto);
     const onEnviarRef = useRef(onEnviar);
     onEnviarRef.current = onEnviar;

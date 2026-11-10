@@ -6,7 +6,7 @@ import React from "react";
  */
 export default function LiveCaption({ texto, vazio = "Conectando à entrevista…" }) {
     return (
-        <p style={s.texto} aria-live="polite" aria-atomic="true" aria-label="Legenda da fala">
+        <p style={s.texto} aria-live="polite" aria-atomic="true">
             {texto ? `"${texto}"` : vazio}
         </p>
     );
