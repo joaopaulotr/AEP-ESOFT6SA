@@ -78,7 +78,7 @@ export default function ScriptDashboardScreen() {
                                     </div>
                                 </>
                             )}
-                            <ScriptSynthesis scriptId={scriptId} />
+                            {p.total_sessoes > 0 && <ScriptSynthesis scriptId={scriptId} concluidas={p.concluidas} />}
                         </>
                     )}
                 </EstadoTela>

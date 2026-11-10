@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Sparkles, RefreshCw, Info } from "lucide-react";
 import EstadoTela from "./EstadoTela";
@@ -9,6 +9,7 @@ import { ui } from "../styles/ui";
 
 const H3 = { margin: "0 0 6px", fontSize: 16, color: "var(--color-heading)" };
 const LISTA = { margin: 0, paddingLeft: 20, fontSize: 15, lineHeight: 1.55, color: "var(--color-text)" };
+const ALERTA = { margin: 0, color: "var(--color-error)", fontSize: 14 };
 const SR = { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" };
 
 function Lista({ titulo, itens }) {
@@ -22,11 +23,16 @@ function Lista({ titulo, itens }) {
 }
 
 /** Relatório cruzado do roteiro (EV-33): resumo, temas com citações linkadas, divergências e lacunas. */
-export default function ScriptSynthesis({ scriptId }) {
+export default function ScriptSynthesis({ scriptId, concluidas = null }) {
     const { data, carregando, erro, recarregar } = useApiResource(() => api.getScriptSynthesis(scriptId), [scriptId]);
     const [gerando, setGerando] = useState(false);
     const [erroGerar, setErroGerar] = useState("");
     const [bloqueio, setBloqueio] = useState("");
+    const [falhas, setFalhas] = useState(0);
+    const alertaRef = useRef(null);
+    const mensagemErro = bloqueio || erroGerar;
+    useEffect(() => { if (mensagemErro) alertaRef.current?.focus(); }, [mensagemErro, falhas]);
+    const poucas = concluidas !== null && concluidas < 2;
 
     async function gerar(refresh) {
         if (refresh && !window.confirm("Gerar o relatório de novo? O atual será substituído.")) return;
@@ -35,9 +41,11 @@ export default function ScriptSynthesis({ scriptId }) {
         try {
             await api.generateScriptSynthesis(scriptId, { refresh });
             setBloqueio("");
+            setErroGerar("");
             await recarregar();
         } catch (e) {
-            if (e instanceof ApiError && e.status === 409) setBloqueio(e.detail);
+            setFalhas((n) => n + 1);
+            if (e instanceof ApiError && e.status === 409) { setBloqueio(e.detail); setErroGerar(""); }
             else setErroGerar(e.detail || "Não consegui gerar o relatório. Tente de novo.");
         } finally {
             setGerando(false);
@@ -75,21 +83,20 @@ export default function ScriptSynthesis({ scriptId }) {
                                 <RefreshCw size={16} aria-hidden="true" /> {gerando ? "Gerando…" : "Gerar de novo"}
                             </button>
                         </div>
-                        {bloqueio && <p role="alert" style={{ margin: 0, color: "var(--color-error)", fontSize: 14 }}>{bloqueio}</p>}
-                        {erroGerar && <p role="alert" style={{ margin: 0, color: "var(--color-error)", fontSize: 14 }}>{erroGerar}</p>}
+                        {mensagemErro && <p role="alert" ref={alertaRef} tabIndex={-1} style={ALERTA}>{mensagemErro}</p>}
                     </div>
                 ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
                         <p style={{ margin: 0, fontSize: 15, color: "var(--color-text-muted)" }}>O relatório cruzado deste roteiro ainda não foi gerado.</p>
-                        <button className="ui-btn" style={{ ...ui.btnPrimario, opacity: gerando || bloqueio ? 0.6 : 1 }} onClick={() => gerar(false)} disabled={gerando || !!bloqueio}>
+                        <button className="ui-btn" style={{ ...ui.btnPrimario, opacity: gerando ? 0.6 : 1 }} onClick={() => gerar(false)} disabled={gerando}>
                             <Sparkles size={17} aria-hidden="true" /> {gerando ? "Gerando… pode levar alguns segundos" : "Gerar relatório"}
                         </button>
-                        {bloqueio && (
-                            <p role="status" style={{ margin: 0, fontSize: 14, color: "var(--color-text)", display: "flex", gap: 8, alignItems: "center" }}>
-                                <Info size={16} aria-hidden="true" /> {bloqueio}
+                        {poucas && !mensagemErro && (
+                            <p style={{ margin: 0, fontSize: 14, color: "var(--color-text)", display: "flex", gap: 8, alignItems: "center" }}>
+                                <Info size={16} aria-hidden="true" /> Para gerar o relatório, é preciso ter pelo menos 2 entrevistas concluídas com síntese.
                             </p>
                         )}
-                        {erroGerar && <p role="alert" style={{ margin: 0, color: "var(--color-error)", fontSize: 14 }}>{erroGerar}</p>}
+                        {mensagemErro && <p role="alert" ref={alertaRef} tabIndex={-1} style={ALERTA}>{mensagemErro}</p>}
                     </div>
                 )}
             </EstadoTela>

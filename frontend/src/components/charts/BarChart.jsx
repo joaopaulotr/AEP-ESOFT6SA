@@ -57,14 +57,15 @@ export function BarChart({ titulo, dados, formatar = (v) => NUM.format(v), cor =
 }
 
 /** Colunas verticais (série temporal curta); rótulo do eixo = dd/MM. */
-export function ColumnChart({ titulo, dados, formatar = (v) => NUM.format(v), cor = "var(--chart-1)", rotuloValor = "Valor" }) {
+export function ColumnChart({ titulo, dados: todos, formatar = (v) => NUM.format(v), cor = "var(--chart-1)", rotuloValor = "Valor" }) {
+    const dados = todos.slice(-30); // últimos 30 pontos
     const max = Math.max(...dados.map((d) => d.valor), 0) || 1;
     const altura = 150;
     const largura = Math.max(dados.length * 44, 240);
     const w = 28;
     return (
         <Moldura titulo={titulo} dados={dados} formatar={formatar} rotuloValor={rotuloValor}>
-            <div style={{ overflowX: "auto" }}>
+            <div role="region" tabIndex={0} aria-label={`${titulo} — role para ver mais`} style={{ overflowX: "auto" }}>
                 <svg role="img" aria-label={resumo(titulo, dados, formatar)} width={largura} height={altura + 40} viewBox={`0 0 ${largura} ${altura + 40}`} style={{ display: "block", maxWidth: "none" }}>
                     <line x1="0" x2={largura} y1={altura + 18} y2={altura + 18} stroke="var(--color-divider)" />
                     {dados.map((d, i) => {
