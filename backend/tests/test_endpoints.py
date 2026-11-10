@@ -333,7 +333,7 @@ def test_validation_error_without_field_names_the_body(client):
         "/api/v1/participants", content="{", headers={"content-type": "application/json"}
     )
     assert response.status_code == 422
-    assert response.json()["detail"].startswith("Dados inválidos: confira ")
+    assert response.json()["detail"] == "Dados inválidos: confira corpo da requisição."
 
 
 def test_invalid_fields_skips_locations_and_repeats():

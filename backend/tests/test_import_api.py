@@ -149,3 +149,30 @@ def test_create_script_keeps_upload_origin(client):
 def test_create_script_without_origin_is_manual(client):
     created = client.post(API, json={"titulo": "R", "perguntas": [{"texto": "a?"}]})
     assert created.json()["origem"]["tipo"] == "manual"
+
+
+def test_chunked_upload_without_length_is_411_before_parsing(client, monkeypatch):
+    from starlette.requests import Request
+
+    async def _never(self, *args, **kwargs):
+        raise AssertionError("o multipart não pode ser lido")
+
+    monkeypatch.setattr(Request, "form", _never)
+    boundary = "xyz"
+    body = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="q.txt"\r\n\r\n'
+        f"{'x' * 200_000}\r\n--{boundary}--\r\n"
+    ).encode()
+
+    def chunks():
+        for i in range(0, len(body), 65536):
+            yield body[i : i + 65536]
+
+    response = client.post(
+        f"{API}/upload",
+        content=chunks(),
+        headers={"content-type": f"multipart/form-data; boundary={boundary}"},
+    )
+    assert "content-length" not in {k.lower() for k in response.request.headers}
+    assert response.status_code == 411
+    assert response.json()["detail"] == "Envie o arquivo com o tamanho informado."

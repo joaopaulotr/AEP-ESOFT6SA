@@ -128,7 +128,9 @@ def invalid_fields(errors) -> list[str]:
     fields: list[str] = []
     for error in errors:
         loc = [str(part) for part in error.get("loc", ()) if str(part) not in _LOCATIONS]
-        name = ".".join(loc) or "corpo da requisição"
+        # JSON malformado: o loc traz a posição do byte, que não diz nada a quem lê.
+        name = "corpo da requisição" if error.get("type") == "json_invalid" else ".".join(loc)
+        name = name or "corpo da requisição"
         if name not in fields:
             fields.append(name)
     return fields

@@ -24,19 +24,24 @@ from app.services.synthesis_service import SynthesisService
 
 # Folga para os cabeçalhos do multipart (nome do campo, nome do arquivo, boundary).
 MULTIPART_OVERHEAD_BYTES = 64 * 1024
+LENGTH_REQUIRED_MESSAGE = "Envie o arquivo com o tamanho informado."
 
 
 class UploadLimitRoute(APIRoute):
-    """Recusa com 413 pelo Content-Length ANTES do parse do multipart. Uma dependência não
-    serve: o FastAPI lê o formulário (e o Starlette grava em disco) antes de resolvê-las."""
+    """Confere o Content-Length ANTES do parse do multipart: sem tamanho numérico (upload
+    chunked) -> 411; maior que o limite + 64 KB -> 413. O navegador sempre informa o tamanho
+    de um FormData. Uma dependência não serve: o FastAPI lê o formulário (e o Starlette grava
+    em disco) antes de resolvê-las. O servidor (h11) não aceita corpo maior que o declarado."""
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         handler = super().get_route_handler()
 
         async def limited(request: Request) -> Response:
             length = request.headers.get("content-length", "")
+            if not length.isdigit():
+                return JSONResponse(status_code=411, content={"detail": LENGTH_REQUIRED_MESSAGE})
             limit = settings.max_upload_bytes + MULTIPART_OVERHEAD_BYTES
-            if length.isdigit() and int(length) > limit:
+            if int(length) > limit:
                 return JSONResponse(status_code=413, content={"detail": too_large_message()})
             return await handler(request)
 
