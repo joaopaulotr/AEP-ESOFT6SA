@@ -1,8 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { tituloUnico, criarRoteiro, vigiarConsole, coletarDialogos } from "./helpers";
 
-// Microfone falso do Chromium (tom contínuo) + STT/TTS falsos do backend: valida o ciclo da tela
-// (gravar → transcrição → confirmar → próxima fala), não a qualidade do áudio.
+// Microfone falso do Chromium + STT/TTS falsos do backend: o ciclo inteiro da tela tem de acontecer
+// (gravar → parar → confirmar a transcrição → próxima fala no log), sem atalhos condicionais.
 test("voz: grava, confirma o que foi entendido e recebe a próxima fala", async ({ page, request }) => {
     const erros = vigiarConsole(page);
     const dialogos = coletarDialogos(page);
@@ -19,22 +19,20 @@ test("voz: grava, confirma o que foi entendido e recebe a próxima fala", async 
     await expect(page.getByText("OUVINDO SUA RESPOSTA…")).toBeVisible();
     await expect(page.getByText("Microfone ligado")).toHaveCount(0); // gravando: o botão de parar já diz tudo
 
-    // O fim de fala automático (VAD) pode encerrar antes do clique: só clica se ainda estiver gravando.
-    const parar = page.getByRole("button", { name: "Parar e enviar resposta" });
-    if (await parar.isVisible()) await parar.click().catch(() => {});
+    // Ciclo completo e obrigatório: o mic falso produz áudio e o STT falso devolve texto fixo.
+    await page.getByRole("button", { name: "Parar e enviar resposta" }).click();
 
-    // Ou a transcrição aparece para confirmar, ou a tela avisa que não ouviu: nunca fica parada.
-    const enviarAgora = page.getByRole("button", { name: "Enviar agora" });
-    await expect.poll(async () => (await enviarAgora.isVisible()) || dialogos.some((m) => /Não consegui ouvir/.test(m)))
-        .toBe(true);
+    const confirmar = page.getByRole("group", { name: "Confirmar o que foi entendido" });
+    await expect(confirmar).toContainText("Resposta simulada em modo offline."); // texto do STT falso
+    await expect(page.getByText(/Não consegui ouvir/)).toHaveCount(0);
+    await confirmar.getByRole("button", { name: "Enviar agora" }).click();
 
-    if (await enviarAgora.isVisible()) {
-        await enviarAgora.click();
-        const log = page.getByRole("log", { name: "Transcrição da entrevista" });
-        await expect(log).toContainText("Resposta simulada em modo offline."); // texto do STT falso
-        await expect(page.getByRole("button", { name: "Falar ao microfone" })).toBeEnabled(); // próxima fala chegou: vez da pessoa
-    }
-    expect(dialogos.filter((m) => !/Não consegui ouvir/.test(m))).toEqual([]);
+    // A resposta entra na transcrição e, depois dela, a próxima fala da entrevistadora ("du · hh:mm").
+    const log = page.getByRole("log", { name: "Transcrição da entrevista" });
+    await expect(log).toContainText(/Resposta simulada em modo offline\.\s*du\s*·/);
+    await expect(page.getByRole("button", { name: "Falar ao microfone" })).toBeEnabled(); // vez da pessoa de novo
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(dialogos).toEqual([]);
     expect(erros).toEqual([]);
 });
 
