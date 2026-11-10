@@ -71,9 +71,11 @@ def test_stream_emits_events_in_order_and_fim_matches_normal_turn(client, fake_l
     assert response.headers["x-accel-buffering"] == "no"
     events = _events(response)
     assert [n for n, _ in events] == ["pensando", "frase", "frase", "fim"]
-    assert events[0][1] == {}
-    assert events[1][1] == {"texto": "Entendi.", "indice": 0, "finalizada": False}
-    assert events[2][1] == {"texto": "Como é isso no dia a dia?", "indice": 1, "finalizada": False}
+    assert events[0][1] == {"risco": "nenhum"}
+    assert events[1][1] == {"texto": "Entendi.", "indice": 0, "finalizada": False, "acolhimento": False}
+    assert events[2][1] == {
+        "texto": "Como é isso no dia a dia?", "indice": 1, "finalizada": False, "acolhimento": False
+    }
     fim = events[3][1]
     assert fim["fala"] == "Entendi. Como é isso no dia a dia?"
     assert fim["acao"] == "deepen" and fim["finalizada"] is False
@@ -97,19 +99,19 @@ def test_frase_events_carry_finalizada_true_on_the_closing_turn(client):
 
 def test_provider_error_becomes_erro_event_and_retry_saves_one_turn(client, fake_llm, monkeypatch):
     sid = _abrir(client)
-    real_take_turn = SessionService.take_turn
+    real_take_turn = SessionService._take_turn
 
     async def down(self, session_id, text):
         raise ProviderError("fora")
 
-    monkeypatch.setattr(SessionService, "take_turn", down)
+    monkeypatch.setattr(SessionService, "_take_turn", down)
     response = client.post(f"{API}/turn/{sid}/stream", json={"texto": "Oi"})
 
     events = _events(response)
     assert [n for n, _ in events] == ["pensando", "erro"]
     assert events[1][1] == {"detail": "Falha ao se comunicar com o provedor de IA."}
 
-    monkeypatch.setattr(SessionService, "take_turn", real_take_turn)
+    monkeypatch.setattr(SessionService, "_take_turn", real_take_turn)
     fake_llm.queue("deepen", "Me conta mais.")
     retry = client.post(f"{API}/turn/{sid}/stream", json={"texto": "Oi"})
     assert [n for n, _ in _events(retry)][-1] == "fim"
@@ -138,7 +140,7 @@ def test_conflict_during_stream_becomes_erro_event(client, fake_llm, monkeypatch
     async def boom(self, session_id, text):
         raise ConflictError("A sessão mudou durante o turno.")
 
-    monkeypatch.setattr(SessionService, "take_turn", boom)
+    monkeypatch.setattr(SessionService, "_take_turn", boom)
     events = _events(client.post(f"{API}/turn/{sid}/stream", json={"texto": "Oi"}))
     assert [n for n, _ in events] == ["pensando", "erro"]
     assert events[1][1] == {"detail": "A sessão mudou durante o turno."}
@@ -152,7 +154,7 @@ def test_not_found_during_stream_becomes_erro_event(client, monkeypatch):
     async def gone(self, session_id, text):
         raise NotFoundError("Sessão não encontrada.")
 
-    monkeypatch.setattr(SessionService, "take_turn", gone)
+    monkeypatch.setattr(SessionService, "_take_turn", gone)
     events = _events(client.post(f"{API}/turn/{sid}/stream", json={"texto": "Oi"}))
     assert [n for n, _ in events] == ["pensando", "erro"]
     assert events[1][1] == {"detail": "Sessão não encontrada."}
@@ -164,7 +166,7 @@ def test_unexpected_error_becomes_generic_erro_and_logs_without_text(client, mon
     async def broken(self, session_id, text):
         raise RuntimeError("segredo-do-participante")
 
-    monkeypatch.setattr(SessionService, "take_turn", broken)
+    monkeypatch.setattr(SessionService, "_take_turn", broken)
     with caplog.at_level("ERROR"):
         events = _events(client.post(f"{API}/turn/{sid}/stream", json={"texto": "segredo-do-participante"}))
     assert [n for n, _ in events] == ["pensando", "erro"]
@@ -201,7 +203,7 @@ def _disconnect_during_await(client, fake_llm, outcome):
     from app.api.v1.endpoints import turns
 
     sid = _abrir(client)
-    real = SessionService.take_turn
+    real = SessionService._take_turn
     unhandled: list = []
 
     async def run():
@@ -214,7 +216,7 @@ def _disconnect_during_await(client, fake_llm, outcome):
                 raise RuntimeError("segredo-do-participante")
             return await real(self, session_id, text)
 
-        SessionService.take_turn = slow
+        SessionService._take_turn = slow
         asyncio.get_running_loop().set_exception_handler(lambda loop, ctx: unhandled.append(ctx))
         try:
             sessions = app.dependency_overrides[deps.get_session_service]()
@@ -235,7 +237,7 @@ def _disconnect_during_await(client, fake_llm, outcome):
             gc.collect()
             await asyncio.sleep(0)
         finally:
-            SessionService.take_turn = real
+            SessionService._take_turn = real
 
     return sid, unhandled, run
 
@@ -257,3 +259,78 @@ def test_task_exception_after_disconnect_is_retrieved_and_logged_without_text(
         client.portal.call(run)
     assert unhandled == []  # nenhum "Task exception was never retrieved"
     assert "RuntimeError" in caplog.text and "segredo-do-participante" not in caplog.text
+
+
+def test_pensando_carries_the_deterministic_risk_and_welcome_is_flagged(client, fake_llm):
+    sid = _abrir(client)
+    events = _events(client.post(f"{API}/turn/{sid}/stream", json={"texto": "eu quero morrer"}))
+
+    assert events[0] == ("pensando", {"risco": "sofrimento"})
+    assert fake_llm.prompts == []  # o atalho determinístico não chama o LLM
+    frases = [d for n, d in events if n == "frase"]
+    fim = [d for n, d in events if n == "fim"][0]
+    assert frases and all(f["acolhimento"] is True for f in frases)
+    assert fim["acolhimento"] is True and fim["finalizada"] is True
+    assert "188" in fim["fala"]
+
+
+def test_pensando_flags_a_stop_request_without_welcome(client):
+    sid = _abrir(client)
+    events = _events(client.post(f"{API}/turn/{sid}/stream", json={"texto": "quero parar"}))
+    assert events[0] == ("pensando", {"risco": "pedido_parar"})
+    assert [d for n, d in events if n == "fim"][0]["acolhimento"] is False
+
+
+def test_plain_turn_also_reports_welcome(client):
+    sid = _abrir(client)
+    body = client.post(f"{API}/turn/{sid}", json={"texto": "vou me matar"}).json()
+    assert body["acolhimento"] is True and body["finalizada"] is True
+
+
+def test_failure_while_connected_is_not_logged_as_after_disconnect(client, monkeypatch, caplog):
+    sid = _abrir(client)
+
+    async def down(self, session_id, text):
+        raise ProviderError("fora")
+
+    monkeypatch.setattr(SessionService, "_take_turn", down)
+    with caplog.at_level("ERROR"):
+        events = _events(client.post(f"{API}/turn/{sid}/stream", json={"texto": "Oi"}))
+    assert events[-1][0] == "erro"
+    assert "após desconexão" not in caplog.text
+
+
+def test_shutdown_waits_for_pending_turns():
+    import asyncio
+
+    from app.api.v1.endpoints import turns
+    from app.main import drain_pending_turns
+
+    async def run():
+        done: list[str] = []
+
+        async def slow_turn():
+            await asyncio.sleep(0.05)
+            done.append("gravado")
+
+        task = asyncio.ensure_future(slow_turn())
+        turns._pending_turns.add(task)
+        task.add_done_callback(turns._turn_done)
+        assert await drain_pending_turns(timeout=2) == 0
+        assert done == ["gravado"] and not turns._pending_turns
+
+        stuck = asyncio.ensure_future(asyncio.sleep(10))
+        turns._pending_turns.add(stuck)
+        stuck.add_done_callback(turns._turn_done)
+        assert await drain_pending_turns(timeout=0.01) == 1
+        stuck.cancel()
+        await asyncio.sleep(0)
+
+    asyncio.run(run())
+    assert await_none_pending()
+
+
+def await_none_pending() -> bool:
+    from app.api.v1.endpoints import turns
+
+    return not turns._pending_turns

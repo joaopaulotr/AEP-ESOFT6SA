@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import time
@@ -9,7 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import deps
+from app.api.v1.endpoints import turns
 from app.api.v1.router import api_router
+from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.errors import (
     ConflictError,
@@ -36,11 +39,37 @@ async def prepare_database() -> None:
         logger.info("Sessões da v0.1.0 migradas para o modelo multi-coleção: %d", migrated)
 
 
+SHUTDOWN_DRAIN_SECONDS = 15.0
+
+
+async def drain_pending_turns(timeout: float = SHUTDOWN_DRAIN_SECONDS) -> int:
+    """No desligamento, espera os turnos em andamento gravarem (um restart não pode perder a
+    resposta de quem já falou). Devolve quantos ainda não tinham terminado no prazo."""
+    pending = set(turns._pending_turns)
+    if not pending:
+        return 0
+    _, still_running = await asyncio.wait(pending, timeout=timeout)
+    if still_running:
+        logger.warning("Turnos ainda em andamento no desligamento: %d", len(still_running))
+    return len(still_running)
+
+
+def warn_default_frontend_url() -> None:
+    """Sem FRONTEND_URL, o link do convite e o QR Code apontam para localhost."""
+    if "localhost" in settings.frontend_url or "127.0.0.1" in settings.frontend_url:
+        logger.warning(
+            "FRONTEND_URL aponta para %s: links de convite e QR Code só funcionam nesta máquina.",
+            settings.frontend_url,
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
+    warn_default_frontend_url()
     await prepare_database()
     yield
+    await drain_pending_turns()
 
 
 app = FastAPI(title="API - ESOFT6SA", lifespan=lifespan)

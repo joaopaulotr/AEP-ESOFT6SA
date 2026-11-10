@@ -55,6 +55,7 @@ class TurnResponse(BaseModel):
     pergunta_ordem: int | None = None
     perguntas_total: int = 0
     aprofundamentos_restantes: int | None = None
+    acolhimento: bool = False  # a fala é o acolhimento (CVV): o front não navega sozinho
 
 
 class SynthesisResponse(BaseModel):

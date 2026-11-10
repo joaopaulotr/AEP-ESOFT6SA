@@ -7,9 +7,9 @@ from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.synthesis_repository import SynthesisRepository
 from app.schemas.api import ScriptDashboard, SessionSummary
-from app.schemas.interview import InterviewState, SessionDetails, SessionResponse
+from app.schemas.interview import InterviewState, SessionDetails, SessionResponse, TurnResponse
 from app.schemas.script import InterviewScript
-from app.services.interview_graph import deepenings_so_far
+from app.services.interview_graph import deepenings_so_far, ended_in_welcome
 from app.services.interview_service import InterviewService
 
 
@@ -109,7 +109,24 @@ class SessionService:
         if not existed and not cleaned:
             raise NotFoundError(SessionRepository.not_found_message)
 
+    async def turn(self, session_id: str, text: str) -> TurnResponse:
+        """Turno completo para a API: fala, progresso e se terminou no acolhimento."""
+        session, fala, script = await self._take_turn(session_id, text)
+        return TurnResponse(
+            fala=fala,
+            finalizada=session.finished,
+            indice_atual=session.current_index,
+            acolhimento=ended_in_welcome(session),
+            **self._turn_meta(session, script),
+        )
+
     async def take_turn(self, session_id: str, text: str) -> tuple[InterviewState, str]:
+        session, fala, _ = await self._take_turn(session_id, text)
+        return session, fala
+
+    async def _take_turn(
+        self, session_id: str, text: str
+    ) -> tuple[InterviewState, str, InterviewScript | None]:
         session = await self._sessions.get_or_raise(session_id)
         if session.finished:
             raise ConflictError("A entrevista já foi encerrada.")
@@ -126,12 +143,12 @@ class SessionService:
                 await self._persist(session)
             finally:
                 await record_usage_safely(self._sessions, session_id, meter)
-        return session, fala
+        return session, fala, script
 
-    async def turn_meta(self, session: InterviewState) -> dict:
-        """Metadados do último turno para a resposta de /turn (progresso e aprofundamentos)."""
+    @staticmethod
+    def _turn_meta(session: InterviewState, script: InterviewScript | None) -> dict:
+        """Metadados do último turno (progresso e aprofundamentos), com o roteiro já lido no turno."""
         last = session.conversation[-1] if session.conversation else None
-        script = await self._scripts.get(session.script_id)
         total = len(script.perguntas) if script else 0
         restantes = None
         if script and last and last.pergunta_ordem is not None:
