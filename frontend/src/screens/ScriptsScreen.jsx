@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Mic, List, User, Plus, Upload, Pencil } from "lucide-react";
+import { Mic, List, User, Plus, Upload, Pencil, UserPlus } from "lucide-react";
 import SideBar from "../components/SideBar";
+import InviteModal from "../components/InviteModal";
 import EstadoTela from "../components/EstadoTela";
 import { useApiResource } from "../hooks/useApiResource";
 import { api } from "../services/api";
@@ -12,6 +13,7 @@ export default function ScriptsScreen() {
     const navigate = useNavigate();
     const { data, carregando, erro, recarregar } = useApiResource(() => api.listScripts(), []);
     const roteiros = data ?? [];
+    const [convite, setConvite] = useState(null);
 
     return (
         <SideBar>
@@ -61,6 +63,11 @@ export default function ScriptsScreen() {
                                             <List size={17} aria-hidden="true" /> Ver entrevistas
                                         </button>
                                         <button className="ui-btn" style={ui.btnSecundario}
+                                            aria-label={`Convidar para ${r.titulo}`}
+                                            onClick={() => setConvite(r)}>
+                                            <UserPlus size={17} aria-hidden="true" /> Convidar
+                                        </button>
+                                        <button className="ui-btn" style={ui.btnSecundario}
                                             aria-label={`Editar roteiro ${r.titulo}`}
                                             onClick={() => navigate(`/roteiros/${encodeURIComponent(r.script_id)}/editar`)}>
                                             <Pencil size={17} aria-hidden="true" /> Editar
@@ -71,6 +78,7 @@ export default function ScriptsScreen() {
                         </div>
                     )}
                 </EstadoTela>
+                {convite && <InviteModal roteiro={convite} onClose={() => setConvite(null)} />}
             </div>
         </SideBar>
     );
