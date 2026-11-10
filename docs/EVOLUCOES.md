@@ -397,9 +397,10 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 
 - "Pergunta 2 de 5 · aprofundando" — reduz ansiedade e abandono.
 
-### EV-84 — Design system, dark mode e mobile-first `TODO`
+### EV-84 — Design system, dark mode e mobile-first `DONE`
 
-- Tokens de cor/tipografia/espaçamento em CSS variables; tema claro/escuro.
+- Tokens cobrem cor, fonte, sombra e área de toque; espaçamentos continuam nos estilos de cada tela.
+- Tema escuro via `data-theme` no `<html>`, escolha salva no navegador e botão no menu lateral (`ThemeToggle` + `useTheme`).
 - Layout mobile-first (o público da ODS 10 acessa principalmente pelo celular); áreas de toque grandes.
 - Acessibilidade: contraste AA, foco visível, `aria-live` na transcrição.
 
@@ -409,10 +410,15 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
   síntese cruzada (EV-33).
 - Participante: entrada pelo convite (EV-31), escolha voz/texto, entrevista, agradecimento.
 
-### EV-17 — Refatoração da `InterviewScreen` `TODO`
+
+### EV-17 — Refatoração da `InterviewScreen` `DONE`
 
 - Hooks: `useRecorder` (MediaRecorder + VAD), `useAudioPlayer` (fila + barge-in), `useInterviewSession`, `useTurnStream` (SSE).
 - Client HTTP único em `services/api.js`; nada de `fetch` espalhado nas telas.
+
+Decisões da implementação:
+
+- Hooks feitos: `useInterviewSession`, `useRecorder`, `useAudioPlayer`, `useElapsedTime`. Formatação de hora em `utils/tempo.js` e estilos em `InterviewScreen.styles.js`.
 
 ---
 
