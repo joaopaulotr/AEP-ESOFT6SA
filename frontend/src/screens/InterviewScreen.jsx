@@ -17,6 +17,7 @@ import { mmss } from "../utils/tempo";
 import EstadoTela from "../components/EstadoTela";
 import { ui, CSS as UI_CSS } from "../styles/ui";
 import { style, CSS } from "./InterviewScreen.styles";
+import { E2E } from "../utils/e2e";
 
 const INTERVIEWER = "du";
 const SILENCIO_INCENTIVO_MS = 12000;
@@ -113,7 +114,7 @@ function Entrevista({ publico, slug }) {
         setIncentivo(false);
     }, [ordemAtual]);
     useEffect(() => {
-        if (!aguardando || incentivadoRef.current === ordemAtual) return undefined;
+        if (E2E || !aguardando || incentivadoRef.current === ordemAtual) return undefined;
         const t = setTimeout(() => {
             incentivadoRef.current = ordemAtual; // uma vez por pergunta
             setIncentivo(true);

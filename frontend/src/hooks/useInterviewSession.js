@@ -5,6 +5,7 @@ import { useAudioPlayer } from "./useAudioPlayer";
 import { useTurnStream } from "./useTurnStream";
 import { useFillers, ESPERA_FILLER_MS } from "./useFillers";
 import { useTypewriter } from "./useTypewriter";
+import { E2E } from "../utils/e2e";
 
 
 /**
@@ -193,7 +194,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
     async function lerTurno(id, msg) {
         const vozAtiva = vozRef.current;
         const frases = [];
-        const naoAntesDe = Date.now() + atrasoDePensar(msg.length); // a 1ª frase não toca antes disso
+        const naoAntesDe = Date.now() + (E2E ? 0 : atrasoDePensar(msg.length)); // a 1ª frase não toca antes disso
         let fim = null;
         let detalheErro = "";
         let falhou = false;
@@ -208,7 +209,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
             primeira = false;
             cadeia = cadeia.then(async () => {
                 if (cancelado || !montadoRef.current) return;
-                await digitador.revelar(t, { depoisDe, instantaneo: instantaneoRef.current });
+                await digitador.revelar(t, { depoisDe, instantaneo: E2E || instantaneoRef.current });
                 if (!cancelado && montadoRef.current) setAnuncio(t);
             });
         };
@@ -216,7 +217,7 @@ export function useInterviewSession({ scriptId, onFinished, existente, voz = tru
         try {
             await stream.enviar(id, msg, {
                 onPensando: () => {
-                    if (!vozAtiva) return;
+                    if (!vozAtiva || E2E) return;
                     // Demorou: talvez um "Hmm, entendi…". Entra na mesma fila, então a 1ª frase
                     // só começa depois que ele terminar (nunca sobrepõe).
                     timerFiller = setTimeout(() => {
