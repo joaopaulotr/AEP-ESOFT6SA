@@ -454,7 +454,8 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
 
 ### EV-84 — Design system, dark mode e mobile-first `DONE`
 
-- Tokens de cor/tipografia/espaçamento em CSS variables; tema claro/escuro.
+- Tokens cobrem cor, fonte, sombra e área de toque; espaçamentos continuam nos estilos de cada tela.
+- Tema escuro via `data-theme` no `<html>`, escolha salva no navegador e botão no menu lateral (`ThemeToggle` + `useTheme`).
 - Layout mobile-first (o público da ODS 10 acessa principalmente pelo celular); áreas de toque grandes.
 - Acessibilidade: contraste AA, foco visível, `aria-live` na transcrição.
 
@@ -466,11 +467,16 @@ START → extract_profile → safety_check ─┬─ risco → acolher_e_encerra
   síntese cruzada (EV-33).
 - Participante: entrada pelo convite (EV-31), escolha voz/texto, entrevista, agradecimento.
 
+
 ### EV-17 — Refatoração da `InterviewScreen` `DONE`
 
 - Entregue: hooks `useRecorder` (MediaRecorder, envio por clique), `useAudioPlayer` (`play`/`stop`) e
   `useInterviewSession`, mais `useApiResource` para as telas de lista. VAD e barge-in estão no EV-24; `useTurnStream` (SSE) no EV-60.
 - Client HTTP único em `services/api.js`; nada de `fetch` espalhado nas telas.
+
+Decisões da implementação:
+
+- Hooks feitos: `useInterviewSession`, `useRecorder`, `useAudioPlayer`, `useElapsedTime`. Formatação de hora em `utils/tempo.js` e estilos em `InterviewScreen.styles.js`.
 
 ---
 
