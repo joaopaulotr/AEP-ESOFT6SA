@@ -15,9 +15,12 @@ def repository(session_repository) -> SessionRepository:
 
 
 @pytest.fixture
-def synthesis(repository, synthesis_repository, fake_llm) -> SynthesisService:
+def synthesis(repository, synthesis_repository, fake_llm, script_repository) -> SynthesisService:
     return SynthesisService(
-        session_repository=repository, synthesis_repository=synthesis_repository, llm=fake_llm
+        session_repository=repository,
+        synthesis_repository=synthesis_repository,
+        llm=fake_llm,
+        script_repository=script_repository,
     )
 
 
@@ -37,8 +40,10 @@ def finished_state() -> InterviewState:
 
 
 class TestConstruction:
-    def test_uses_the_injected_collaborators(self, repository, synthesis_repository, fake_llm):
-        synthesis = SynthesisService(repository, synthesis_repository, fake_llm)
+    def test_uses_the_injected_collaborators(
+        self, repository, synthesis_repository, fake_llm, script_repository
+    ):
+        synthesis = SynthesisService(repository, synthesis_repository, fake_llm, script_repository)
 
         assert synthesis._sessions is repository
         assert synthesis._syntheses is synthesis_repository

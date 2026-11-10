@@ -275,7 +275,8 @@ class TestSynthesisRoutes:
         from app.services.synthesis_service import SynthesisService
 
         app.dependency_overrides[deps.get_synthesis_service] = lambda: SynthesisService(
-            deps.get_session_repository(), deps.get_synthesis_repository(), fake_llm
+            deps.get_session_repository(), deps.get_synthesis_repository(), fake_llm,
+            deps.get_script_repository(),
         )
         try:
             session_id = self._sessao_concluida(client)

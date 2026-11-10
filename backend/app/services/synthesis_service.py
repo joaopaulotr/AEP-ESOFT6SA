@@ -9,7 +9,7 @@ from app.prompts.synthesis_prompts import (
     SYNTHESIS_FALLBACK_PROMPT,
     SYNTHESIS_PROMPT,
 )
-from app.providers.base import LLMProvider, ProviderError
+from app.providers.base import InvalidJSONError, LLMProvider, ProviderError
 from app.repositories.script_repository import ScriptRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.synthesis_repository import SynthesisRepository
@@ -107,7 +107,7 @@ class SynthesisService:
         session_repository: SessionRepository,
         synthesis_repository: SynthesisRepository,
         llm: LLMProvider,
-        script_repository: ScriptRepository | None = None,
+        script_repository: ScriptRepository,
     ) -> None:
         self._sessions = session_repository
         self._syntheses = synthesis_repository
@@ -268,17 +268,16 @@ class SynthesisService:
         return kept
 
     async def _require_script(self, script_id: str) -> None:
-        if self._scripts is not None:
-            await self._scripts.get_or_raise(script_id)
+        await self._scripts.get_or_raise(script_id)
 
     async def _complete_structured(self, prompt: str, model: type[BaseModel]):
-        """JSON validado pelo Pydantic; inválido → tenta de novo uma vez → None.
-        ProviderError não é capturado: segue como 502."""
+        """JSON validado pelo Pydantic; inválido (fora do contrato ou JSON truncado) → tenta de
+        novo uma vez → None. Outro ProviderError (queda, timeout) não é capturado: segue como 502."""
         for _ in range(STRUCTURED_ATTEMPTS):
-            payload = await self._llm.complete_json(prompt)
             try:
+                payload = await self._llm.complete_json(prompt)
                 return model.model_validate(payload)
-            except ValidationError:
+            except (ValidationError, InvalidJSONError):
                 continue
         return None
 

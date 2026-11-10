@@ -23,7 +23,8 @@ def client(fake_llm):
         syntheses=deps.get_synthesis_repository(),
     )
     app.dependency_overrides[deps.get_synthesis_service] = lambda: SynthesisService(
-        deps.get_session_repository(), deps.get_synthesis_repository(), fake_llm
+        deps.get_session_repository(), deps.get_synthesis_repository(), fake_llm,
+        deps.get_script_repository(),
     )
 
     with TestClient(app) as test_client:
